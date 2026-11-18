@@ -1,0 +1,34 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 708,
+  "authorization_basis": "GitHub Issue #708 QIN-599 (PM Design Table Approval #6968201619), 2026-11-18",
+  "files": [
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js",
+    "web/css/pages/asset-manager.css",
+    "tests/frontend/qin-599-remove-asset-boards.test.mjs",
+    "tests/frontend/mvp1-board-create-errors.test.mjs",
+    "tests/frontend/qin-530-asset-sidebar-redesign.test.mjs",
+    "tests/frontend/qin-544-asset-tree-panel.test.mjs",
+    "tests/frontend/qin-578-scripts-heading-and-tab-order.test.mjs",
+    "tests/frontend/qin-586-sidebar-unified-tree.test.mjs",
+    "tests/frontend/qin-595-mounted-folder-empty-state.test.mjs",
+    "tests/frontend/qin-596-resource-folder-add.test.mjs",
+    "tests/frontend/qin-597-resource-folder-list.test.mjs",
+    "tests/frontend/qin-602-asset-topbar-retention.test.mjs",
+    "tests/frontend/qin-602-asset-view-harness.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-708.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-599-remove-asset-boards.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #708 QIN-599, 2026-11-18",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-599：删除用户自定义看板与自动来源看板及偏好面板「看板显示」区块，固定显示系统分类入口，统一「+ 添加资源文件夹」入口，并完成幂等/权限受控/异步安全的一次性来源迁移。"
+}

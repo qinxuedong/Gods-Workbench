@@ -26,7 +26,6 @@ import {
     ASSET_REGISTRY_VIEW_SETTINGS_KEY,
     AVATAR_PLATFORM_LABELS,
     AVATAR_SUPPORTED_PLATFORMS,
-    BOARD_CREATE_PATH_FIELD_KEY,
     DEFAULT_LOCAL_LIBRARY_NAME,
     LOCAL_CAPTION_SETTINGS_KEY,
     OPTIONAL_DIRECTORY_FIELDS,
@@ -46,7 +45,6 @@ import {
     activeProjectId,
     activeRegistryVisibleAssets,
     activeTab,
-    allAssetBoards,
     allowedRootSettingsState,
     apiJsonResponse,
     apiProviders,
@@ -88,7 +86,6 @@ import {
     directorySettingsReady,
     directorySettingsSaving,
     embeddedSettingsPage,
-    ensureBoardNavigationState,
     escapeAttr,
     escapeHtml,
     findAssetItem,
@@ -154,7 +151,6 @@ import {
     setAssetClassifyBusy,
     setAssetEditMode,
     setAssetLibrary,
-    setBoardCreateFocusTarget,
     setDirectorySettingsSaving,
     setLocalAssets,
     setLocalAutoClassify,
@@ -210,10 +206,7 @@ import {
     renderRegistryFeatureControl,
 } from './legacy-pages.js';
 import {
-    renderBoardCreatePathBrowser,
-    renderCreateLibraryModal,
     selectedAssetImageItems,
-    updateBoardCreatePath,
 } from './organize.js';
 import {
     detailImageEditorBlob,
@@ -262,28 +255,7 @@ let assetJxlTranscodeState = {loading:false, starting:false, cancelling:false, s
 let avatarBusyId = '';
 let storageSettingsReturnFocus = null;
 let assetProxySettingsState = {projectId:'', enabled:false, autoQueue:false, maxWidth:960, maxHeight:540, loading:false, saving:false, message:''};
-function renderAssetBoardSettingsBody(){
-    const hidden = new Set(ensureBoardNavigationState().hidden);
-    return `<section class="asset-pref-section board-settings-section">
-        <div class="asset-pref-title"><i data-lucide="panel-top"></i><span>看板显示</span><small>${allAssetBoards().length} 个看板</small></div>
-        <div class="board-settings-list">${allAssetBoards().map(board => {
-            const visible = board.id === 'registry' || !hidden.has(board.id);
-            const editable = !board.system && !board.sourceBoard;
-            return `<div class="board-settings-row ${board.fixed ? 'fixed' : ''}">
-                <span class="board-settings-icon"><i data-lucide="${escapeAttr(board.icon)}"></i></span>
-                ${editable
-                    ? `<button class="board-settings-copy board-settings-edit" type="button" data-board-edit="${escapeAttr(board.id)}" title="修改资源库名称和路径"><strong>${escapeHtml(board.name)}</strong><small>点击修改名称和路径</small></button>`
-                    : `<span class="board-settings-copy"><strong>${escapeHtml(board.name)}</strong><small>${board.fixed ? '固定首位' : board.system ? '系统看板' : '已登记素材库'}</small></span>`}
-                <button class="board-visibility-control" type="button" role="switch" aria-checked="${visible}" aria-label="${visible ? '隐藏' : '显示'} ${escapeAttr(board.name)}" title="${visible ? '隐藏' : '显示'} ${escapeAttr(board.name)}" data-board-visibility="${escapeAttr(board.id)}" ${board.fixed ? 'disabled' : ''}><span class="registry-feature-switch ${visible ? 'is-on' : ''}"><i></i></span><em>${visible ? '显示' : '隐藏'}</em></button>
-                ${board.system ? '' : board.sourceBoard
-                    ? (String(board.rootId || '').startsWith('local')
-                        ? `<button class="board-settings-delete" type="button" data-source-board-delete="${escapeAttr(board.rootId || '')}" data-source-board-name="${escapeAttr(board.name)}" aria-label="移除 ${escapeAttr(board.name)}" title="移除素材路径并停止索引"><i data-lucide="trash-2"></i></button>`
-                        : '')
-                    : `<button class="board-settings-delete" type="button" data-board-delete="${escapeAttr(board.id)}" aria-label="删除 ${escapeAttr(board.name)}"><i data-lucide="trash-2"></i></button>`}
-            </div>`;
-        }).join('')}</div>
-    </section>`;
-}
+// QIN-599 AC3：「看板显示」设置区块整块移除；偏好弹窗保留 AI 分类、目录设置入口、缩略图与视频。
 function renderAssetAiSettingsBody(){
     const providers = localCaptionProviders();
     if(!assetAiSettingsState.loading) normalizeLocalCaptionSettings();
@@ -841,19 +813,18 @@ function applyStorageSettingsData(data={}){
 function renderServerDirectoryBrowser(){
     const state = serverDirectoryBrowserState;
     if(!state.open) return '';
-    const createPathSelection = state.key === BOARD_CREATE_PATH_FIELD_KEY;
     const rows = state.directories.map(directory =>
         '<div class="server-directory-row">' +
             '<button type="button" class="server-directory-enter" data-server-directory-enter="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '>' +
                 '<i data-lucide="folder"></i><span>' + escapeHtml(directory.name) + '</span><small>进入</small>' +
             '</button>' +
-            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + (createPathSelection ? '选择此目录' : '选择并挂载') + '</button>' +
+            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择并挂载</button>' +
         '</div>'
     ).join('');
     const path = state.path || '服务器根目录';
     const parentButton = '<button type="button" class="hw-btn" data-server-directory-parent' + (!state.parent || state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="corner-left-up"></i>上级目录</button>';
     const currentButton = state.path
-        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + (createPathSelection ? '选择当前目录' : '选择当前目录并挂载') + '</button>'
+        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择当前目录并挂载</button>'
         : '';
     const message = state.loading
         ? '<p class="server-directory-browser-message" role="status">正在读取目录…</p>'
@@ -867,12 +838,11 @@ function renderServerDirectoryBrowser(){
         (state.error ? '<p class="server-directory-browser-error" role="alert">' + escapeHtml(state.error) + '</p>' : '') +
         '<div class="server-directory-list" role="tree" aria-label="服务器子目录">' + message + rows + '</div>' +
         (state.truncated ? '<p class="server-directory-browser-note">目录较多，仅显示前 ' + (state.limit || 100) + ' 项。</p>' : '') +
-        '<p class="server-directory-browser-note">' + (createPathSelection ? '仅显示服务器文件夹；选择后返回创建表单，点击创建时再登记路径。' : '仅显示文件夹。选择并挂载会立即保存所选目录字段。') + '</p>' +
+        '<p class="server-directory-browser-note">仅显示文件夹。选择并挂载会立即保存所选目录字段。</p>' +
     '</section>';
 }
 function renderServerDirectoryBrowserHost(){
-    if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY) renderBoardCreatePathBrowser();
-    else renderStorageSettingsModal();
+    renderStorageSettingsModal();
 }
 async function loadServerDirectoryBrowser(pathValue=null){
     const state = serverDirectoryBrowserState;
@@ -910,12 +880,6 @@ async function openServerDirectoryBrowser(key){
     await loadServerDirectoryBrowser(null);
 }
 async function fillServerDirectoryFromNative(key, pathValue){
-    if(key === BOARD_CREATE_PATH_FIELD_KEY){
-        updateBoardCreatePath(pathValue);
-        setBoardCreateFocusTarget('boardCreatePath');
-        renderCreateLibraryModal();
-        return;
-    }
     // 选完文件夹即持久化：写入字段后立即保存，成功与失败都有状态反馈，不静默。
     const input = directoryFieldInput(key);
     if(input) input.value = pathValue;
@@ -1156,17 +1120,6 @@ function applyThumbnailCacheDirectoryField(directory){
 }
 async function saveDirectoryPath(key, pathValue, closeBrowser=false){
     const trimmed = String(pathValue || '').trim();
-    if(key === BOARD_CREATE_PATH_FIELD_KEY){
-        const input = directoryFieldInput(key);
-        if(input) input.value = trimmed;
-        updateBoardCreatePath(trimmed);
-        setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false, saving:false});
-        setBoardCreateFocusTarget('boardCreatePath');
-        renderCreateLibraryModal();
-        renderBoardCreatePathBrowser();
-        setStatus('路径已选择，点击创建资源库后登记。');
-        return;
-    }
     // 资源文件夹授权是独立动作，空值交给授权逻辑给出更贴切的提示，不走通用目录空值拦截。
     if(key === ALLOWED_ROOT_FIELD_KEY){ await registerAllowedRootPath(trimmed); return; }
     if(!trimmed && !OPTIONAL_DIRECTORY_FIELDS.has(key)){ setStatus('目录路径不能为空'); return; }
@@ -1218,7 +1171,7 @@ function storageKindEntries(){
 }
 function storageKindExists(kind){ return storageKindEntries().some(item => item.key === kind); }
 function storageKindLabel(kind){ return storageKindEntries().find(item => item.key === kind)?.label || STORAGE_KIND_LABELS[kind] || kind; }
-async function openStorageSettings(tab='boards'){
+async function openStorageSettings(tab='ai'){
     if(tab === 'directories' && !directorySettingsPage){
         window.top.location.href = '/static/pages/index.html?view=settings&section=directories';
         return;
@@ -1644,13 +1597,13 @@ function renderStorageSettingsModal(){
         document.body.appendChild(overlay);
     }
     const previousFocusId = overlay.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';
-    const unifiedBody = `${renderAssetBoardSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetAiSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div><a class="hw-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
+    const unifiedBody = `${renderAssetAiSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div><a class="hw-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
     overlay.innerHTML = `
         <div class="storage-settings-modal board-settings-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="storageSettingsTitle" tabindex="-1">
             <div class="storage-settings-head">
                 <div>
                     <strong id="storageSettingsTitle">资产设置</strong>
-                    <span>统一管理看板、AI 分类、缩略图与视频。</span>
+                    <span>统一管理 AI 分类、缩略图与视频。</span>
                 </div>
                 <button id="storageSettingsClose" type="button" data-storage-close aria-label="关闭"><i data-lucide="x"></i></button>
             </div>
@@ -3250,11 +3203,14 @@ GW_DEFERRED['settings'] = {
 };
 
 export {
+    applyAllowedRootSettingsData,
     applyStorageSettingsData,
+    assetPathWithinAllowedRoot,
     clearAssetRackFolder,
     closeStorageSettings,
     closeThumbnailGenerator,
     confirmRootAliasSuggestion,
+    describeResourceFolderPathRejection,
     detailWritableStorageRoots,
     ensureAssetRackDirectoryIndex,
     ensureCreateLibraryPathAllowedRoot,

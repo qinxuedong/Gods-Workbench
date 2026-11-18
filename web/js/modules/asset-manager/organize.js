@@ -23,7 +23,10 @@ import {
     ASSET_LIBRARY_FOLDER_HIDDEN_KEY,
     ASSET_LIBRARY_PRESETS,
     ASSET_ORGANIZE_UNDO_LIMIT,
-    BOARD_CREATE_PATH_FIELD_KEY,
+    ASSET_BOARD_MIGRATION_LOCK_KEY,
+    ASSET_BOARD_MIGRATION_TAB_ID,
+    ASSET_BOARD_SETTINGS_KEY,
+    SYSTEM_ASSET_BOARDS,
     VERSION_CONFLICT_MESSAGE,
     activeAssetCategory,
     activeAssetCategoryId,
@@ -41,6 +44,7 @@ import {
     activeWorkflowCategoryId,
     activeWorkflowLibrary,
     activeWorkflowLibraryId,
+    allowedRootSettingsState,
     apiJsonResponse,
     applyRegistryAssetResponse,
     applyRegistryFilterDefinition,
@@ -85,17 +89,18 @@ import {
     assetTreeExpanded,
     assetTreeSelectedKey,
     boardCollapsedFolders,
-    boardCreateFocusTarget,
-    boardCreateState,
-    boardEditState,
     boardFolderCreateState,
     boardFolderSelection,
     boardGroupSelection,
     boardHiddenFolders,
+    boardMigrationSeq,
+    boardMigrationState,
     boardReferenceCanvasSelection,
     boardSourceSelection,
     boardSourceState,
+    bumpBoardMigrationSeq,
     canBrowseServerDirectories,
+    cancelActiveBoardMigration,
     canManageAllowedRoots,
     canvasAssetsData,
     closeAssetOrganizeMenu,
@@ -127,6 +132,7 @@ import {
     localLibraries,
     markIndexState,
     normalizeRegistryAsset,
+    normalizeStoredCustomBoards,
     notifyShellTreeSnapshot,
     parseAssetClassFilterKey,
     pendingBatchDelete,
@@ -146,6 +152,7 @@ import {
     promptQuery,
     promptTreeEdit,
     promptTreeFocus,
+    readBoardNavigationState,
     readScriptWorkspaceAssets,
     refreshIcons,
     refreshRegistryAssets,
@@ -191,6 +198,7 @@ import {
     registryVisibleAssetList,
     registryVisibleAssets,
     reindexAssetSource,
+    releaseBoardMigrationLock,
     render,
     renderAssetTreePanel,
     renderBoardNavigation,
@@ -239,10 +247,9 @@ import {
     setAssetPreviewAllState,
     setAssetTreeEdit,
     setAssetTreeSelectedKey,
-    setBoardCreateFocusTarget,
-    setBoardCreateState,
-    setBoardEditState,
     setBoardFolderCreateState,
+    setBoardMigrationState,
+    setBoardNavigationState,
     setBoardSourceState,
     setDetailMediaLibraryDragId,
     setDetailViewerFontListCollapsed,
@@ -311,6 +318,7 @@ import {
     workflowTreeEdit,
 } from '../asset-manager.js';
 import assetManagerApi from './api.js';
+import assetManagerHttp from './http.js';
 import {
     formatDate,
 } from './formatters.js';
@@ -344,11 +352,11 @@ import {
     applyStorageSettingsData,
     clearAssetRackFolder,
     confirmRootAliasSuggestion,
+    describeResourceFolderPathRejection,
     ensureAssetRackDirectoryIndex,
     ensureCreateLibraryPathAllowedRoot,
     loadAssetRackDiskFolders,
     loadAssetRackRegisteredFolders,
-    renderServerDirectoryBrowser,
     renderStorageSettingsModal,
     resetAssetRackDirectoryIndex,
     saveDetailImageEditorVersion,
@@ -366,7 +374,27 @@ import { GW_DEFERRED } from './state.js';
 // {kind:'create'|'delete'|'conflict', ...}
 let assetOrganizeInline = null;
 let assetOrganizeToastTimer = 0;
-let boardCreateReturnFocus = null;
+let activeBoardMigration = null;
+const boardMigrationCancelListeners = new Set();
+function notifyBoardMigrationSeqChanged(){
+    for(const fn of [...boardMigrationCancelListeners]){
+        try { fn(); } catch(_) {}
+    }
+}
+function raceMigrationCancel(seq, promise){
+    if(seq !== boardMigrationSeq) return Promise.resolve({__cancelled:true});
+    let handler = null;
+    const cancelPromise = new Promise(resolve => {
+        handler = () => { if(seq !== boardMigrationSeq) resolve({__cancelled:true}); };
+        boardMigrationCancelListeners.add(handler);
+    });
+    return Promise.race([
+        Promise.resolve(promise).then(value => ({__cancelled:false, value})),
+        cancelPromise,
+    ]).finally(() => {
+        if(handler) boardMigrationCancelListeners.delete(handler);
+    });
+}
 let promptItemSnapshot = {revision:0, items:[]};
 let casRefreshInFlight = false;
 function renderScriptAssetsManager(){
@@ -441,11 +469,11 @@ function resetBoardSelections(){
     selectedLocalUploadIds.clear();
     selectedCanvasAssetIds.clear();
 }
-async function activateAssetBoard(id){
+async function activateAssetBoard(requestedId){
     resetRegistryScroll();
+    const id = assetBoardById(requestedId) ? requestedId : 'registry';
     const board = assetBoardById(id);
-    if(!board || ensureBoardNavigationState().hidden.includes(id)) return;
-    const previousBoard = assetBoardById(activeTab);
+    if(!board) return;
     setActiveTab(id);
     setRegistryRackSnapshot(null);
     setRegistryRequestSeq(registryRequestSeq + 1);
@@ -476,24 +504,8 @@ async function activateAssetBoard(id){
     if(id !== 'projects' && registryProjectFilterId === '__all__'){
         setRegistryProjectFilterId('');
     }
-    if(!board.system){
-        // 【QIN-553】进入 LUT 库（含 lut 预设看板）时幂等登记内置 LUT 包。
-        if(board.preset === 'lut' || (board.kinds || []).includes('lut')){
-            try { await ensureBuiltinLutsRegistered(); } catch(err){ setStatus(err.message || '内置 LUT 登记失败'); }
-        }
-        const selectedSource = board.sourceBoard ? board.rootId : (boardSourceSelection[board.id] || '');
-        applyRegistryFilterDefinition({category:board.category || '', rootId:selectedSource === '__automatic__' ? '' : selectedSource, groupSimilar:registryGroupSimilar});
-        const queryKey = registryQueryString();
-        const cached = registryAssetsQueryCache.get(queryKey);
-        if(cached) applyRegistryAssetResponse(cached);
-        else { setRegistryAssets([]); setRegistryTotal(null); setRegistryTotalKnown(false); }
-        setRegistryLoading(!cached);
-        render();
-        loadCustomBoardFolderDirectories(board).catch(() => null);
-        if(!cached){
-            refreshRegistryAssets(false).then(() => { if(activeTab === id) render(); }).catch(err => setStatus(err.message || '绱犳潗搴撳姞杞藉け璐?'));
-        }
-        return;
+    if(board.preset === 'lut' || (board.kinds || []).includes('lut')){
+        try { await ensureBuiltinLutsRegistered(); } catch(err){ setStatus(err.message || '内置 LUT 登记失败'); }
     }
     if(id === 'lut'){
         // 【QIN-580】LUT 库是独立子页面：按 kind=lut 取数，客户端再按 .cube 收口。
@@ -538,96 +550,293 @@ async function activateAssetBoard(id){
         notifyShellTreeSnapshot();
         return;
     }
-    if(board.id === 'local' && !localAssetsLoaded){
-        const loading = loadLocalAssets();
-        render();
-        await loading;
-        if(activeTab === id) render();
-        return;
-    }
     render();
 }
-function moveAssetBoardByKeyboard(id, direction){
-    if(id === 'registry') return;
-    const visible = visibleAssetBoards().map(item => item.id);
-    const index = visible.indexOf(id);
-    const target = visible[index + direction];
-    if(index < 0 || !target || target === 'registry') return;
-    const state = ensureBoardNavigationState();
-    const sourceIndex = state.order.indexOf(id);
-    const targetIndex = state.order.indexOf(target);
-    if(sourceIndex < 1 || targetIndex < 1) return;
-    [state.order[sourceIndex], state.order[targetIndex]] = [state.order[targetIndex], state.order[sourceIndex]];
-    saveBoardNavigationState();
-    renderBoardNavigation();
-    requestAnimationFrame(() => assetTabsEl?.querySelector(`[data-tab="${CSS.escape(id)}"]`)?.focus());
+function readMigrationLockRecord(){
+    try {
+        const raw = JSON.parse(localStorage.getItem(ASSET_BOARD_MIGRATION_LOCK_KEY) || 'null');
+        if(raw && typeof raw === 'object' && Number(raw.expiresAt || 0) > Date.now() && raw.owner){
+            return raw;
+        }
+        if(raw) localStorage.removeItem(ASSET_BOARD_MIGRATION_LOCK_KEY);
+    } catch(_) {}
+    return null;
 }
-function setAssetBoardHidden(id, hidden){
-    if(id === 'registry') return;
-    const state = ensureBoardNavigationState();
-    const values = new Set(state.hidden);
-    if(hidden) values.add(id); else values.delete(id);
-    state.hidden = [...values];
-    if(activeTab === id && hidden) setActiveTab('registry');
-    saveBoardNavigationState();
-    renderBoardNavigation();
-    render();
-}
-async function removeAssetSourceRegistrations(sourceIds=[], {deferViewCleanup=false}={}){
-    const ids = new Set((Array.isArray(sourceIds) ? sourceIds : [...sourceIds]).map(String).filter(Boolean));
-    if(!ids.size) return null;
-    const state = ensureBoardNavigationState();
-    const referenced = new Set(state.customBoards.flatMap(item => (item.sources || []).map(source => String(source.id || ''))));
-    const removableIds = new Set([...ids].filter(sourceId => !referenced.has(sourceId)));
-    if(!removableIds.size) return null;
-    const entries = storageExtraLocalEntries().filter(entry => !removableIds.has(String(entry.id || '')));
-    const names = storageLocalLibraryNames();
-    removableIds.forEach(sourceId => delete names[sourceId]);
-    const data = await apiJsonResponse(assetManagerApi.updateStorageSettings({
-        dirs:storageSettingsState.dirs || {},
-        extra_local_entries:entries,
-        local_library_names:names,
-        local_library_order:localLibraries.map(lib => lib.id).filter(id => !removableIds.has(String(id))),
-        expected_version:Number(storageSettingsState.revision || 1),
-    }));
-    applyStorageSettingsData(data || {});
-    if(!deferViewCleanup){
-        const aliasIds = new Set(removableIds);
-        (registryFacets.roots || []).forEach(root => {
-            const candidates = [root.id, ...(root.aliases || [])].map(String).filter(Boolean);
-            if(candidates.some(id => removableIds.has(id))) candidates.forEach(id => aliasIds.add(id));
+async function acquireBoardMigrationLock(seq, {tabId=ASSET_BOARD_MIGRATION_TAB_ID, waitTimeoutMs=25000}={}){
+    const deadline = Date.now() + Math.max(100, Number(waitTimeoutMs) || 25000);
+    while(Date.now() < deadline){
+        if(seq !== boardMigrationSeq) return {acquired:false, cancelled:true};
+        const current = readMigrationLockRecord();
+        if(!current || current.owner === tabId){
+            const lockPayload = {owner:tabId, acquiredAt:Date.now(), expiresAt:Date.now() + 30000};
+            try {
+                localStorage.setItem(ASSET_BOARD_MIGRATION_LOCK_KEY, JSON.stringify(lockPayload));
+                const verified = JSON.parse(localStorage.getItem(ASSET_BOARD_MIGRATION_LOCK_KEY) || 'null');
+                if(verified?.owner === tabId) return {acquired:true, cancelled:false};
+            } catch(_) {
+                return {acquired:true, cancelled:false};
+            }
+        }
+        await new Promise(resolve => {
+            let done = false;
+            const finish = () => {
+                if(done) return;
+                done = true;
+                globalThis.removeEventListener?.('storage', onStorage);
+                clearTimeout(timer);
+                resolve();
+            };
+            const onStorage = event => {
+                if(!event || event.key === ASSET_BOARD_MIGRATION_LOCK_KEY || event.key === ASSET_BOARD_SETTINGS_KEY){
+                    finish();
+                }
+            };
+            globalThis.addEventListener?.('storage', onStorage);
+            const timer = setTimeout(finish, 30);
         });
-        setRegistryAssets(registryAssets.filter(item =>
-            !aliasIds.has(String(item.storage_root_id || '')) && !aliasIds.has(String(item.root_id || ''))));
-        registryFacets.roots = (registryFacets.roots || []).filter(root =>
-            ![root.id, ...(root.aliases || [])].some(id => aliasIds.has(String(id || ''))));
-        if(registryStatus?.overview?.roots){
-            registryStatus.overview.roots = registryStatus.overview.roots.filter(root =>
-                ![root.id, ...(root.aliases || [])].some(id => aliasIds.has(String(id || ''))));
-        }
-        registryAssetsQueryCache.clear();
-        if(!directorySettingsPage && !permissionsSettingsPage){
-            void refreshRegistryFacetData().catch(error => reportRegistryWriteRefreshFailure('素材来源已注销，但目录计数刷新失败', error));
-            void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('素材来源已注销，但列表刷新失败', error));
-        }
     }
-    return removableIds;
+    return {acquired:false, cancelled:false};
 }
-async function deleteCustomAssetBoard(id){
-    const state = ensureBoardNavigationState();
-    const board = state.customBoards.find(item => item.id === id);
-    if(!board || !window.confirm(`删除资源库“${board.name}”？仅移除该资源库看板定义，不会注销其素材来源路径；如需停止索引并注销路径，请在来源设置中单独移除来源。`)) return;
-    state.customBoards = state.customBoards.filter(item => item.id !== id);
-    state.order = state.order.filter(value => value !== id);
-    state.hidden = state.hidden.filter(value => value !== id);
-    if(activeTab === id) setActiveTab('registry');
-    saveBoardNavigationState();
-    // 【修复问题5】删除看板与注销素材来源解耦：删除只移除看板定义，已登记路径保留。
-    // 保留的路径会以“已登记素材库”自动看板继续显示；注销路径请在来源设置中显式操作。
-    renderBoardNavigation();
-    renderStorageSettingsModal();
-    render();
-    setStatus(`已删除资源库“${board.name}”，素材来源路径已保留，可在来源设置中单独注销`);
+function resolveMigrationSourcePath(source={}){
+    const direct = String(source.path || '').trim();
+    if(direct) return direct;
+    const sid = String(source.id || '').trim();
+    if(!sid) return '';
+    const lib = localLibraries.find(item => String(item.id || '') === sid);
+    if(lib?.path) return String(lib.path).trim();
+    const extra = storageExtraLocalEntries().find(item => String(item.id || '') === sid);
+    if(extra?.path) return String(extra.path).trim();
+    const rootItem = (allowedRootSettingsState?.roots || []).find(item => String(item.id || '') === sid || (Array.isArray(item.aliases) && item.aliases.map(String).includes(sid)));
+    return String(rootItem?.path || '').trim();
+}
+function writePersistedBoardNavigation(customBoards, migrationMeta){
+    const nextState = {
+        order:SYSTEM_ASSET_BOARDS.map(item => item.id),
+        hidden:[],
+        customBoards,
+        migration:migrationMeta,
+    };
+    setBoardNavigationState(nextState);
+    try { localStorage.setItem(ASSET_BOARD_SETTINGS_KEY, JSON.stringify(nextState)); } catch(_) {}
+    return nextState;
+}
+function cancelAssetBoardMigration(){
+    cancelActiveBoardMigration();
+}
+async function runAssetBoardOneTimeMigration(options={}){
+    if(activeBoardMigration && activeBoardMigration.seq === boardMigrationSeq){
+        return activeBoardMigration.promise;
+    }
+    const seq = bumpBoardMigrationSeq();
+    const task = (async () => {
+        const tabId = String(options.tabId || ASSET_BOARD_MIGRATION_TAB_ID);
+        let stored = readBoardNavigationState();
+        if(!stored.customBoards.length){
+            writePersistedBoardNavigation([], {status:'done', blockedBoards:[], updatedAt:new Date().toISOString()});
+            setBoardMigrationState({running:false, blockedBoards:[], failedMessage:'', completed:true, dismissed:false});
+            return {status:'noop', migrated:0};
+        }
+        const lockResult = await acquireBoardMigrationLock(seq, {tabId, waitTimeoutMs:options.lockWaitMs});
+        if(lockResult.cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+        if(!lockResult.acquired) return {status:'busy', migrated:0};
+        let convertedCount = 0;
+        try {
+            stored = readBoardNavigationState();
+            if(!stored.customBoards.length){
+                writePersistedBoardNavigation([], {status:'done', blockedBoards:[], updatedAt:new Date().toISOString()});
+                setBoardMigrationState({running:false, blockedBoards:[], failedMessage:'', completed:true, dismissed:false});
+                return {status:'delegated', migrated:0};
+            }
+            setBoardMigrationState({running:true, blockedBoards:[], failedMessage:'', completed:false, dismissed:false});
+            setStatus('正在将旧版资源库来源迁移为资源文件夹…');
+            render();
+
+            const principalStep = await raceMigrationCancel(seq, loadRegistryPrincipal());
+            if(principalStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+            const settingsStep = await raceMigrationCancel(seq, apiJsonResponse(assetManagerApi.getStorageSettings()));
+            if(settingsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+            applyStorageSettingsData(settingsStep.value || {});
+
+            let allowedRoots = Array.isArray(allowedRootSettingsState?.roots) ? allowedRootSettingsState.roots : [];
+            if(canManageAllowedRoots()){
+                try {
+                    const rootsStep = await raceMigrationCancel(seq, apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'})));
+                    if(rootsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:0};
+                    allowedRoots = Array.isArray(rootsStep.value?.roots) ? rootsStep.value.roots : allowedRoots;
+                } catch(_) {}
+            }
+
+            const existingByKey = new Map();
+            localLibraries.forEach(lib => {
+                const key = pathCompareKey(lib.path || '');
+                if(key) existingByKey.set(key, lib);
+            });
+            const uniqueTasks = new Map();
+            stored.customBoards.forEach(board => {
+                (board.sources || []).forEach(source => {
+                    const resolvedPath = resolveMigrationSourcePath(source);
+                    const pathKey = pathCompareKey(resolvedPath);
+                    if(!resolvedPath || !pathKey) return;
+                    if(!uniqueTasks.has(pathKey)){
+                        uniqueTasks.set(pathKey, {
+                            pathKey,
+                            path:resolvedPath,
+                            sourceName:String(source.name || `${board.name || '资源文件夹'}素材`).trim() || '用户素材',
+                        });
+                    }
+                });
+            });
+
+            const outcomes = new Map();
+            const pathJobs = [...uniqueTasks.values()].map(async taskInfo => {
+                if(existingByKey.has(taskInfo.pathKey)){
+                    outcomes.set(taskInfo.pathKey, {ok:true, alreadyExisted:true});
+                    return;
+                }
+                const rejection = describeResourceFolderPathRejection(taskInfo.path);
+                if(rejection){
+                    outcomes.set(taskInfo.pathKey, {ok:false, reason:rejection});
+                    return;
+                }
+                const removedMatch = allowedRoots.find(rootItem => (
+                    rootItem?.active === false &&
+                    pathCompareKey(rootItem.path || '') &&
+                    (pathCompareKey(taskInfo.path) === pathCompareKey(rootItem.path) || pathCompareKey(taskInfo.path).startsWith(`${pathCompareKey(rootItem.path)}/`))
+                ));
+                const activeMatch = allowedRoots.find(rootItem => (
+                    rootItem?.active !== false &&
+                    pathCompareKey(rootItem.path || '') &&
+                    (pathCompareKey(taskInfo.path) === pathCompareKey(rootItem.path) || pathCompareKey(taskInfo.path).startsWith(`${pathCompareKey(rootItem.path)}/`))
+                ));
+                if(removedMatch && !activeMatch){
+                    outcomes.set(taskInfo.pathKey, {ok:false, reason:'该文件夹曾被移出资源库，请在「设置 › 权限」恢复或手动添加'});
+                    return;
+                }
+                try {
+                    const source = await attachPathToAssetBoard('', taskInfo.sourceName, taskInfo.path, {silentMigration:true});
+                    if(source){
+                        convertedCount += 1;
+                        outcomes.set(taskInfo.pathKey, {ok:true, source});
+                    } else {
+                        outcomes.set(taskInfo.pathKey, {ok:false, reason:'迁移未确认，请手动添加该资源文件夹'});
+                    }
+                } catch(err){
+                    outcomes.set(taskInfo.pathKey, {ok:false, reason:err?.message || '资源文件夹迁移失败'});
+                }
+            });
+
+            const jobsStep = await raceMigrationCancel(seq, Promise.allSettled(pathJobs));
+            if(jobsStep.__cancelled || seq !== boardMigrationSeq) return {status:'cancelled', migrated:convertedCount};
+
+            // 仅在全部在途请求结束后再读取最新 localStorage 扣减成功看板，保证慢请求完成前绝不删看板定义。
+            const latest = readBoardNavigationState();
+            const remainingBoards = [];
+            const blockedBoards = [];
+            latest.customBoards.forEach(board => {
+                const pendingSources = [];
+                (board.sources || []).forEach(source => {
+                    const resolvedPath = resolveMigrationSourcePath(source);
+                    const pathKey = pathCompareKey(resolvedPath);
+                    if(!resolvedPath || !pathKey){
+                        const sid = String(source.id || '').trim();
+                        const matchedById = sid ? localLibraries.some(lib => String(lib.id || '') === sid) : false;
+                        // 仅当按 id 确切命中已知库、或属于无 id 的历史空壳占位条目时扣减；
+                        // 未能解析物理路径的 local_extra_* / root_* 来源必须保留原看板与提示，严禁静默丢弃。
+                        if(matchedById || !sid || !/^local_extra_|^root_/.test(sid)){
+                            return;
+                        }
+                        pendingSources.push({...source});
+                        blockedBoards.push({boardId:board.id, boardName:board.name, path:sid, reason:'未能解析该来源的物理路径，请检查设置后重试'});
+                        return;
+                    }
+                    const outcome = outcomes.get(pathKey);
+                    if(!outcome){
+                        pendingSources.push({...source, path:resolvedPath});
+                        blockedBoards.push({boardId:board.id, boardName:board.name, path:resolvedPath, reason:'迁移被中断，将在下次加载续跑'});
+                        return;
+                    }
+                    if(!outcome.ok){
+                        pendingSources.push({...source, path:resolvedPath});
+                        blockedBoards.push({boardId:board.id, boardName:board.name, path:resolvedPath, reason:outcome.reason});
+                    }
+                });
+                if(pendingSources.length){
+                    remainingBoards.push({...board, sources:pendingSources});
+                }
+            });
+
+            const migrationMeta = {
+                status:remainingBoards.length ? 'partial' : 'done',
+                blockedBoards,
+                updatedAt:new Date().toISOString(),
+            };
+            writePersistedBoardNavigation(remainingBoards, migrationMeta);
+            setBoardMigrationState({
+                running:false,
+                blockedBoards,
+                failedMessage:blockedBoards.length ? '部分资源库来源尚未授权或迁移失败，对应看板定义已保留；请联系管理员授权后重试。' : '',
+                completed:remainingBoards.length === 0,
+                dismissed:false,
+            });
+            if(convertedCount > 0){
+                void loadAssetAllowedRootPaths().catch(() => null);
+                void refreshRegistryFacetData().catch(error => reportRegistryWriteRefreshFailure('来源迁移已完成，但目录计数刷新失败', error));
+                void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('来源迁移已完成，但列表刷新失败', error));
+            }
+            if(activeTab && !assetBoardById(activeTab) && !['inbox','local','assets'].includes(activeTab)) setActiveTab('registry');
+            renderBoardNavigation();
+            notifyShellTreeSnapshot();
+            render();
+            if(!remainingBoards.length){
+                setStatus(convertedCount > 0 ? `已将 ${convertedCount} 个资源库来源迁移为资源文件夹` : '资源库结构已同步');
+            } else {
+                setStatus('部分资源库来源待管理员授权或迁移失败，已保留原看板定义');
+            }
+            return {status:remainingBoards.length ? 'partial' : 'done', migrated:convertedCount, blockedBoards};
+        } catch(err) {
+            if(seq !== boardMigrationSeq) return {status:'cancelled', migrated:convertedCount};
+            const reason = err?.message || '读取资源设置或迁移旧版资源库来源失败，请点击重试。';
+            const latest = readBoardNavigationState();
+            const failedBlocked = [];
+            latest.customBoards.forEach(board => {
+                (board.sources || []).forEach(source => {
+                    failedBlocked.push({
+                        boardId:board.id,
+                        boardName:board.name,
+                        path:resolveMigrationSourcePath(source) || String(source.id || ''),
+                        reason,
+                    });
+                });
+            });
+            writePersistedBoardNavigation(latest.customBoards, {
+                status:'partial',
+                blockedBoards:failedBlocked,
+                updatedAt:new Date().toISOString(),
+            });
+            setBoardMigrationState({
+                running:false,
+                blockedBoards:failedBlocked,
+                failedMessage:reason,
+                completed:false,
+                dismissed:false,
+            });
+            setStatus('旧版资源库来源迁移失败，已保留原看板定义');
+            renderBoardNavigation();
+            render();
+            return {status:'failed', error:reason, migrated:convertedCount, blockedBoards:failedBlocked};
+        } finally {
+            if(boardMigrationState.running && seq === boardMigrationSeq){
+                setBoardMigrationState({...boardMigrationState, running:false});
+            }
+            releaseBoardMigrationLock(tabId);
+        }
+    })();
+    activeBoardMigration = {seq, promise:task};
+    try {
+        return await task;
+    } finally {
+        if(activeBoardMigration?.promise === task) activeBoardMigration = null;
+    }
 }
 let resourceFolderActionSeq = 0;
 let resourceFolderActionBusy = '';
@@ -735,23 +944,6 @@ function removeResourceFolderViewState(rootTarget, identity){
     }
     render();
 }
-async function removeGeneratedSourceBoard(rootId, name='素材库'){
-    const sourceId = String(rootId || '').trim();
-    if(!sourceId || !sourceId.startsWith('local')) return;
-    if(!window.confirm(`移除素材库”${name}”？将停止该路径的索引并从资产中心隐藏其内容，不会删除源文件。`)) return;
-    setStatus(`正在移除素材库“${name}”…`);
-    try {
-        const removed = await removeAssetSourceRegistrations([sourceId]);
-        if(!removed?.size) throw new Error('素材来源未移除，请刷新后重试');
-        if(activeTab === `source_library_${sourceId}`) setActiveTab('registry');
-        renderBoardNavigation();
-        renderStorageSettingsModal();
-        render();
-        setStatus(`已移除素材库”${name}”，索引任务已停止`);
-    } catch(err){
-        setStatus(err.message || '素材库路径移除失败');
-    }
-}
 function togglePreviewDeleteCategory(id){
     const keys = ['image','video','storyboard','other'];
     const current = assetPreviewAllState.deleteCategories || {};
@@ -767,257 +959,9 @@ function togglePreviewDeleteCategory(id){
     setAssetPreviewAllState({...assetPreviewAllState, deleteCategories:next});
     renderStorageSettingsModal();
 }
-function renderCreateLibraryModal(){
-    let overlay = document.getElementById('boardCreateOverlay');
-    if(!boardCreateState.open){ overlay?.remove(); return; }
-    const pathPicker = canBrowseServerDirectories()
-        ? `<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}" title="浏览服务器目录" aria-label="选择资源库路径"><i data-lucide="folder-open"></i></button>`
-        : '';
-    if(!overlay){
-        overlay = document.createElement('div');
-        overlay.id = 'boardCreateOverlay';
-        overlay.className = 'storage-settings-overlay board-create-overlay';
-        document.body.appendChild(overlay);
-    }
-    overlay.innerHTML = `<div class="board-create-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardCreateTitle">
-        <div class="storage-settings-head">
-            <div><strong id="boardCreateTitle">新增资源库</strong><span>创建一个不限资源类型的独立看板。</span></div>
-            <button type="button" data-board-create-close aria-label="关闭"><i data-lucide="x"></i></button>
-        </div>
-        <div class="board-create-form board-create-form-path">
-            <label><span>资源库名称</span><input id="boardCreateName" maxlength="32" value="${escapeAttr(boardCreateState.name || '')}" placeholder="例如：品牌素材库"></label>
-            <label class="board-create-path-field"><span>资源路径（可选）</span><div class="directory-input-row"><input id="boardCreatePath" list="boardKnownPaths" value="${escapeAttr(boardCreateState.path || '')}" placeholder="输入本机或 NAS 素材目录">${pathPicker}</div></label>
-            <datalist id="boardKnownPaths">${localLibraries.map(lib => `<option value="${escapeAttr(lib.path || '')}">${escapeHtml(lib.name || '')}</option>`).join('')}</datalist>
-            ${boardCreateState.error ? `<div class="board-create-error" role="alert"><i data-lucide="alert-triangle"></i><span>${escapeHtml(boardCreateState.error)}</span></div>` : ''}
-        </div>
-        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-create-close ${boardCreateState.saving ? 'disabled' : ''}>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-create-confirm ${boardCreateState.saving ? 'disabled' : ''}><i data-lucide="${boardCreateState.saving ? 'loader' : 'plus'}"></i><span>${boardCreateState.saving ? '正在创建…' : '创建资源库'}</span></button></div>
-    </div>`;
-    markAssetFloatingSurface(overlay, {surface:'asset-board-create', content:'.board-create-modal', close:closeCreateLibraryModal});
-    refreshIcons();
-    const requestedFocus = boardCreateFocusTarget;
-    setBoardCreateFocusTarget('');
-    requestAnimationFrame(() => {
-        const requested = requestedFocus ? document.getElementById(requestedFocus) : null;
-        if(requested){ requested.focus(); return; }
-        const name = document.getElementById('boardCreateName');
-        const modal = document.querySelector('#boardCreateOverlay .board-create-modal');
-        const active = document.activeElement;
-        if(!name || !modal) return;
-        if(active && modal.contains(active) && active !== name && active.matches?.('input, textarea, select, button')) return;
-        name.focus();
-    });
-}
-function createLibraryTrigger(){
-    try {
-        return window.parent?.document?.getElementById('assetSidebarCreate') || document.querySelector('#assetBoardTabs [data-board-create]');
-    } catch(_) { return document.querySelector('#assetBoardTabs [data-board-create]'); }
-}
-async function openCreateLibraryModal(){
-    await loadRegistryPrincipal();
-    boardCreateReturnFocus = createLibraryTrigger();
-    setBoardCreateState({open:true, preset:'other', name:'', nameManuallyEdited:false, path:'', saving:false, error:''});
-    renderCreateLibraryModal();
-}
-function closeCreateLibraryModal(){
-    const returnFocus = boardCreateReturnFocus;
-    boardCreateReturnFocus = null;
-    if(serverDirectoryBrowserState.key === BOARD_CREATE_PATH_FIELD_KEY){
-        setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false, saving:false});
-        renderBoardCreatePathBrowser();
-    }
-    boardCreateState.open = false;
-    boardCreateState.saving = false;
-    boardCreateState.error = '';
-    renderCreateLibraryModal();
-    if(returnFocus?.isConnected) requestAnimationFrame(() => returnFocus.focus());
-}
-function renderBoardEditModal(){
-    let overlay = document.getElementById('boardEditOverlay');
-    if(!boardEditState.open){ overlay?.remove(); return; }
-    const board = ensureBoardNavigationState().customBoards.find(item => item.id === boardEditState.boardId);
-    if(!board){ boardEditState.open = false; overlay?.remove(); return; }
-    if(!overlay){
-        overlay = document.createElement('div');
-        overlay.id = 'boardEditOverlay';
-        overlay.className = 'storage-settings-overlay board-edit-overlay';
-        document.body.appendChild(overlay);
-    }
-    overlay.innerHTML = `<div class="board-source-modal board-library-edit-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardEditTitle">
-        <div class="storage-settings-head"><div><strong id="boardEditTitle">修改资源库</strong><span>名称用于看板显示，路径用于素材索引。</span></div><button type="button" data-board-edit-close aria-label="关闭"><i data-lucide="x"></i></button></div>
-        <div class="board-source-form board-library-edit-form">
-            <label><span>资源库名称</span><input id="boardEditName" maxlength="32" value="${escapeAttr(boardEditState.name || board.name)}" placeholder="资源库名称"></label>
-            <label><span>素材库路径</span><input id="boardEditPath" value="${escapeAttr(boardEditState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
-        </div>
-        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-edit-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-board-edit-save ${boardEditState.saving ? 'disabled' : ''}><i data-lucide="${boardEditState.saving ? 'loader-2' : 'save'}"></i><span>${boardEditState.saving ? '正在保存…' : '保存修改'}</span></button></div>
-    </div>`;
-    markAssetFloatingSurface(overlay, {surface:'asset-board-edit', content:'.board-library-edit-modal', close:closeBoardEditModal});
-    refreshIcons();
-    if(!boardEditState.saving) requestAnimationFrame(() => document.getElementById('boardEditName')?.focus());
-}
-function openBoardEditModal(boardId){
-    const board = ensureBoardNavigationState().customBoards.find(item => item.id === boardId);
-    if(!board) return;
-    setBoardEditState({open:true, boardId, name:board.name || '', path:String(board.sources?.[0]?.path || ''), saving:false});
-    renderBoardEditModal();
-}
-function closeBoardEditModal(){
-    if(boardEditState.saving) return;
-    boardEditState.open = false;
-    renderBoardEditModal();
-}
-async function saveBoardEdit(){
-    const board = ensureBoardNavigationState().customBoards.find(item => item.id === boardEditState.boardId);
-    if(!board || boardEditState.saving) return;
-    const name = String(document.getElementById('boardEditName')?.value || '').trim().slice(0,32);
-    const path = String(document.getElementById('boardEditPath')?.value || '').trim();
-    if(!name){ setStatus('请输入资源库名称'); return; }
-    const source = board.sources?.[0] || null;
-    if(source && !path){ setStatus('素材库路径不能为空'); return; }
-    setBoardEditState({...boardEditState, name, path, saving:true});
-    renderBoardEditModal();
-    try {
-        if(source && pathCompareKey(path) !== pathCompareKey(source.path)){
-            const updated = await updateBoardSourcePath(source.id, `${name}素材`, path);
-            if(updated) Object.assign(source, {name:updated.name, path:updated.path});
-        } else if(!source && path){
-            const created = await attachPathToAssetBoard(board.id, `${name}素材`, path);
-            if(!created) throw new Error('素材路径添加失败');
-            if(created.job_id){
-                waitForAssetIndexJob(created.job_id, created.name).catch(() => {});
-            }
-        }
-        board.name = name;
-        saveBoardNavigationState();
-        setBoardEditState({...boardEditState, open:false, saving:false});
-        renderBoardEditModal();
-        renderBoardNavigation();
-        renderStorageSettingsModal();
-        render();
-        setStatus(`已更新资源库“${name}”`);
-    } catch(err){
-        setBoardEditState({...boardEditState, saving:false});
-        renderBoardEditModal();
-        setStatus(err.message || '资源库修改失败');
-    }
-}
-function syncBoardCreateDraftFromDom(changedField=''){
-    if(!boardCreateState.open) return;
-    const name = document.getElementById('boardCreateName');
-    const path = document.getElementById('boardCreatePath');
-    if(!name && !path) return;
-    const nameManuallyEdited = changedField === 'boardCreateName' || boardCreateState.nameManuallyEdited;
-    const pathValue = path ? String(path.value || '') : boardCreateState.path;
-    const nameValue = name ? String(name.value || '') : boardCreateState.name;
-    const nextName = nameManuallyEdited ? nameValue : deriveBoardCreateNameFromPath(pathValue);
-    setBoardCreateState({
-        ...boardCreateState,
-        name: nextName,
-        nameManuallyEdited,
-        path: pathValue,
-    });
-    if(!nameManuallyEdited && name && name.value !== nextName) name.value = nextName;
-}
-function deriveBoardCreateNameFromPath(pathValue){
-    const path = String(pathValue || '').trim().replace(/[\\/]+$/, '');
-    if(!path || /^[a-z]:$/i.test(path)) return '';
-    return String(path.split(/[\\/]/).pop() || '').trim().slice(0, 32);
-}
-function updateBoardCreatePath(pathValue){
-    const path = String(pathValue || '').trim();
-    setBoardCreateState({
-        ...boardCreateState,
-        path,
-        name:boardCreateState.nameManuallyEdited ? boardCreateState.name : deriveBoardCreateNameFromPath(path),
-    });
-}
-async function createPresetAssetBoard(){
-    if(boardCreateState.saving) return;
-    const preset = ASSET_LIBRARY_PRESETS.find(item => item.id === 'other') || ASSET_LIBRARY_PRESETS[ASSET_LIBRARY_PRESETS.length - 1];
-    syncBoardCreateDraftFromDom();
-    const name = String(document.getElementById('boardCreateName')?.value || boardCreateState.name || '').trim().slice(0, 32);
-    const path = String(document.getElementById('boardCreatePath')?.value || boardCreateState.path || '').trim();
-    setBoardCreateState({...boardCreateState, name, path, error:''});
-    if(!name){
-        boardCreateState.error = '请输入资源库名称';
-        renderCreateLibraryModal();
-        setStatus('请输入资源库名称');
-        return;
-    }
-    if(!boardCreateState.open){
-        markIndexState('failed');
-        setStatus('资源库窗口已关闭，未建立索引');
-        return;
-    }
-    boardCreateState.saving = true;
-    boardCreateState.error = '';
-    renderCreateLibraryModal();
-    let source = null;
-    if(path){
-        markIndexState('pending');
-        setStatus('正在校验路径并登记素材来源…');
-        try {
-            // QIN-596 AC3：允许根管道已下沉进 attachPathToAssetBoard，两条入口
-            // 字面共用同一调用链（此处不再单独调用 ensure，避免双重恢复确认弹窗）。
-            source = await attachPathToAssetBoard('', `${name}素材`, path);
-        } catch(err) {
-            boardCreateState.saving = false;
-            boardCreateState.error = err.message || '素材库索引失败';
-            renderCreateLibraryModal();
-            markIndexState('failed');
-            setStatus(err.message || '素材库索引失败');
-            return;
-        }
-        if(!source){
-            // QIN-596：attach 返回 null = 用户取消（恢复确认/别名建议取消），
-            // 无写盘；不显示「已添加」。
-            boardCreateState.saving = false;
-            boardCreateState.error = '已取消添加，资源库未创建';
-            renderCreateLibraryModal();
-            markIndexState('skipped');
-            setStatus('已取消添加，资源库未创建');
-            return;
-        }
-    }
-    boardCreateState.saving = false;
-    const state = ensureBoardNavigationState();
-    const id = `library_${preset.id}_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 6)}`;
-    state.customBoards.push({id, name, preset:preset.id, icon:preset.icon, category:preset.category || '', kinds:[...preset.kinds], extensions:[...preset.extensions], sources:source ? [{...source, hidden:false}] : [], automaticHidden:false, excludedSourceIds:[], system:false});
-    state.order.push(id);
-    if(source) boardSourceSelection[id] = source.id;
-    saveBoardNavigationState();
-    closeCreateLibraryModal();
-    renderBoardNavigation();
-    if(source){
-        if(source.path && source.id) assetAllowedRootPaths.set(source.id, source.path);
-        void loadAssetAllowedRootPaths().catch(() => null);
-        void refreshRegistryFacetData().catch(() => null);
-        if(source.job_id){
-            markIndexState('pending');
-            setStatus(`已创建资源库“${name}”，素材来源正在建立索引…`);
-            waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
-        } else {
-            markIndexState('indexed');
-            setStatus(`已创建资源库“${name}”`);
-        }
-    } else {
-        markIndexState('skipped');
-        setStatus(`已创建资源库“${name}”，未填写路径，未建立索引`);
-    }
-    await activateAssetBoard(id);
-}
-function attachSourceRecordToBoard(boardId, source){
-    const board = ensureBoardNavigationState().customBoards.find(item => item.id === boardId);
-    if(!board || !source?.id) return;
-    board.sources = Array.isArray(board.sources) ? board.sources : [];
-    const existing = board.sources.find(item => item.id === source.id);
-    if(existing) Object.assign(existing, source, {hidden:false});
-    else board.sources.push({...source, hidden:false});
-    board.excludedSourceIds = (board.excludedSourceIds || []).filter(id => id !== source.id);
-    boardSourceSelection[boardId] = source.id;
-    boardFolderSelection[boardId] = '';
-    saveBoardNavigationState();
-}
-async function attachPathToAssetBoard(boardId, sourceName, path){
+// QIN-599 AC2：用户自定义资源库看板的创建、编辑、来源绑定管理逻辑已全部移除；
+// 添加资源文件夹统一复用 attachPathToAssetBoard('', name, path, options)。
+async function attachPathToAssetBoard(boardId, sourceName, path, options={}){
     const cleanPath = String(path || '').trim();
     if(!cleanPath) throw new Error('未填写素材路径，已跳过索引');
     // QIN-596 AC3：添加管道先经允许根保障（QIN-522 管道）：命中已移除允许根先弹
@@ -1039,6 +983,9 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
         }
         const candidates = Array.isArray(suggestionData?.candidates) ? suggestionData.candidates : [];
         if(candidates.length){
+            if(options?.silentMigration){
+                throw new Error('发现映射盘/UNC 别名候选，请手动添加资源文件夹并确认');
+            }
             const choice = await confirmRootAliasSuggestion(cleanPath, candidates, suggestionData?.revision);
             if(!choice?.confirmation?.bound) return null;
             const saved = await apiJsonResponse(assetManagerApi.getStorageSettings());
@@ -1109,55 +1056,43 @@ async function attachPathToAssetBoard(boardId, sourceName, path){
         if(reindexed?.ok && reindexed.data?.job_id) source.job_id = reindexed.data.job_id;
         else if(reindexed && reindexed.ok === false) setStatus(reindexed.error || '索引任务提交失败');
     }
-    if(boardId) attachSourceRecordToBoard(boardId, source);
     if(accepted?.job_id){
         source.job_id = accepted.job_id;
     }
     return source;
 }
+let boardSourceFocusTarget = null;
 function renderBoardSourceModal(){
     let overlay = document.getElementById('boardSourceOverlay');
     if(!boardSourceState.open){ overlay?.remove(); return; }
-    const board = assetBoardById(boardSourceState.boardId);
-    const editingSource = board?.sources?.find(source => source.id === boardSourceState.editor) || null;
-    const editing = Boolean(editingSource);
-    const showForm = !board || Boolean(boardSourceState.editor);
     if(!overlay){
         overlay = document.createElement('div');
         overlay.id = 'boardSourceOverlay';
         overlay.className = 'storage-settings-overlay board-create-overlay';
         document.body.appendChild(overlay);
     }
+    const errorHtml = boardSourceState.error
+        ? `<div class="board-create-error" role="alert"><i data-lucide="alert-circle"></i><span>${escapeHtml(boardSourceState.error)}</span></div>`
+        : '';
     overlay.innerHTML = `<div class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardSourceTitle">
-        <div class="storage-settings-head"><div><strong id="boardSourceTitle">${board ? '素材来源设置' : '添加资源文件夹'}</strong><span>${board ? `设置“${escapeHtml(board.name)}”的素材路径与显示范围。` : '添加一个可上传和分类的素材目录。'}</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
-        ${board ? `<div class="board-source-settings-list">
-            <div class="board-source-settings-row">
-                <span class="board-source-settings-icon"><i data-lucide="sparkles"></i></span>
-                <span class="board-source-settings-copy"><strong>自动归档</strong><small>按本资源库的素材类型自动收录</small></span>
-                <button class="board-visibility-switch ${board.automaticHidden ? '' : 'is-on'}" type="button" role="switch" aria-checked="${!board.automaticHidden}" data-board-source-visibility="__automatic__" data-board-id="${escapeAttr(board.id)}"><span></span><em>${board.automaticHidden ? '隐藏' : '显示'}</em></button>
-            </div>
-            ${(board.sources || []).map(source => `<div class="board-source-settings-row ${source.hidden ? 'is-hidden' : ''}">
-                <span class="board-source-settings-icon"><i data-lucide="folder"></i></span>
-                <span class="board-source-settings-copy"><strong>${escapeHtml(source.name)}</strong><small title="${escapeAttr(source.path)}">${escapeHtml(source.path || '未设置路径')}</small></span>
-                <button class="board-source-row-action" type="button" data-board-source-edit="${escapeAttr(source.id)}" title="更改素材路径"><i data-lucide="pencil"></i><span>更改</span></button>
-                <button class="board-visibility-switch ${source.hidden ? '' : 'is-on'}" type="button" role="switch" aria-checked="${!source.hidden}" data-board-source-visibility="${escapeAttr(source.id)}" data-board-id="${escapeAttr(board.id)}"><span></span><em>${source.hidden ? '隐藏' : '显示'}</em></button>
-                <button class="board-source-row-delete" type="button" data-board-source-delete="${escapeAttr(source.id)}" data-board-id="${escapeAttr(board.id)}" title="注销素材来源路径并停止索引（不会删除源文件）"><i data-lucide="trash-2"></i></button>
-            </div>`).join('')}
-            <button class="board-source-new" type="button" data-board-source-new><i data-lucide="folder-plus"></i><span>添加素材路径</span></button>
-        </div>` : ''}
-        ${showForm ? `<div class="board-source-form-wrap"><div class="board-source-form-head"><strong>${editing ? '更改素材路径' : '添加素材路径'}</strong><span>${editing ? '修改后会重新建立该来源的资产索引。' : '可选择已有来源，或创建新的本机 / NAS 路径。'}</span></div><div class="board-source-form">
-            ${editing ? '' : `<label><span>已有来源</span><select id="boardSourceExisting"><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>`}
-            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || editingSource?.name || '用户素材')}" placeholder="例如：NAS 品牌素材"></label>
-            <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || editingSource?.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
-            ${editing ? `<label><span>来源只读</span><input id="boardSourceReadOnly" type="checkbox" ${storageSettingsState.localLibraryReadOnly?.[editingSource?.id] ? 'checked' : ''}><small>禁止将该来源素材移入回收站</small></label>` : ''}
-        </div></div>` : ''}
-        <div class="board-create-actions"><button class="hw-btn" type="button" ${showForm ? 'data-board-source-editor-cancel' : 'data-board-source-close'}>${showForm && board ? '取消编辑' : '关闭'}</button>${showForm ? `<button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="${boardSourceState.saving ? 'loader-2' : (editing ? 'save' : 'folder-plus')}"></i><span>${boardSourceState.saving ? '正在添加…' : (editing ? '保存更改' : '添加来源')}</span></button>` : ''}</div>
+        <div class="storage-settings-head"><div><strong id="boardSourceTitle">添加资源文件夹</strong><span>添加一个可上传和分类的素材目录。</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
+        <div class="board-source-form-wrap"><div class="board-source-form-head"><strong>添加素材路径</strong><span>可选择已有来源，或添加新的本机 / NAS 路径。</span></div><div class="board-source-form">
+            <label><span>已有来源</span><select id="boardSourceExisting"><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
+            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || '用户素材')}" placeholder="例如：NAS 品牌素材"></label>
+            <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
+            ${errorHtml}
+        </div></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-source-editor-cancel ${boardSourceState.saving ? 'disabled' : ''}>关闭</button><button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="${boardSourceState.saving ? 'loader-2' : 'folder-plus'}"></i><span>${boardSourceState.saving ? '正在添加…' : '添加来源'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-source', content:'.board-source-modal', close:closeBoardSourceModal});
     refreshIcons();
 }
-function openBoardSourceModal(boardId='', editor=''){
-    setBoardSourceState({open:true, boardId, editor:editor || (boardId ? '' : 'new'), existingId:'', name:boardId ? `${assetBoardById(boardId)?.name || ''}素材` : '上传素材', path:''});
+function openBoardSourceModal(boardId='', editor='new'){
+    const active = typeof document !== 'undefined' ? document.activeElement : null;
+    boardSourceFocusTarget = (active && active !== document.body && typeof active.focus === 'function')
+        ? active
+        : (window.parent?.document?.getElementById('assetSidebarCreate') || document.querySelector('#assetBoardTabs [data-board-create]') || null);
+    setBoardSourceState({open:true, boardId:'', editor:editor || 'new', existingId:'', name:'上传素材', path:'', error:'', saving:false, generation:Number(boardSourceState?.generation || 0)});
     renderBoardSourceModal();
 }
 function closeBoardSourceModal(){
@@ -1166,100 +1101,17 @@ function closeBoardSourceModal(){
     // 状态由下次 facets/settings 刷新恢复。
     boardSourceState.generation = Number(boardSourceState.generation || 0) + 1;
     boardSourceState.saving = false;
+    boardSourceState.error = '';
     boardSourceState.open = false;
     renderBoardSourceModal();
-}
-function editBoardSource(sourceId){
-    const board = assetBoardById(boardSourceState.boardId);
-    const source = board?.sources?.find(item => item.id === sourceId);
-    if(!source) return;
-    setBoardSourceState({...boardSourceState, editor:source.id, existingId:'', name:source.name, path:source.path});
-    renderBoardSourceModal();
+    const focusTarget = boardSourceFocusTarget;
+    boardSourceFocusTarget = null;
+    if(focusTarget && typeof focusTarget.focus === 'function'){
+        try { focusTarget.focus(); } catch(_) {}
+    }
 }
 function cancelBoardSourceEditor(){
-    if(!boardSourceState.boardId){ closeBoardSourceModal(); return; }
-    setBoardSourceState({...boardSourceState, editor:'', existingId:'', name:'', path:''});
-    renderBoardSourceModal();
-}
-async function updateBoardSourcePath(sourceId, name, path, readOnly=false){
-    const cleanPath = String(path || '').trim();
-    if(!sourceId || !cleanPath) return null;
-    const data = await apiJsonResponse(assetManagerApi.getStorageSettings());
-    applyStorageSettingsData(data || {});
-    const dirs = {...(storageSettingsState.dirs || {})};
-    const entries = storageExtraLocalEntries();
-    const names = {...storageLocalLibraryNames(), [sourceId]:storageCleanName(name, '用户素材')};
-    if(sourceId === 'local') dirs.local = cleanPath;
-    else {
-        const entry = entries.find(item => item.id === sourceId);
-        if(!entry) throw new Error('素材来源不存在，请重新添加');
-        entry.name = storageCleanName(name, entry.name || '用户素材');
-        entry.path = cleanPath;
-        entry.kind = sourceId;
-    }
-    const saved = await apiJsonResponse(assetManagerApi.updateStorageSettings({
-        dirs,
-        extra_local_entries:entries,
-        local_library_names:names,
-        local_library_read_only:{...storageSettingsState.localLibraryReadOnly, [sourceId]:Boolean(readOnly)},
-        local_library_order:localLibraries.map(lib => lib.id).filter(Boolean),
-        expected_version:Number(storageSettingsState.revision || 1),
-    }));
-    applyStorageSettingsData(saved || {});
-    const updated = localLibraries.find(item => item.id === sourceId) || {id:sourceId, name:storageCleanName(name, '用户素材'), path:cleanPath};
-    ensureBoardNavigationState().customBoards.forEach(board => {
-        const source = (board.sources || []).find(item => item.id === sourceId);
-        if(source) Object.assign(source, {name:updated.name, path:updated.path});
-    });
-    saveBoardNavigationState();
-    await reindexAssetSource(sourceId);
-    return updated;
-}
-async function setBoardSourceVisible(boardId, sourceId){
-    const board = assetBoardById(boardId);
-    if(!board) return;
-    if(sourceId === '__automatic__') board.automaticHidden = !board.automaticHidden;
-    else {
-        const source = (board.sources || []).find(item => item.id === sourceId);
-        if(!source) return;
-        source.hidden = !source.hidden;
-        if(source.hidden && boardSourceSelection[boardId] === sourceId) boardSourceSelection[boardId] = '';
-    }
-    if(sourceId === '__automatic__' && board.automaticHidden && boardSourceSelection[boardId] === '__automatic__') boardSourceSelection[boardId] = '';
-    boardFolderSelection[boardId] = '';
-    saveBoardNavigationState();
-    renderBoardSourceModal();
-    if(activeTab === boardId){
-        applyRegistryFilterDefinition({category:board.category || '', rootId:'', groupSimilar:registryGroupSimilar});
-        await refreshRegistryAssets();
-    }
-}
-async function deleteBoardSource(boardId, sourceId){
-    const board = assetBoardById(boardId);
-    const source = board?.sources?.find(item => item.id === sourceId);
-    if(!board || !source || !window.confirm(`注销素材来源“${source.name}”？将停止该路径的索引并从资产中心移除其内容，源文件不受影响。`)) return;
-    board.sources = board.sources.filter(item => item.id !== sourceId);
-    board.excludedSourceIds = [...new Set([...(board.excludedSourceIds || []), sourceId])];
-    if(boardSourceSelection[boardId] === sourceId) boardSourceSelection[boardId] = '';
-    boardFolderSelection[boardId] = '';
-    saveBoardNavigationState();
-    renderBoardSourceModal();
-    if(activeTab === boardId){
-        applyRegistryFilterDefinition({category:board.category || '', rootId:'', groupSimilar:registryGroupSimilar});
-    }
-    try {
-        await removeAssetSourceRegistrations([sourceId]);
-        if(activeTab === boardId) await refreshRegistryAssets();
-        else render();
-        setStatus(`已从“${board.name}”删除来源“${source.name}”`);
-    } catch(err) {
-        board.sources = [...board.sources, source];
-        board.excludedSourceIds = (board.excludedSourceIds || []).filter(id => id !== sourceId);
-        saveBoardNavigationState();
-        setStatus(err.message || '素材库路径移除失败');
-        renderBoardSourceModal();
-        if(activeTab === boardId) await refreshRegistryAssets();
-    }
+    closeBoardSourceModal();
 }
 async function confirmBoardSource(){
     // QIN-596 §1/§7：确认忙碌守卫（忙碌中忽略重复确认）；capture 当前代际，
@@ -1267,59 +1119,44 @@ async function confirmBoardSource(){
     if(boardSourceState.saving) return;
     const generation = Number(boardSourceState.generation || 0);
     boardSourceState.saving = true;
+    boardSourceState.error = '';
     renderBoardSourceModal();
     try {
-    const existingId = String(document.getElementById('boardSourceExisting')?.value || '');
-    const name = String(document.getElementById('boardSourceName')?.value || '用户素材').trim();
-    const path = String(document.getElementById('boardSourcePath')?.value || '').trim();
-    let source = null;
-    const board = assetBoardById(boardSourceState.boardId);
-    const editingSource = board?.sources?.find(item => item.id === boardSourceState.editor) || null;
-    if(editingSource){
-        if(!path){ setStatus('请输入素材路径'); return; }
-        source = await updateBoardSourcePath(editingSource.id, name, path, Boolean(document.getElementById('boardSourceReadOnly')?.checked));
+        const existingId = String(document.getElementById('boardSourceExisting')?.value || '');
+        const name = String(document.getElementById('boardSourceName')?.value || '用户素材').trim();
+        const path = String(document.getElementById('boardSourcePath')?.value || '').trim();
+        let source = null;
+        if(existingId){
+            const lib = localLibraries.find(item => item.id === existingId);
+            if(lib) source = {id:lib.id, name:storageCleanName(name || lib.name, lib.name), path:lib.path};
+            if(source) await reindexAssetSource(source.id);
+            if(Number(boardSourceState.generation || 0) !== generation) return;
+        } else {
+            if(!path){ boardSourceState.error = '请输入素材路径'; setStatus(boardSourceState.error); return; }
+            source = await attachPathToAssetBoard('', name, path);
+            if(Number(boardSourceState.generation || 0) !== generation) return;
+        }
         if(!source) return;
-        if(Number(boardSourceState.generation || 0) !== generation) return;
-        Object.assign(editingSource, {name:source.name, path:source.path});
-        boardFolderSelection[board.id] = '';
-        saveBoardNavigationState();
-        setBoardSourceState({...boardSourceState, editor:'', name:'', path:''});
-        renderBoardSourceModal();
-        if(activeTab === board.id) await refreshRegistryAssets();
-        setStatus(`已更新素材来源“${source.name}”`);
-        return;
-    }
-    if(existingId){
-        const lib = localLibraries.find(item => item.id === existingId);
-        if(lib) source = {id:lib.id, name:storageCleanName(name || lib.name, lib.name), path:lib.path};
-        if(boardSourceState.boardId && source) attachSourceRecordToBoard(boardSourceState.boardId, source);
-        if(source) await reindexAssetSource(source.id);
-        if(Number(boardSourceState.generation || 0) !== generation) return;
-    } else {
-        if(!path){ setStatus('请输入素材路径'); return; }
-        source = await attachPathToAssetBoard(boardSourceState.boardId, name, path);
-        if(Number(boardSourceState.generation || 0) !== generation) return;
-    }
-    if(!source) return;
-    const boardId = boardSourceState.boardId;
-    if(boardId){
-        applyRegistryFilterDefinition({category:assetBoardById(boardId)?.category || '', rootId:source.id, groupSimilar:registryGroupSimilar});
-        await refreshRegistryAssets();
-        setBoardSourceState({...boardSourceState, editor:'', existingId:'', name:'', path:''});
-        renderBoardSourceModal();
-    } else {
         closeBoardSourceModal();
-        setActiveLocalLibraryId(source.id);
-        await loadLocalAssets();
+        if(source.path && source.id) assetAllowedRootPaths.set(source.id, source.path);
+        void loadAssetAllowedRootPaths().catch(() => null);
+        void refreshRegistryFacetData().catch(() => null);
+        notifyShellTreeSnapshot();
         render();
-    }
-    setStatus(`已添加素材来源“${source.name}”，正在建立索引`);
-    if(source?.job_id){
-        waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
-    }
+        setStatus(`已添加资源文件夹“${source.name}”，正在建立索引`);
+        if(source?.job_id){
+            waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+        }
+    } catch(err) {
+        if(Number(boardSourceState.generation || 0) === generation){
+            boardSourceState.error = err?.message || '添加资源文件夹失败';
+            setStatus(boardSourceState.error);
+        }
     } finally {
-        boardSourceState.saving = false;
-        if(boardSourceState.open) renderBoardSourceModal();
+        if(Number(boardSourceState.generation || 0) === generation){
+            boardSourceState.saving = false;
+            if(boardSourceState.open) renderBoardSourceModal();
+        }
     }
 }
 async function refreshCASReadState(){
@@ -1342,24 +1179,6 @@ async function refreshCASReadState(){
     } finally {
         casRefreshInFlight = false;
     }
-}
-function closeBoardCreatePathBrowser(){
-    setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false, saving:false});
-    renderBoardCreatePathBrowser();
-    requestAnimationFrame(() => document.querySelector(`[data-directory-picker="${BOARD_CREATE_PATH_FIELD_KEY}"]`)?.focus());
-}
-function renderBoardCreatePathBrowser(){
-    let overlay = document.getElementById('boardCreatePathPickerOverlay');
-    if(!serverDirectoryBrowserState.open || serverDirectoryBrowserState.key !== BOARD_CREATE_PATH_FIELD_KEY){ overlay?.remove(); return; }
-    if(!overlay){
-        overlay = document.createElement('div');
-        overlay.id = 'boardCreatePathPickerOverlay';
-        overlay.className = 'storage-settings-overlay board-create-path-picker-overlay';
-        document.body.appendChild(overlay);
-    }
-    overlay.innerHTML = renderServerDirectoryBrowser();
-    markAssetFloatingSurface(overlay, {surface:'asset-board-path-picker', content:'.server-directory-browser', close:closeBoardCreatePathBrowser});
-    refreshIcons();
 }
 function expectedAssetLibraryVersions(assetIds){
     const versions = {};
@@ -3341,6 +3160,12 @@ async function deleteSelectedPrompts(){
     render();
 }
 
+// 仅供未修改域 preview.js 静态 ESM 导入兼容保留的空操作存根（看板创建/编辑模态已按 QIN-599 删除）
+function closeBoardCreatePathBrowser(){}
+function closeBoardEditModal(){}
+function closeCreateLibraryModal(){}
+function syncBoardCreateDraftFromDom(){}
+
 // 【QIN-591】域函数面注册：主文件 gwCall('organize', fn) 经由此对象分派。
 GW_DEFERRED['organize'] = {
     activateAssetBoard,
@@ -3350,6 +3175,7 @@ GW_DEFERRED['organize'] = {
     assetOrganizeMoveAssets,
     assetOrganizeMoveFolder,
     assetOrganizePushUndo,
+    cancelAssetBoardMigration,
     executeResourceFolderAction,
     invalidateResourceFolderAction,
     assetOrganizeRefresh,
@@ -3359,22 +3185,17 @@ GW_DEFERRED['organize'] = {
     clearAssetOrganizeDropHint,
     clearSearchSelection,
     closeAssetOrganizeDialog,
-    closeBoardEditModal,
     closeBoardSourceModal,
-    closeCreateLibraryModal,
     closeCustomBoardFolderCreateModal,
     commitAssetOrganizeRename,
     confirmBoardSource,
     copyDetailVideoFrameToClipboard,
-    createPresetAssetBoard,
     currentAssetItems,
     currentPromptItems,
     currentWorkflowItems,
     deleteAssetCategory,
     deleteAssetItem,
     deleteAssetLibrary,
-    deleteBoardSource,
-    deleteCustomAssetBoard,
     deletePromptCategory,
     deletePromptItem,
     deletePromptLibrary,
@@ -3389,22 +3210,18 @@ GW_DEFERRED['organize'] = {
     downloadSelectedAssets,
     downloadSelectedRegistryArchive,
     dropAssetOrganize,
-    editBoardSource,
     editPromptItem,
     exportWorkflowItems,
     linkSelectedRegistryAssets,
     loadCustomBoardFolderDirectories,
     loadProjectBoard,
-    moveAssetBoardByKeyboard,
+    notifyBoardMigrationSeqChanged,
     openAssetOrganizeCreateDialog,
     openAssetOrganizeDialog,
-    openBoardEditModal,
     openBoardSourceModal,
-    openCreateLibraryModal,
     openCustomBoardFolderCreateModal,
     pasteAssetClipboard,
     refreshCASReadState,
-    removeGeneratedSourceBoard,
     removeSelectedRegistryAssetsFromGroups,
     renameAssetItem,
     renameWorkflowItem,
@@ -3420,14 +3237,12 @@ GW_DEFERRED['organize'] = {
     // 这个函数只在本域定义、此前既未导出也未登记域函数面，主文件裸调必 ReferenceError
     // （从剧本/LUT 等看板点挂载目录即触发）。登记后主文件按统一域网关派发。
     resetBoardSelections,
-    saveBoardEdit,
+    runAssetBoardOneTimeMigration,
     saveCollapsedLibraryFolders,
     saveHiddenLibraryFolders,
     savePromptCreate,
     savePromptEdit,
-    setAssetBoardHidden,
     setAssetClipboard,
-    setBoardSourceVisible,
     showAssetOrganizeToast,
     submitCustomBoardFolderCreate,
     syncAssetSelectionDom,
@@ -3439,7 +3254,9 @@ export {
     activateAssetBoard,
     assetDownloadName,
     assetKindLabel,
+    attachPathToAssetBoard,
     beginDetailMediaLibraryDrag,
+    cancelAssetBoardMigration,
     closeBoardCreatePathBrowser,
     closeBoardEditModal,
     closeBoardSourceModal,
@@ -3457,13 +3274,11 @@ export {
     handleAssetOrganizeOverlayClick,
     importDetailVideoBlobToLibrary,
     registryDownloadName,
-    renderBoardCreatePathBrowser,
-    renderCreateLibraryModal,
     renderDetailFontLibrary,
+    runAssetBoardOneTimeMigration,
     saveDetailImageEditorToLibrary,
     selectedAssetImageItems,
     syncBoardCreateDraftFromDom,
     textVersionActionLabel,
     toggleDetailFontLibrary,
-    updateBoardCreatePath,
 };

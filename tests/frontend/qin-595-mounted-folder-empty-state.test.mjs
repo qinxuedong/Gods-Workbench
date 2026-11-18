@@ -246,7 +246,7 @@ test('AC1 & AC2: 端到端路由行为断言 - 真实执行 selectAssetTreeNode 
         REGISTRY_PAGE_SIZE: 1500,
         registryDynamicPageSize: () => 100,
         URLSearchParams: URLSearchParams,
-        assetBoardById: (id) => ({ id, system: false, category: '' }),
+        assetBoardById: (id) => ({ id, system: id === 'registry', category: '' }),
         clearAssetRackFolder: () => {},
         activeProjectId: '',
         registryProjectEntityFilter: null,
@@ -281,10 +281,9 @@ test('AC1 & AC2: 端到端路由行为断言 - 真实执行 selectAssetTreeNode 
     // 2. 真实调用 selectAssetTreeNode 点击挂载子目录
     sandbox.selectAssetTreeNode('mine:root:root-1::shots/2026');
 
-    // 3. 核心断言：路由切换与状态重置
-    assert.equal(sandbox.activeTab, 'board-1', 'activeTab 必须切到挂载看板 board-1');
-    assert.equal(sandbox.boardFolderSelection['board-1'], 'shots/2026', '文件夹选中 shots/2026');
-    assert.equal(sandbox.registryKind, '', '切入新看板时 registryKind 必须彻底清空，严禁残留 lut');
+    // 3. 核心断言：QIN-599 移除来源看板后，从 LUT 看板点击挂载子目录应回落到资产总览并彻底重置过滤
+    assert.equal(sandbox.activeTab, 'registry', 'activeTab 必须回到资产总览 registry（不再切到已删除的来源看板）');
+    assert.equal(sandbox.registryKind, '', '切入挂载目录时 registryKind 必须彻底清空，严禁残留 lut');
     assert.equal(sandbox.registryQuery, '', 'query 必须彻底清空');
     assert.equal(sandbox.registryStatCategory, '', 'category 必须重置为空');
     assert.equal(sandbox.registryIncludeTags.size, 0, '标签集合必须被清空');
@@ -352,7 +351,7 @@ test('AC1 & AC2: 端到端路由行为断言 - 真实执行 selectAssetTreeNode 
         REGISTRY_PAGE_SIZE: 1500,
         registryDynamicPageSize: () => 100,
         URLSearchParams: URLSearchParams,
-        assetBoardById: (id) => ({ id, system: false, category: '' }),
+        assetBoardById: (id) => ({ id, system: id === 'registry', category: '' }),
         clearAssetRackFolder: () => {},
         activeProjectId: '',
         registryProjectEntityFilter: null,

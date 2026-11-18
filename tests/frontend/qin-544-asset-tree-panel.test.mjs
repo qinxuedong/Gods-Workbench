@@ -148,7 +148,7 @@ test('AC2: 系统资源树只读：项目层级完整、剧本/画布/提示词�
     assert.match(functionSource('ensureAssetTreeProjectData'), /getRegistryProject/, '项目详情走 QIN-543 接口');
 });
 
-test('AC3: 我的资源树：收集箱、资源入口、挂载文件夹完整子目录树和底部挂载入口', () => {
+test('AC3: 我的资源树：收集箱、挂载文件夹完整子目录树与底部挂载入口，不再渲染「资源入口」看板分组（QIN-599 AC2）', () => {
     const mineTree = functionSource('renderAssetTreeMineTree');
     assert.match(mineTree, /mine:inbox/, '收集箱节点应存在');
     assert.match(mineTree, /收集箱/, '收集箱文案应存在');
@@ -156,10 +156,8 @@ test('AC3: 我的资源树：收集箱、资源入口、挂载文件夹完整子
     const rootsPos = mineTree.indexOf('assetTreeRootsList()');
     assert.ok(inboxPos >= 0 && rootsPos >= 0 && inboxPos < rootsPos, '收集箱应排在挂载文件夹之前');
     assert.match(mineTree, /assetTreeRootsList\(\)/, '挂载文件夹树应接入根目录清单');
-    assert.match(mineTree, /assetTreeUserBoards\(\)/, '用户资源库入口应使用现有看板列表');
-    // 【QIN-547】托管资产与上传资源已并入收集箱，资源入口只剩用户自定义资源库。
-    assert.match(functionSource('assetTreeUserBoards'), /board\.id !== 'assets' && board\.id !== 'local'/, '资源入口不再包含已并入收集箱的两个看板');
-    assert.match(functionSource('assetTreeUserBoards'), /!board\.system/, '用户自定义资源库仍直接出现在树里');
+    assert.doesNotMatch(mineTree, /资源入口/, 'QIN-599 AC2: 我的资源树不再渲染资源入口看板分组');
+    assert.match(functionSource('assetTreeUserBoards'), /return \[\];/, 'QIN-599 AC2: assetTreeUserBoards 收口为空数组');
     const panel = functionSource('renderAssetTreePanel');
     assert.match(panel, /data-asset-tree-mount/, '面板底部挂载按钮应存在');
     assert.match(functionSource('renderAssetTreeMineTree'), /assetRackFolderTree/, '目录树复用 QIN-542 完整磁盘子目录树');

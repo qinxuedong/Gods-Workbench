@@ -24,10 +24,9 @@ test('AC1: 结构统一为一棵资源库树，去掉「资源入口」与「挂
   assert.doesNotMatch(controller, /boardSection\.className = 'asset-shell-board-section mt-2'/);
   assert.doesNotMatch(controller, /boardLabel\.textContent = '资源入口'/);
 
-  // 4. 同一物理来源看板与根去重：如果看板关联了物理根或路径相同，不重复显示
-  assert.match(controller, /const independentBoards = rawBoards\.filter/);
-  assert.match(manager, /userBoards\.forEach\(board =>/);
-  assert.match(manager, /rootBoardMap\.set\(matchedRoot\.id, board\)/);
+  // 4. QIN-599 AC2: 旧用户看板与物理根并列合并逻辑已下线，统一只保留资源文件夹树（boards 收口为空）
+  assert.match(manager, /boards:\s*\[\]/);
+  assert.match(manager, /function registrySourceBoards\(\)\{[^}]*return \[\];\s*\}/);
 });
 
 test('AC1 行为逻辑: 同一物理来源（相同物理路径）去重合并，不再并排输出多行', () => {
@@ -36,10 +35,7 @@ test('AC1 行为逻辑: 同一物理来源（相同物理路径）去重合并�
   assert.match(manager, /const pathKey = resolvedPath \? pathCompareKey\(resolvedPath\) : '';/);
   assert.match(manager, /if\(pathKey && seenPaths\.has\(pathKey\)\)\{/);
   assert.match(manager, /existing\.count = Number\(count\);/);
-
-  // 验证 gwAssetTreeSnapshot 中通过 boardPathKey 匹配物理来源合并看板与物理根
-  assert.match(manager, /const boardPathKey = boardPath \? pathCompareKey\(boardPath\) : '';/);
-  assert.match(manager, /matchedRoot = globalRoots\.find\(r => r\.path && pathCompareKey\(r\.path\) === boardPathKey\);/);
+  assert.doesNotMatch(manager, /rootBoardMap\.set\(matchedRoot\.id/);
 });
 
 test('AC1 实体验证: 模拟 QA 场景（无 path 的 facets 根与 hash 允许根通过别名/路径完全合并为单一资源库行）', () => {
@@ -143,9 +139,10 @@ test('AC2: 资产总览清除库/文件夹筛选回到首页，深层目录选�
   assert.match(manager, /return path && path !== '__root__' \? `mine:root:\$\{rootId\}::\$\{path\}` : `mine:root:\$\{rootId\}`;/);
   assert.match(manager, /return 'registry';/);
 
-  // 新建资源库能力保持
+  // QIN-599 AC2: 旧建看板弹窗移除，「+ 添加资源文件夹」统一汇聚到 openBoardSourceModal
   assert.match(controller, /openCreateAssetLibrary/);
-  assert.match(manager, /function openCreateLibraryModal/);
+  assert.doesNotMatch(manager, /function openCreateLibraryModal/);
+  assert.match(manager, /gwCall\('organize', 'openBoardSourceModal', '', 'new'\)/);
 });
 
 test('AC3: 递归素材计数（含后代素材）取自 total_count，空目录为 0，未返回为加载态，离线分离', () => {
@@ -184,8 +181,8 @@ test('AC4: 深层目录选择时父链逐级展开，刷新持久化与恢复可
   // 3. 根节点 key 始终以稳定 rootId 绑定
   assert.match(manager, /const key = `mine:root:\$\{root\.id\}`;/);
 
-  // 4. 独立未映射看板以 independentBoards 保留并在树中渲染
-  assert.match(manager, /const independentBoards = userBoards\.filter\(b => !mappedBoardIds\.has\(b\.id\)\);/);
+  // 4. QIN-599 AC2: 旧用户/来源看板彻底移除（不再有 independentBoards 分支）
+  assert.doesNotMatch(manager, /independentBoards/);
 });
 
 test('AC5: 新建、改名、拖拽移动与整理保护机制完整保留（#602/#667）', () => {

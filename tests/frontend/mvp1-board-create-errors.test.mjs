@@ -18,38 +18,21 @@ test('新建资源入口移入左栏页头（QIN-566 恢复外壳侧栏）并沿
     assert.doesNotMatch(controller, /asset-shell-nav-create/);
 });
 
-test('新增资源库弹窗取消类型预设，只按名称、路径两行填写并使用紧凑居中标准卡片', () => {
+test('新增资源库弹窗已移除并统一收敛到「+ 添加资源文件夹」标准弹窗（QIN-599 AC2）', () => {
+    assert.doesNotMatch(source, /function renderCreateLibraryModal|function openCreateLibraryModal|function createPresetAssetBoard/);
     assert.doesNotMatch(source, /board-preset-grid|data-board-preset/);
-    assert.match(source, /\{id:'other', name:'其他资源'[\s\S]*?category:'', kinds:\[\], extensions:\[\]\}/);
-    assert.match(source, /board-create-form board-create-form-path/);
-    assert.match(source, /<label><span>资源库名称<\/span><input id="boardCreateName"/);
-    assert.match(source, /<label class="board-create-path-field"><span>资源路径（可选）<\/span><div class="directory-input-row"><input id="boardCreatePath"/);
-    assert.match(styles, /\.board-create-modal\s*\{[^}]*width:min\(620px, 94vw\)/);
+    assert.match(source, /data-board-create[^>]*aria-label="\+ 添加资源文件夹"[^>]*>[\s\S]*?\+ 添加资源文件夹/);
+    assert.match(source, /gwCall\('organize', 'openBoardSourceModal', '', 'new'\)/);
+    assert.match(source, /<strong id="boardSourceTitle">添加资源文件夹<\/strong>/);
+    assert.match(styles, /\.board-source-modal\s*\{[^}]*width:min\(620px, 94vw\)/);
     assert.match(styles, /\.board-create-form\s*\{[^}]*grid-template-columns:minmax\(0,1fr\)/);
     assert.doesNotMatch(styles, /board-preset-grid|board-preset-card/);
-    assert.match(source, /board\.preset === 'other'[\s\S]*?暂无可见资源/);
 });
 
-test('资源路径支持手输及右侧目录选择，先选路径时默认补齐末级目录名', () => {
-    assert.match(source, /class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="\$\{BOARD_CREATE_PATH_FIELD_KEY\}"/);
-    assert.match(source, /async function fillServerDirectoryFromNative\(key, pathValue\)\{\s*if\(key === BOARD_CREATE_PATH_FIELD_KEY\)\{\s*updateBoardCreatePath\(pathValue\);/);
-    assert.match(source, /createPathSelection \? '选择此目录' : '选择并挂载'/);
-    assert.match(source, /createPathSelection \? '选择当前目录' : '选择当前目录并挂载'/);
-    assert.match(source, /仅显示服务器文件夹；选择后返回创建表单，点击创建时再登记路径/);
-    assert.ok(source.includes("const nameManuallyEdited = changedField === 'boardCreateName' || boardCreateState.nameManuallyEdited;"));
-    assert.ok(source.includes("name:boardCreateState.nameManuallyEdited ? boardCreateState.name : deriveBoardCreateNameFromPath(path),"));
-    assert.ok(source.includes("syncBoardCreateDraftFromDom(event.target.id);"));
-    const pathFunctions = source.match(/function deriveBoardCreateNameFromPath\(pathValue\)\{[\s\S]*?\n\}\nfunction updateBoardCreatePath\(pathValue\)\{[\s\S]*?\n\}/)?.[0];
-    assert.ok(pathFunctions, '路径命名辅助函数应存在');
-    // QIN-591：boardCreateState 为跨文件写状态，域内写入经主文件导出的 setter（登记在案）；
-    // 测试桩把 setter 落回夹具的本地状态，行为契约（手输不覆盖、先选路径补末级目录名）不变。
-    const setBoardCreateStateStub = 'function setBoardCreateState(value){ boardCreateState = value; }';
-    const pathFirst = {boardCreateState:{name:'', nameManuallyEdited:false, path:''}, pathValue:['D:', 'Assets', 'Brand', ''].join(String.fromCharCode(92))};
-    runInNewContext([pathFunctions, setBoardCreateStateStub, 'updateBoardCreatePath(pathValue);'].join('\n'), pathFirst);
-    assert.equal(pathFirst.boardCreateState.name, 'Brand');
-    const nameFirst = {boardCreateState:{name:'品牌素材', nameManuallyEdited:true, path:''}, pathValue:['D:', 'Assets', 'Brand'].join(String.fromCharCode(92))};
-    runInNewContext([pathFunctions, setBoardCreateStateStub, 'updateBoardCreatePath(pathValue);'].join('\n'), nameFirst);
-    assert.equal(nameFirst.boardCreateState.name, '品牌素材');
+test('添加资源文件夹取消旧版 boardCreatePath 表单，统一走资源文件夹来源弹窗与目录输入（QIN-599 AC2）', () => {
+    assert.doesNotMatch(source, /BOARD_CREATE_PATH_FIELD_KEY|function updateBoardCreatePath/);
+    assert.match(source, /<label><span>来源名称<\/span><input id="boardSourceName"/);
+    assert.match(source, /<label><span>素材路径<\/span><input id="boardSourcePath"/);
 });
 
 test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列', () => {
@@ -58,26 +41,23 @@ test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空�
     assert.match(source, /root\.className = `asset-manager-root[\s\S]*?syncRegistryDetailGridWidth\(\);/);
 });
 
-test('管理员创建时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {
-    // QIN-596：ensure 入口新增拒绝清单检查（先于 loadRegistryPrincipal）；共享管道
-    // 下沉进 attachPathToAssetBoard（创建资源库与添加资源文件夹共用同一调用链）。
+test('管理员添加资源文件夹时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {
+    // QIN-596 / QIN-599：ensure 入口保留拒绝清单与管理员自动登记；统一从 attachPathToAssetBoard('', name, path) 触发。
     assert.match(source, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{[\s\S]{0,600}?await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return true;/);
     assert.match(source, /body:JSON\.stringify\(\{path, expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
     assert.match(source, /const allowed = await ensureCreateLibraryPathAllowedRoot\(cleanPath\);\s*if\(!allowed\) return null;/);
-    assert.match(source, /source = await attachPathToAssetBoard\('', `\$\{name\}素材`, path\)/);
+    assert.match(source, /source = await attachPathToAssetBoard\('', name, path\)/);
 });
 
-test('新建资源库命中已移除旧根时确认恢复并继续创建', () => {
+test('添加资源文件夹命中已移除旧根时确认恢复并继续添加', () => {
     assert.match(source, /function confirmRestoreRemovedAllowedRoot\(root\)[\s\S]*?旧根已移除，是否恢复？[\s\S]*?data-root-restore-confirm[^>]*>恢复并继续/);
     assert.match(source, /data-root-restore-cancel/);
     assert.match(source, /surface:'asset-root-restore-confirm'[\s\S]*?close:\(\) => close\(false\)/);
     assert.match(source, /filter\(root => root\.active === false && assetPathWithinAllowedRoot\(path, root\.path\)\)[\s\S]*?sort\(\(left, right\) => pathCompareKey\(right\.path\)\.length - pathCompareKey\(left\.path\)\.length\)/);
     assert.match(source, /`\/api\/storage-settings\/roots\/\$\{encodeURIComponent\(removedRoot\.id\)\}\/restore`[\s\S]*?body:JSON\.stringify\(\{expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
     assert.match(source, /if\(!await confirmRestoreRemovedAllowedRoot\(removedRoot\)\) return false;/);
-    // QIN-596：恢复确认在 ensure 内完成；取消 → attach 返回 null（无写盘），
-    // 创建资源库入口以「已取消添加，资源库未创建」收口。
+    // QIN-596：恢复确认在 ensure 内完成；取消 → attach 返回 null（无写盘）。
     assert.match(source, /if\(!allowed\) return null;/);
-    assert.match(source, /已取消添加，资源库未创建/);
 });
 
 test('旧根确认后只恢复最具体祖先，取消不写入允许根', async () => {
@@ -130,22 +110,22 @@ test('旧根确认后只恢复最具体祖先，取消不写入允许根', async
     assert.equal(cancelled.calls.some(call => call.url.endsWith('/restore') || call.method === 'POST'), false);
 });
 
-test('新增资源库弹窗模板包含错误回显容器与状态图标', () => {
-    assert.match(source, /boardCreateState\.error \? `<div class="board-create-error" role="alert">/);
-    assert.match(source, /data-lucide="alert-triangle"/);
-    assert.match(source, /escapeHtml\(boardCreateState\.error\)/);
+test('资源文件夹弹窗模板包含错误回显容器与状态图标', () => {
+    assert.match(source, /boardSourceState\.error\s*\n\s*\?\s*`<div class="board-create-error" role="alert">/);
+    assert.match(source, /data-lucide="alert-circle"/);
+    assert.match(source, /escapeHtml\(boardSourceState\.error\)/);
 });
 
-test('新增资源库确认与取消按钮在 saving 状态下禁用防重并展示 loading', () => {
-    assert.match(source, /data-board-create-close \$\{boardCreateState\.saving \? 'disabled' : ''\}/);
-    assert.match(source, /data-board-create-confirm \$\{boardCreateState\.saving \? 'disabled' : ''\}/);
-    assert.match(source, /boardCreateState\.saving \? 'loader' : 'plus'/);
-    assert.match(source, /boardCreateState\.saving \? '正在创建…' : '创建资源库'/);
+test('资源文件夹确认与关闭按钮在 saving 状态下禁用防重并展示 loading', () => {
+    assert.match(source, /data-board-source-editor-cancel \$\{boardSourceState\.saving \? 'disabled' : ''\}/);
+    assert.match(source, /data-board-source-confirm \$\{boardSourceState\.saving \? 'disabled' : ''\}/);
+    assert.match(source, /boardSourceState\.saving \? 'loader-2' : 'folder-plus'/);
+    assert.match(source, /boardSourceState\.saving \? '正在添加…' : '添加来源'/);
 });
 
-test('createPresetAssetBoard 捕获异常后将错误同步到 boardCreateState.error 并重新渲染弹窗', () => {
-    assert.match(source, /boardCreateState\.saving = false;\s*boardCreateState\.error = err\.message/);
-    assert.match(source, /renderCreateLibraryModal\(\);\s*markIndexState\('failed'\)/);
+test('confirmBoardSource 捕获异常后将错误同步到 boardSourceState.error 并重新渲染弹窗', () => {
+    assert.match(source, /boardSourceState\.error = err\?\.message \|\| '添加资源文件夹失败';/);
+    assert.match(source, /if\(boardSourceState\.open\) renderBoardSourceModal\(\);/);
 });
 
 test('attachPathToAssetBoard 对别名建议查询具备容错保护', () => {
@@ -157,11 +137,10 @@ test('asset-manager.css 中包含 .board-create-error 样式规则', () => {
     assert.match(styles, /\.board-create-error\s*svg\s*\{[^}]*stroke:\s*#ef4444/);
 });
 
-test('新资源库追加到列表下方并自动激活，来源索引异步跟踪 (QIN-487 / QIN-501)', () => {
-    assert.match(source, /ASSET_LIBRARY_PRESETS\.find\(item => item\.id === 'other'\)/);
-    assert.match(source, /state\.customBoards\.push\(\{id, name, preset:preset\.id/);
-    assert.match(source, /state\.order\.push\(id\);\s*if\(source\) boardSourceSelection\[id\] = source\.id;\s*saveBoardNavigationState\(\);\s*closeCreateLibraryModal\(\);\s*renderBoardNavigation\(\);/);
-    assert.match(source, /await activateAssetBoard\(id\);/);
+test('资源文件夹追加不生成自定义看板，直接刷新分面与目录并异步跟踪索引 (QIN-599 AC2)', () => {
+    assert.doesNotMatch(source, /state\.customBoards\.push/);
+    assert.doesNotMatch(source, /createPresetAssetBoard/);
+    assert.match(source, /notifyShellTreeSnapshot\(\);\s*\n\s*render\(\);/);
     assert.match(source, /waitForAssetIndexJob\(source\.job_id, source\.name\)\.catch\(\(\) => \{\}\);/);
 });
 

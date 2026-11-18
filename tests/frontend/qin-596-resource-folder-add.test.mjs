@@ -14,18 +14,15 @@ test('QIN-596 AC2: 侧栏按钮/分组/空态/弹窗标题文案统一', () => {
   assert.match(manager, /<p>尚未添加资源文件夹<\/p>/);
   assert.match(manager, /添加后按真实磁盘子目录浏览/);
   assert.doesNotMatch(manager, /<span>挂载文件夹<\/span>/);
-  assert.match(organize, /'素材来源设置' : '添加资源文件夹'/);
-  assert.doesNotMatch(organize, /添加上传来源/);
+  assert.match(organize, /<strong id="boardSourceTitle">添加资源文件夹<\/strong>/);
+  assert.doesNotMatch(organize, /素材来源设置|添加上传来源/);
 });
 
-test('QIN-596 AC3: 共享管道——attach 内置 ensure，创建资源库不再单独调用', () => {
+test('QIN-596 AC3: 共享管道——attach 内置 ensure，旧建看板入口已移除', () => {
   assert.match(organize, /const allowed = await ensureCreateLibraryPathAllowedRoot\(cleanPath\);/);
   assert.match(organize, /if\(!allowed\) return null;/);
-  const createStart = organize.indexOf('async function createPresetAssetBoard');
-  const createEnd = organize.indexOf('function attachSourceRecordToBoard');
-  const createFn = organize.slice(createStart, createEnd);
-  assert.ok(createStart > 0 && createEnd > createStart);
-  assert.doesNotMatch(createFn, /ensureCreateLibraryPathAllowedRoot/);
+  assert.doesNotMatch(organize, /async function createPresetAssetBoard/);
+  assert.match(manager, /gwCall\('organize', 'openBoardSourceModal', '', 'new'\)/);
 });
 
 test('QIN-596 AC5: 前端拒绝清单纯函数逐条（双端一致）', () => {
