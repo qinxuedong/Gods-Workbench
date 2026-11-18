@@ -212,6 +212,7 @@ class StorageSettingsService:
             "dirs": {},
             "defaults": {},
             "extra_local_entries": [],
+            "removed_extra_local_entries": [],
             "local_library_names": {},
             "local_library_order": [],
             "local_library_read_only": {},
@@ -397,8 +398,10 @@ class StorageSettingsService:
         """更新存储设置；CAS 冲突失败关闭，成功则 revision 递增。"""
         expected = _resolve_expected_version(payload)
         _require_positive_version(expected, "存储设置")
+        removed_sources: list[tuple[str, str]] = []
 
         def update(state: dict[str, Any]) -> StorageSettingsSnapshot:
+            nonlocal removed_sources
             revision = int(state.get("revision", 1))
             if expected != revision:
                 raise _conflict(
@@ -408,7 +411,8 @@ class StorageSettingsService:
                     f"存储设置版本冲突（期望 {expected}，当前 {revision}），请重新读取后重试",
                 )
             dirs = copy.deepcopy(state.get("dirs") or {})
-            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            old_entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            entries = copy.deepcopy(old_entries)
             names = dict(state.get("local_library_names") or {})
             order = list(state.get("local_library_order") or [])
             read_only = dict(state.get("local_library_read_only") or {})
@@ -417,6 +421,25 @@ class StorageSettingsService:
             if payload.extra_local_entries is not None:
                 entries = self._normalize_extra_local_entries(payload.extra_local_entries)
                 dirs["extra_local_dirs"] = [entry["path"] for entry in entries]
+                new_ids = {str(entry.get("id") or "") for entry in entries if entry.get("id")}
+                new_keys = set()
+                for entry in entries:
+                    if entry.get("path"):
+                        try:
+                            new_keys.add(storage.directory_path_key(str(entry["path"])))
+                        except Exception:
+                            pass
+                for old in old_entries:
+                    old_id = str(old.get("id") or "")
+                    old_path = str(old.get("path") or "")
+                    old_key = ""
+                    if old_path:
+                        try:
+                            old_key = storage.directory_path_key(old_path)
+                        except Exception:
+                            old_key = ""
+                    if old_id and old_id not in new_ids and (not old_key or old_key not in new_keys):
+                        removed_sources.append((old_id, old_path))
             if payload.local_library_names is not None:
                 names = {str(k): str(v) for k, v in payload.local_library_names.items()}
             if payload.local_library_order is not None:
@@ -434,7 +457,182 @@ class StorageSettingsService:
             })
             return self._build_snapshot(state)
 
-        return self._state.mutate(update)
+        snapshot = self._state.mutate(update)
+        if removed_sources:
+            _stop_index_jobs_and_invalidate_caches(
+                {sid for sid, _ in removed_sources if sid},
+                [path for _, path in removed_sources if path],
+            )
+        return snapshot
+
+    def move_entries_to_removed(
+        self, target_ids: set[str], target_paths: list[str]
+    ) -> list[dict[str, Any]]:
+        """移出资源库时同步把匹配来源从活跃清单移入 removed_extra_local_entries。"""
+        target_keys = _normalized_target_keys(target_paths)
+        moved: list[dict[str, Any]] = []
+
+        def update(state: dict[str, Any]) -> None:
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            removed = copy.deepcopy(state.get("removed_extra_local_entries") or [])
+            remaining: list[dict[str, Any]] = []
+            existing_removed_ids = {str(item.get("id") or "") for item in removed if item.get("id")}
+            for entry in entries:
+                if _entry_matches_targets(entry, target_ids, target_keys):
+                    moved.append(copy.deepcopy(entry))
+                    eid = str(entry.get("id") or "")
+                    if eid and eid not in existing_removed_ids:
+                        removed.append(copy.deepcopy(entry))
+                        existing_removed_ids.add(eid)
+                    elif not eid:
+                        removed.append(copy.deepcopy(entry))
+                else:
+                    remaining.append(entry)
+            if not moved:
+                return
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in remaining if item.get("path")]
+            state["dirs"] = dirs
+            state["extra_local_entries"] = remaining
+            state["removed_extra_local_entries"] = removed
+            state["revision"] = int(state.get("revision", 1)) + 1
+
+        self._state.mutate(update)
+        return moved
+
+    def revert_moved_entries(self, moved_entries: list[dict[str, Any]]) -> None:
+        """移出级联失败时的补偿回滚：将刚移出的来源条目放回活跃列表。"""
+        if not moved_entries:
+            return
+        moved_ids = {str(item.get("id") or "") for item in moved_entries if item.get("id")}
+
+        def update(state: dict[str, Any]) -> None:
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            removed = copy.deepcopy(state.get("removed_extra_local_entries") or [])
+            existing_ids = {str(item.get("id") or "") for item in entries if item.get("id")}
+            restored_any = False
+            for item in moved_entries:
+                eid = str(item.get("id") or "")
+                if not eid or eid not in existing_ids:
+                    entries.append(copy.deepcopy(item))
+                    if eid:
+                        existing_ids.add(eid)
+                    restored_any = True
+            next_removed = [
+                item for item in removed if str(item.get("id") or "") not in moved_ids
+            ]
+            if not restored_any and len(next_removed) == len(removed):
+                return
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in entries if item.get("path")]
+            state["dirs"] = dirs
+            state["extra_local_entries"] = entries
+            state["removed_extra_local_entries"] = next_removed
+            state["revision"] = int(state.get("revision", 1)) + 1
+
+        self._state.mutate(update)
+
+    def restore_removed_entries(
+        self, target_ids: set[str], target_paths: list[str]
+    ) -> list[dict[str, Any]]:
+        """恢复资源文件夹时把匹配条目从 removed_extra_local_entries 迁回活跃列表。"""
+        target_keys = _normalized_target_keys(target_paths)
+        restored: list[dict[str, Any]] = []
+
+        def update(state: dict[str, Any]) -> None:
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            removed = copy.deepcopy(state.get("removed_extra_local_entries") or [])
+            existing_ids = {str(item.get("id") or "") for item in entries if item.get("id")}
+            existing_keys = _normalized_target_keys(
+                [str(item.get("path") or "") for item in entries if item.get("path")]
+            )
+            remaining_removed: list[dict[str, Any]] = []
+            changed = False
+            for entry in removed:
+                if _entry_matches_targets(entry, target_ids, target_keys):
+                    eid = str(entry.get("id") or "")
+                    epath = str(entry.get("path") or "")
+                    ekeys = _normalized_target_keys([epath]) if epath else []
+                    if (eid and eid in existing_ids) or any(k in existing_keys for k in ekeys):
+                        changed = True
+                        continue
+                    entries.append(copy.deepcopy(entry))
+                    restored.append(copy.deepcopy(entry))
+                    if eid:
+                        existing_ids.add(eid)
+                    existing_keys.extend(ekeys)
+                    changed = True
+                else:
+                    remaining_removed.append(entry)
+            if not changed:
+                return
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in entries if item.get("path")]
+            state["dirs"] = dirs
+            state["extra_local_entries"] = entries
+            state["removed_extra_local_entries"] = remaining_removed
+            state["revision"] = int(state.get("revision", 1)) + 1
+
+        self._state.mutate(update)
+        return restored
+
+    def purge_entries(self, target_ids: set[str], target_paths: list[str]) -> None:
+        """清除索引时同步清理活跃与已移出列表中的全部关联来源与元数据。"""
+        target_keys = _normalized_target_keys(target_paths)
+
+        def update(state: dict[str, Any]) -> None:
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            removed = copy.deepcopy(state.get("removed_extra_local_entries") or [])
+            purged_ids = set(target_ids)
+            next_entries = []
+            for entry in entries:
+                if _entry_matches_targets(entry, target_ids, target_keys):
+                    if entry.get("id"):
+                        purged_ids.add(str(entry["id"]))
+                else:
+                    next_entries.append(entry)
+            next_removed = []
+            for entry in removed:
+                if _entry_matches_targets(entry, target_ids, target_keys):
+                    if entry.get("id"):
+                        purged_ids.add(str(entry["id"]))
+                else:
+                    next_removed.append(entry)
+            names = {
+                k: v
+                for k, v in (state.get("local_library_names") or {}).items()
+                if str(k) not in purged_ids
+            }
+            order = [
+                str(item)
+                for item in (state.get("local_library_order") or [])
+                if str(item) not in purged_ids
+            ]
+            read_only = {
+                k: v
+                for k, v in (state.get("local_library_read_only") or {}).items()
+                if str(k) not in purged_ids
+            }
+            changed = (
+                len(next_entries) != len(entries)
+                or len(next_removed) != len(removed)
+                or names != (state.get("local_library_names") or {})
+                or order != (state.get("local_library_order") or [])
+                or read_only != (state.get("local_library_read_only") or {})
+            )
+            if not changed:
+                return
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in next_entries if item.get("path")]
+            state["dirs"] = dirs
+            state["extra_local_entries"] = next_entries
+            state["removed_extra_local_entries"] = next_removed
+            state["local_library_names"] = names
+            state["local_library_order"] = order
+            state["local_library_read_only"] = read_only
+            state["revision"] = int(state.get("revision", 1)) + 1
+
+        self._state.mutate(update)
 
     @staticmethod
     def _normalize_directory_mapping(dirs: dict[str, Any]) -> dict[str, Any]:
@@ -466,6 +664,79 @@ class StorageSettingsService:
             normalized_entry["path"] = storage.validate_mount(path)
             normalized.append(normalized_entry)
         return normalized
+
+
+def _normalized_target_keys(paths: Iterable[str]) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        text = str(raw_path or "").strip()
+        if not text:
+            continue
+        try:
+            key = storage.directory_path_key(text)
+        except CleanroomException:
+            key = text.replace("\\", "/").rstrip("/").casefold()
+        if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
+def _path_matches_target_keys(candidate_path: str, target_keys: list[str]) -> bool:
+    text = str(candidate_path or "").strip()
+    if not text or not target_keys:
+        return False
+    try:
+        cand_key = storage.directory_path_key(text)
+    except CleanroomException:
+        cand_key = text.replace("\\", "/").rstrip("/").casefold()
+    for tkey in target_keys:
+        if cand_key == tkey:
+            return True
+        sep = "\\" if "\\" in tkey else "/"
+        prefix = tkey.rstrip("\\/")
+        if cand_key.startswith((prefix + sep) if prefix else sep):
+            return True
+    return False
+
+
+def _entry_matches_targets(
+    entry: dict[str, Any], target_ids: set[str], target_keys: list[str]
+) -> bool:
+    eid = str(entry.get("id") or "").strip()
+    if eid and eid in target_ids:
+        return True
+    epath = str(entry.get("path") or "").strip()
+    return _path_matches_target_keys(epath, target_keys)
+
+
+_DEFAULT_CASCADE_HOOKS: dict[str, Any] = {
+    "cancel_roots": lambda target_ids, target_paths=None: None,
+    "invalidate_caches": lambda: None,
+    "readonly_registry_snapshot": lambda: {},
+    "purging_root_markers": lambda: {},
+    "root_facets": lambda: [],
+    "mark_root_purging": lambda root_id, target_ids, target_paths, primary_path="": None,
+    "clear_root_purging": lambda root_id: None,
+    "find_purge_candidate_asset_ids": lambda root_id, alias_ids=None: [],
+    "purge_root_records": lambda root_id, alias_ids=None, strict_search=True: {},
+    "delete_media_outputs": lambda kind, payload: {"deleted": [], "failed": []},
+}
+
+
+def register_root_cascade_hooks(**hooks: Any) -> None:
+    """由上层装配模块注入资产注册表与媒体缓存的级联操作，避免 settings 反向依赖上层领域包。"""
+    for key, fn in hooks.items():
+        if key in _DEFAULT_CASCADE_HOOKS and callable(fn):
+            _DEFAULT_CASCADE_HOOKS[key] = fn
+
+
+def _stop_index_jobs_and_invalidate_caches(
+    target_ids: set[str], target_paths: list[str]
+) -> None:
+    _DEFAULT_CASCADE_HOOKS["cancel_roots"](target_ids, target_paths)
+    _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
 
 
 def _deduplicate_root_records(records: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -527,8 +798,119 @@ class StorageAllowedRootsService:
             "availability_message": str(status["message"] or ""),
         }
 
+    def _collect_root_cascade_targets(
+        self,
+        root_id: str,
+        roots_state: dict[str, Any],
+        purging_markers: dict[str, Any] | None = None,
+    ) -> tuple[set[str], list[str], str]:
+        """收集允许根关联的全部身份 ID（root_*、local_extra_*、facets aliases）与路径。"""
+        target_ids: set[str] = {str(root_id).strip()}
+        target_paths: list[str] = []
+        primary_path = ""
+
+        def add_path(raw: Any) -> None:
+            text = str(raw or "").strip()
+            if text and text not in target_paths:
+                target_paths.append(text)
+
+        records = _deduplicate_root_records(roots_state.get("roots", []))
+        matched_record = next((item for item in records if item.get("id") == root_id), None)
+        if matched_record is not None:
+            primary_path = str(matched_record.get("path") or "")
+            add_path(primary_path)
+            for alias in matched_record.get("aliases") or []:
+                add_path(alias)
+        target_keys = _normalized_target_keys(target_paths)
+        for item in records:
+            ipath = str(item.get("path") or "")
+            if ipath and _path_matches_target_keys(ipath, target_keys):
+                if item.get("id"):
+                    target_ids.add(str(item["id"]))
+                add_path(ipath)
+                for alias in item.get("aliases") or []:
+                    add_path(alias)
+
+        markers = purging_markers if purging_markers is not None else {}
+        marker = markers.get(root_id)
+        if isinstance(marker, dict):
+            if not primary_path and marker.get("primary_path"):
+                primary_path = str(marker["primary_path"])
+            for tid in marker.get("target_ids") or []:
+                if tid:
+                    target_ids.add(str(tid))
+            for tpath in marker.get("target_paths") or []:
+                add_path(tpath)
+
+        target_keys = _normalized_target_keys(target_paths)
+        try:
+            settings_state = default_storage_settings_service._state.read()
+            for bucket in ("extra_local_entries", "removed_extra_local_entries"):
+                for entry in settings_state.get(bucket) or []:
+                    if not isinstance(entry, dict):
+                        continue
+                    if _entry_matches_targets(entry, target_ids, target_keys):
+                        for key in ("id", "kind"):
+                            val = str(entry.get(key) or "").strip()
+                            if val:
+                                target_ids.add(val)
+                        add_path(entry.get("path"))
+        except Exception:
+            pass
+
+        try:
+            registry_snapshot = _DEFAULT_CASCADE_HOOKS["readonly_registry_snapshot"]()
+            for source_id, bound in (registry_snapshot.get("root_aliases") or {}).items():
+                if not isinstance(bound, dict):
+                    continue
+                bound_root_id = str(bound.get("root_id") or "")
+                if str(source_id) in target_ids or (bound_root_id and bound_root_id in target_ids):
+                    target_ids.add(str(source_id))
+                    for alias in bound.get("aliases") or []:
+                        add_path(alias)
+        except Exception:
+            pass
+
+        try:
+            for facet in _DEFAULT_CASCADE_HOOKS["root_facets"]():
+                facet_ids = {
+                    str(item)
+                    for item in [facet.get("id"), *(facet.get("aliases") or [])]
+                    if item
+                }
+                if facet_ids & target_ids:
+                    target_ids.update(facet_ids)
+        except Exception:
+            pass
+
+        return {item for item in target_ids if item}, target_paths, primary_path
+
+    def active_identities_for_root(self, root_id: str) -> list[str]:
+        """返回恢复/重扫时归属该允许根的活跃身份 ID 列表（含 local_extra_*）。"""
+        roots_state = self._state.read()
+        target_ids, target_paths, _ = self._collect_root_cascade_targets(root_id, roots_state)
+        target_keys = _normalized_target_keys(target_paths)
+        identities = [root_id]
+        try:
+            snapshot = default_storage_settings_service.get_snapshot()
+            for entry in snapshot.extra_local_entries:
+                if _entry_matches_targets(entry, target_ids, target_keys):
+                    eid = str(entry.get("id") or "").strip()
+                    if eid and eid not in identities:
+                        identities.append(eid)
+        except Exception:
+            pass
+        return identities
+
     def get_snapshot(self) -> StorageAllowedRootsSnapshot:
         state = self._state.read()
+        try:
+            purging_markers = _DEFAULT_CASCADE_HOOKS["purging_root_markers"]()
+        except Exception:
+            purging_markers = {}
+        if not isinstance(purging_markers, dict):
+            purging_markers = {}
+
         roots: list[StorageAllowedRoot] = []
         for path in storage.environment_allowed_roots():
             path_text = str(path)
@@ -555,10 +937,21 @@ class StorageAllowedRootsService:
                 )
             )
         clean_records = _deduplicate_root_records(state.get("roots", []))
+        seen_persistent_ids: set[str] = set()
         for record in clean_records:
+            rid = str(record.get("id") or "")
+            seen_persistent_ids.add(rid)
             active = bool(record.get("active"))
             path_text = str(record.get("path") or "")
-            if active:
+            if rid in purging_markers:
+                active = False
+                status = {
+                    "availability": "removed",
+                    "availability_reason": "PURGE_INCOMPLETE",
+                    "availability_message": "上次清除索引未完成，请重试清除索引",
+                }
+                candidates = []
+            elif active:
                 status = self._path_status(path_text)
                 aliases = [str(item) for item in record.get("aliases", [])]
                 candidates = [
@@ -576,7 +969,7 @@ class StorageAllowedRootsService:
                 candidates = []
             roots.append(
                 StorageAllowedRoot(
-                    id=str(record.get("id") or ""),
+                    id=rid,
                     path=path_text,
                     source="persistent",
                     read_only=False,
@@ -584,6 +977,25 @@ class StorageAllowedRootsService:
                     aliases=[str(item) for item in record.get("aliases", [])],
                     alias_candidates=candidates,
                     **status,
+                )
+            )
+        # 崩溃重启恢复投影：若 Step 4 删完 allowed_roots 后、清墓碑前退出，
+        # 重启后仍在快照中暴露 PURGE_INCOMPLETE，支持再次触发幂等重放。
+        for pid, pmeta in sorted(purging_markers.items()):
+            if pid in seen_persistent_ids or not isinstance(pmeta, dict):
+                continue
+            roots.append(
+                StorageAllowedRoot(
+                    id=str(pid),
+                    path=str(pmeta.get("primary_path") or ""),
+                    source="persistent",
+                    read_only=False,
+                    active=False,
+                    aliases=[],
+                    alias_candidates=[],
+                    availability="removed",
+                    availability_reason="PURGE_INCOMPLETE",
+                    availability_message="上次清除索引未完成，请重试清除索引",
                 )
             )
         return StorageAllowedRootsSnapshot(revision=int(state.get("revision", 1)), roots=roots)
@@ -613,7 +1025,21 @@ class StorageAllowedRootsService:
         if target_key in system_keys:
             raise CleanroomException(409, "ALLOWED_ROOT_ALREADY_REGISTERED", "该目录已登记为允许根")
 
+        candidate_id = storage.root_identity_id(Path(normalized))
+        purging_markers = _DEFAULT_CASCADE_HOOKS["purging_root_markers"]()
+        if candidate_id in purging_markers or any(
+            _path_matches_target_keys(normalized, _normalized_target_keys(meta.get("target_paths") or []))
+            for meta in purging_markers.values()
+            if isinstance(meta, dict)
+        ):
+            raise CleanroomException(
+                409, "PURGE_IN_PROGRESS", "该资源文件夹上次清除索引未完成，请先完成清除索引"
+            )
+
+        reactivated_id: str | None = None
+
         def update(state: dict[str, Any]) -> None:
+            nonlocal reactivated_id
             current = self._expected_version(state, payload.expected_version)
             state["roots"] = _deduplicate_root_records(state.get("roots", []))
             existing_active = None
@@ -634,6 +1060,7 @@ class StorageAllowedRootsService:
                 existing_inactive["active"] = True
                 existing_inactive["path"] = normalized
                 existing_inactive["network_mount"] = storage._is_network_path(normalized)
+                reactivated_id = str(existing_inactive.get("id") or "")
             else:
                 root_id = storage.root_identity_id(Path(normalized))
                 state.setdefault("roots", []).append(
@@ -648,6 +1075,9 @@ class StorageAllowedRootsService:
             state["revision"] = current + 1
 
         self._state.mutate(update)
+        if reactivated_id:
+            default_storage_settings_service.restore_removed_entries({reactivated_id}, [normalized])
+        _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
         return self.get_snapshot()
 
     def remove_root(
@@ -656,8 +1086,18 @@ class StorageAllowedRootsService:
         system_ids = {storage.root_identity_id(path) for path in storage.environment_allowed_roots()}
         if root_id in system_ids:
             raise CleanroomException(403, "SYSTEM_ROOT_READ_ONLY", "环境变量系统根为只读，不能移除")
+        if root_id in _DEFAULT_CASCADE_HOOKS["purging_root_markers"]():
+            raise CleanroomException(
+                409, "PURGE_IN_PROGRESS", "该资源文件夹上次清除索引未完成，请先完成清除索引"
+            )
+
+        initial_state = self._state.read()
+        target_ids, target_paths, _ = self._collect_root_cascade_targets(root_id, initial_state)
+        prev_aliases: list[str] = []
+        mutated_revision: int | None = None
 
         def update(state: dict[str, Any]) -> None:
+            nonlocal prev_aliases, mutated_revision
             current = self._expected_version(state, payload.expected_version)
             state["roots"] = _deduplicate_root_records(state.get("roots", []))
             record = next(
@@ -666,11 +1106,33 @@ class StorageAllowedRootsService:
             )
             if record is None:
                 raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在或已移除")
+            prev_aliases = [str(item) for item in record.get("aliases") or []]
             record["active"] = False
             record["aliases"] = []
-            state["revision"] = current + 1
+            mutated_revision = current + 1
+            state["revision"] = mutated_revision
 
         self._state.mutate(update)
+        try:
+            default_storage_settings_service.move_entries_to_removed(target_ids, target_paths)
+        except Exception:
+            # 补偿回滚：Step 2 写 storage_settings.json 失败时恢复允许根活跃态，不留半写入。
+            def rollback(state: dict[str, Any]) -> None:
+                if mutated_revision is not None and int(state.get("revision", 1)) != mutated_revision:
+                    return
+                rec = next((item for item in state.get("roots", []) if item.get("id") == root_id), None)
+                if rec is not None:
+                    rec["active"] = True
+                    rec["aliases"] = prev_aliases
+                    state["revision"] = int(state.get("revision", 1)) + 1
+
+            try:
+                self._state.mutate(rollback)
+            except Exception:
+                pass
+            raise
+
+        _stop_index_jobs_and_invalidate_caches(target_ids, target_paths)
         return self.get_snapshot()
 
     def restore_root(
@@ -679,11 +1141,18 @@ class StorageAllowedRootsService:
         system_ids = {storage.root_identity_id(path) for path in storage.environment_allowed_roots()}
         if root_id in system_ids:
             raise CleanroomException(403, "SYSTEM_ROOT_READ_ONLY", "环境变量系统根为只读")
+        if root_id in _DEFAULT_CASCADE_HOOKS["purging_root_markers"]():
+            raise CleanroomException(
+                409, "PURGE_IN_PROGRESS", "该资源文件夹上次清除索引未完成，请先完成清除索引"
+            )
 
+        initial_state = self._state.read()
+        target_ids, target_paths, _ = self._collect_root_cascade_targets(root_id, initial_state)
         restored_path: str | None = None
+        mutated_revision: int | None = None
 
         def update(state: dict[str, Any]) -> None:
-            nonlocal restored_path
+            nonlocal restored_path, mutated_revision
             current = self._expected_version(state, payload.expected_version)
             state["roots"] = _deduplicate_root_records(state.get("roots", []))
             record = next(
@@ -717,65 +1186,107 @@ class StorageAllowedRootsService:
                 raise CleanroomException(503 if code == "MOUNT_OFFLINE" else 403, code, str(status["message"]))
 
             record["active"] = True
-            state["revision"] = current + 1
+            mutated_revision = current + 1
+            state["revision"] = mutated_revision
 
         self._state.mutate(update)
+        try:
+            default_storage_settings_service.restore_removed_entries(target_ids, target_paths)
+        except Exception:
+            def rollback(state: dict[str, Any]) -> None:
+                if mutated_revision is not None and int(state.get("revision", 1)) != mutated_revision:
+                    return
+                rec = next((item for item in state.get("roots", []) if item.get("id") == root_id), None)
+                if rec is not None:
+                    rec["active"] = False
+                    state["revision"] = int(state.get("revision", 1)) + 1
+
+            try:
+                self._state.mutate(rollback)
+            except Exception:
+                pass
+            raise
+
+        _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
         return self.get_snapshot()
 
     def purge_root(
         self, root_id: str, payload: StorageAllowedRootDeleteRequest
     ) -> StorageAllowedRootsSnapshot:
+        # Step 0（全部前置校验，写任何状态或墓碑前完成）
         system_ids = {storage.root_identity_id(path) for path in storage.environment_allowed_roots()}
         if root_id in system_ids:
             raise CleanroomException(403, "SYSTEM_ROOT_READ_ONLY", "环境变量系统根为只读，不能彻底删除")
 
+        roots_state = self._state.read()
+        self._expected_version(roots_state, payload.expected_version)
+        deduped_roots = _deduplicate_root_records(roots_state.get("roots", []))
+        record = next((item for item in deduped_roots if item.get("id") == root_id), None)
+        purging_markers = _DEFAULT_CASCADE_HOOKS["purging_root_markers"]()
+        if record is None and root_id not in purging_markers:
+            raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在")
+
+        target_ids, target_paths, primary_path = self._collect_root_cascade_targets(
+            root_id, roots_state, purging_markers
+        )
+
+        # Step 1：持久化清除墓碑并立即取消相关在途索引任务
+        _DEFAULT_CASCADE_HOOKS["mark_root_purging"](
+            root_id, target_ids, target_paths, primary_path=primary_path
+        )
+        _stop_index_jobs_and_invalidate_caches(target_ids, target_paths)
+
+        # Step 2：先清理缩略图与分镜缓存（失败不删 assets，保留重放时的资产 ID 线索）
+        candidate_ids = _DEFAULT_CASCADE_HOOKS["find_purge_candidate_asset_ids"](root_id, target_ids)
+        if candidate_ids:
+            try:
+                thumb_res = _DEFAULT_CASCADE_HOOKS["delete_media_outputs"]("thumbnails", {"asset_ids": candidate_ids})
+                sb_res = _DEFAULT_CASCADE_HOOKS["delete_media_outputs"]("storyboards", {"asset_ids": candidate_ids})
+            except CleanroomException:
+                raise
+            except Exception as exc:
+                raise CleanroomException(
+                    503, "CACHE_DELETE_FAILED", f"清除缩略图或分镜缓存失败：{exc}"
+                ) from exc
+            if (thumb_res or {}).get("failed") or (sb_res or {}).get("failed"):
+                raise CleanroomException(
+                    503,
+                    "CACHE_DELETE_FAILED",
+                    "部分缩略图或分镜缓存清除失败，请重试清除索引",
+                )
+
+        # Step 3：双键清理注册表与 SQLite 检索文档（strict_search=True，失败不吞错）
+        _DEFAULT_CASCADE_HOOKS["purge_root_records"](root_id, alias_ids=target_ids, strict_search=True)
+
+        # Step 4：清理来源登记与允许根配置，全部成功后清理墓碑
+        default_storage_settings_service.purge_entries(target_ids, target_paths)
+
+        target_keys = set(_normalized_target_keys(target_paths))
+
         def update(state: dict[str, Any]) -> None:
             current = self._expected_version(state, payload.expected_version)
             state["roots"] = _deduplicate_root_records(state.get("roots", []))
-            record = next(
-                (item for item in state.get("roots", []) if item.get("id") == root_id),
-                None,
-            )
-            if record is None:
-                raise CleanroomException(404, "ROOT_NOT_FOUND", "允许根不存在")
-
-            target_path = str(record.get("path") or "")
-            target_key = storage.directory_path_key(target_path) if target_path else None
-            state["roots"] = [
-                item
-                for item in state.get("roots", [])
-                if item.get("id") != root_id
-                and (not target_key or storage.directory_path_key(str(item.get("path") or "")) != target_key)
-            ]
-            state["revision"] = current + 1
+            remaining = []
+            removed_any = False
+            for item in state.get("roots", []):
+                ipath = str(item.get("path") or "")
+                ikey = ""
+                if ipath:
+                    try:
+                        ikey = storage.directory_path_key(ipath)
+                    except CleanroomException:
+                        ikey = ""
+                if item.get("id") == root_id or (ikey and ikey in target_keys):
+                    removed_any = True
+                else:
+                    remaining.append(item)
+            if removed_any:
+                state["roots"] = remaining
+                state["revision"] = current + 1
 
         self._state.mutate(update)
-
-        try:
-            snapshot = default_storage_settings_service.get_snapshot()
-            remaining_entries = []
-            for entry in snapshot.extra_local_entries:
-                epath = entry.get("path")
-                if epath:
-                    try:
-                        eid, _ = storage.location_identity(Path(epath))
-                        if eid == root_id:
-                            continue
-                    except Exception:
-                        pass
-                remaining_entries.append(entry)
-            if len(remaining_entries) != len(snapshot.extra_local_entries):
-                from gw.settings.models import StorageSettingsPatchRequest
-                default_storage_settings_service.patch(
-                    StorageSettingsPatchRequest(
-                        dirs=dict(snapshot.dirs),
-                        extra_local_entries=remaining_entries,
-                        expected_version=snapshot.revision,
-                    )
-                )
-        except Exception:
-            pass
-
+        _DEFAULT_CASCADE_HOOKS["clear_root_purging"](root_id)
+        _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
         return self.get_snapshot()
 
     def confirm_alias(

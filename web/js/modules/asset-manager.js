@@ -62,7 +62,13 @@ export async function ensureMediaPreviewPlayer() {
 }
 
 const root = document.getElementById('assetManagerRoot');
-const directorySettingsPage = new URLSearchParams(location.search).get('settings') === 'directories';
+const settingsPageMode = new URLSearchParams(location.search).get('settings') || '';
+const directorySettingsPage = settingsPageMode === 'directories';
+const permissionsSettingsPage = settingsPageMode === 'permissions';
+const embeddedSettingsPage = directorySettingsPage || permissionsSettingsPage;
+if(permissionsSettingsPage && typeof document !== 'undefined'){
+    document.documentElement?.classList?.add('directory-settings-page', 'permissions-settings-page');
+}
 let directorySettingsReady = false;
 let directorySettingsSaving = false;
 let directorySettingsError = '';
@@ -1380,14 +1386,49 @@ async function loadGlobalDirectorySettings(){
     } catch(error){ directorySettingsError = error.message || '目录设置读取失败'; }
     gwCall('settings', 'renderGlobalDirectorySettings');
 }
+async function loadPermissionsAllowedRootsSettings(){
+    storageSettingsState.open = true;
+    directorySettingsReady = false;
+    directorySettingsError = '';
+    gwCall('settings', 'renderGlobalDirectorySettings');
+    try {
+        await loadRegistryPrincipal();
+        if(!canManageAllowedRoots()) throw new Error('仅管理员可查看和修改允许根权限');
+        const [storage, roots, facets] = await Promise.all([
+            apiJsonResponse(assetManagerApi.getStorageSettings()),
+            apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'})),
+            apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
+        ]);
+        gwCall('settings', 'applyStorageSettingsData', storage);
+        if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(facets) registryFacets = {
+            kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
+            categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
+            tags:Array.isArray(facets.tags) ? facets.tags : registryFacets.tags,
+            collections:Array.isArray(facets.collections) ? facets.collections : registryFacets.collections,
+            roots:Array.isArray(facets.roots) ? facets.roots : registryFacets.roots,
+        };
+        directorySettingsReady = true;
+        currentStatusText = '权限配置已同步';
+    } catch(error){ directorySettingsError = error.message || '允许根权限读取失败'; }
+    gwCall('settings', 'renderGlobalDirectorySettings');
+}
+let allowedRootMutationSeq = 0;
+function invalidateAllowedRootMutation(){
+    allowedRootMutationSeq += 1;
+}
 let pendingPurgeRoot = null;
 async function saveAllowedRootsRequest(url, method, payload, {throwOnError=false}={}){
+    const hasSeqGuard = typeof allowedRootMutationSeq === 'number';
+    const reqSeq = hasSeqGuard ? ++allowedRootMutationSeq : 1;
+    const isCurrentMutation = () => !hasSeqGuard || reqSeq === allowedRootMutationSeq;
     allowedRootSettingsState = {...allowedRootSettingsState, saving:true, error:''};
     gwCall('settings', 'renderGlobalDirectorySettings');
     try {
         const data = await apiJsonResponse(assetManagerHttp.request(url, {
             method, credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify(payload)
         }));
+        if(!isCurrentMutation()) return null;
         gwCall('settings', 'applyAllowedRootSettingsData', data);
         if(method === 'POST' && url === '/api/storage-settings/roots'){
             const input = document.getElementById('allowedRootPath');
@@ -1404,14 +1445,24 @@ async function saveAllowedRootsRequest(url, method, payload, {throwOnError=false
             successMessage = '资源文件夹已移出资源库';
         }
         setStatus(successMessage);
-        if(typeof loadRegistryBootstrap === 'function'){
+        if(typeof embeddedSettingsPage === 'boolean' && embeddedSettingsPage && assetManagerApi?.getStorageSettings){
+            void apiJsonResponse(assetManagerApi.getStorageSettings())
+                .then(storage => {
+                    if(isCurrentMutation() && storage) gwCall('settings', 'applyStorageSettingsData', storage);
+                })
+                .catch(error => {
+                    if(isCurrentMutation()) reportRegistryWriteRefreshFailure('资源文件夹状态已更新，但存储配置刷新失败', error);
+                });
+        } else if(typeof loadRegistryBootstrap === 'function'){
             // 【QIN-585 AC2】void 路径同样要接住回读拒绝：登记函数现在返回原始请求，
             // 列表 500 若不 catch 会变成未处理拒绝，且用户只看到「已更新」。
             void refreshRegistryBootstrapTracked().catch(error => {
-                reportRegistryWriteRefreshFailure('资源文件夹权限已保存，但列表刷新失败', error);
+                if(isCurrentMutation()) reportRegistryWriteRefreshFailure('资源文件夹权限已保存，但列表刷新失败', error);
             });
         }
+        return data;
     } catch(error){
+        if(!isCurrentMutation()) return null;
         allowedRootSettingsState = {
             ...allowedRootSettingsState,
             error:`${error.code ? `${error.code}：` : ''}${error.message || '资源文件夹设置失败'}`
@@ -1420,8 +1471,12 @@ async function saveAllowedRootsRequest(url, method, payload, {throwOnError=false
         if(throwOnError) throw error;
         return null;
     } finally {
-        allowedRootSettingsState = {...allowedRootSettingsState, saving:false};
-        gwCall('settings', 'renderGlobalDirectorySettings');
+        if(isCurrentMutation()){
+            allowedRootSettingsState = {...allowedRootSettingsState, saving:false};
+            gwCall('settings', 'renderGlobalDirectorySettings');
+        } else if(allowedRootSettingsState.saving){
+            allowedRootSettingsState = {...allowedRootSettingsState, saving:false};
+        }
     }
 }
 async function saveAllowedRootRemoval(rootId, options={}){
@@ -5372,6 +5427,10 @@ function renderActiveAssetView(){
     }
 }
 function render(){
+    if(embeddedSettingsPage){
+        gwCall('settings', 'renderGlobalDirectorySettings');
+        return;
+    }
     // 【QIN-603 R3】列表刷新在途且同一查询的加载态已经画过时，/status、项目计数、
     // 结构查询、外壳快照等异步入口再整页重绘只会画出一模一样的第二帧加载态。
     // 折叠它以保证一次点击 ≤2 帧；终态 render 时 registryLoading 已置 false，
@@ -8067,6 +8126,7 @@ async function handleClick(event){
     }
     if(target.closest('[data-directory-reload]')){
         if(directorySettingsReady && !window.confirm('重新读取将放弃当前未保存的目录修改，是否继续？')) return;
+        if(permissionsSettingsPage){ await loadPermissionsAllowedRootsSettings(); return; }
         await loadGlobalDirectorySettings(); return;
     }
     const structureRemove = target.closest?.('[data-registry-structure-remove]');
@@ -11477,11 +11537,22 @@ async function applyRegistryBrowseSessionScroll(desired){
     area = root.querySelector('.registry-assets-scroll');
     if(area){ area.scrollTop = desired; scheduleRegistryVirtualWindow(); }
 }
-window.addEventListener('pagehide', saveRegistryBrowseSession);
+window.addEventListener('pagehide', () => {
+    saveRegistryBrowseSession();
+    invalidateAllowedRootMutation();
+    GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
+});
+window.addEventListener('message', event => {
+    if(event.origin !== window.location.origin) return;
+    if(event.data?.type === 'gw-permissions-section-leave'){
+        invalidateAllowedRootMutation();
+        GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
+    }
+});
 document.addEventListener('click', () => {
     if(registrySessionReady) setTimeout(saveRegistryBrowseSession, 250);
 });
-if(!directorySettingsPage){
+if(!embeddedSettingsPage){
     renderBoardNavigation();
     if(document.readyState !== 'loading') tryApplyRegistrySnapshot();
 }
@@ -11520,8 +11591,9 @@ function scheduleDeferredBootRequests(){
     // 首次使用时加载对应域即可，行为不变。
 }
 document.addEventListener('DOMContentLoaded', () => {
-    // 目录设置页没有资产库首屏，直接放行延后域，避免闸门永久关闭。
+    // 目录设置页与权限允许根子页没有资产库首屏，直接放行延后域，避免闸门永久关闭。
     if(directorySettingsPage){ openDeferredDomainGate(); loadGlobalDirectorySettings(); return; }
+    if(typeof permissionsSettingsPage === 'boolean' && permissionsSettingsPage){ openDeferredDomainGate(); loadPermissionsAllowedRootsSettings(); return; }
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
@@ -12119,6 +12191,7 @@ export {
     directorySettingsPage,
     directorySettingsReady,
     directorySettingsSaving,
+    embeddedSettingsPage,
     ensureAssetTreeProjectData,
     ensureBoardNavigationState,
     ensureBuiltinLutsRegistered,
@@ -12161,6 +12234,7 @@ export {
     inboxSettings,
     inboxSettingsOpen,
     inboxSourceFilter,
+    invalidateAllowedRootMutation,
     isRegistryBootstrapPending,
     isSystemPromptLibrary,
     isTauriClientMode,
@@ -12217,6 +12291,7 @@ export {
     pendingDeletePromptId,
     pendingPurgeRoot,
     pendingTreeDelete,
+    permissionsSettingsPage,
     projectBoard,
     projectDirectoryTemplateManagerState,
     projects,
@@ -12329,6 +12404,7 @@ export {
     renderRegistryRelations,
     renderRegistrySelectionBar,
     renderRegistryToolbar,
+    reportRegistryWriteRefreshFailure,
     requireExpectedVersion,
     resetRegistryScroll,
     root,

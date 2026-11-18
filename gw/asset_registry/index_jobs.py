@@ -211,9 +211,16 @@ def _video_index_data(path: Path) -> tuple[dict, float | None]:
 
 def _roots():
     """解析允许根与来源别名；每个别名保存其根 ID、相对前缀和筛选 ID。"""
+    from gw.asset_registry import repository as repo
     from gw.settings.service import default_storage_settings_service
 
-    roots = storage.allowed_roots()
+    purging_ids, purging_keys = repo._purging_root_ids_and_keys()
+    roots = [
+        root
+        for root in storage.allowed_roots()
+        if storage.root_identity_id(root) not in purging_ids
+        and not repo._path_within_any_key(root, purging_keys)
+    ]
     canonical = {}
     root_statuses = {}
     root_resolutions = {}
@@ -523,6 +530,14 @@ _ROOT_FACETS_CACHE_LOCK = threading.Lock()
 _ROOT_FACETS_CACHE = {"key": None, "value": None, "expires_at": 0.0}
 
 
+def invalidate_root_facets_cache() -> None:
+    """在移出、恢复、注销来源或清除后主动失效来源根缓存。"""
+    with _ROOT_FACETS_CACHE_LOCK:
+        _ROOT_FACETS_CACHE["key"] = None
+        _ROOT_FACETS_CACHE["value"] = None
+        _ROOT_FACETS_CACHE["expires_at"] = 0.0
+
+
 def _path_stat_signature(raw_path: str):
     """目录出现/消失或内容变化时的轻量签名；只 stat，不做有界挂载探测。"""
     try:
@@ -544,7 +559,9 @@ def _root_facets_cache_key():
 
     roots_state = storage._allowed_roots_state()
     settings_state = default_storage_settings_service._state.read()
-    bound_aliases = repo.readonly_registry_snapshot().get("root_aliases", {})
+    registry_snapshot = repo.readonly_registry_snapshot()
+    bound_aliases = registry_snapshot.get("root_aliases", {})
+    purging_roots = registry_snapshot.get("purging_roots", {})
 
     paths = [str(record.get("path") or "") for record in roots_state.get("roots", [])]
     paths.extend(
@@ -584,6 +601,7 @@ def _root_facets_cache_key():
         int(settings_state.get("revision", 1)),
         json.dumps(settings_state, sort_keys=True, ensure_ascii=False, default=str),
         json.dumps(bound_aliases, sort_keys=True, ensure_ascii=False, default=str),
+        json.dumps(purging_roots, sort_keys=True, ensure_ascii=False, default=str),
         path_state,
     )
 
@@ -1033,9 +1051,25 @@ class IndexJobs:
         ):
             _error(409, "INDEX_PROCESS_INTERRUPTED", "任务执行环境已停止")
         _admission(job["_actor"])
+        from gw.asset_registry import repository as repo
+
+        request_meta = job.get("_request") or {}
+        job_ids = {str(rid) for rid in request_meta.get("roots") or [] if rid}
+        for scope in request_meta.get("scopes") or []:
+            if scope.get("root_id"):
+                job_ids.add(str(scope["root_id"]))
+            if scope.get("storage_root_id"):
+                job_ids.add(str(scope["storage_root_id"]))
+
         cache_key = self._root_snapshot_key()
         cached = self._root_snapshot_cache.get(cache_key) if cache_key else None
         if cached is None:
+            data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
+            purging_ids, _ = repo._purging_root_ids_and_keys(data_root=data_root)
+            removed_ids = repo._removed_root_ids(data_root=data_root) if data_root is not None else set()
+            blocked_ids = purging_ids | removed_ids
+            if job_ids & blocked_ids:
+                _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
             canonical, aliases = _roots()
             fingerprint = _root_configuration_fingerprint(aliases)
             legacy_fingerprint = _legacy_root_configuration_fingerprint(aliases)
@@ -1044,14 +1078,90 @@ class IndexJobs:
                     fingerprint,
                     legacy_fingerprint,
                     canonical,
+                    blocked_ids,
                 )
                 if len(self._root_snapshot_cache) > MAX_ACTIVE:
                     self._root_snapshot_cache.pop(next(iter(self._root_snapshot_cache)))
         else:
-            fingerprint, legacy_fingerprint, canonical = cached
+            if len(cached) == 4:
+                fingerprint, legacy_fingerprint, canonical, blocked_ids = cached
+            else:
+                fingerprint, legacy_fingerprint, canonical = cached
+                blocked_ids = set()
+            if job_ids & blocked_ids:
+                _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
         if job["_fingerprint"] not in {fingerprint, legacy_fingerprint}:
             _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已改变")
         return canonical
+
+    def cancel_roots(self, root_ids, paths=()):
+        """QIN-598：移出、注销来源或清除索引时立即取消相关在途索引任务。"""
+        target_ids = {str(item).strip() for item in (root_ids or []) if str(item).strip()}
+        target_keys = set()
+        for raw_path in paths or ():
+            if not raw_path:
+                continue
+            try:
+                target_keys.add(storage.directory_path_key(str(raw_path)))
+            except Exception:
+                pass
+        if not target_ids and not target_keys:
+            return []
+
+        def _path_matches_target(raw_path: str) -> bool:
+            if not raw_path or not target_keys:
+                return False
+            try:
+                cand_key = storage.directory_path_key(str(raw_path))
+            except Exception:
+                return False
+            for tkey in target_keys:
+                if cand_key == tkey:
+                    return True
+                prefix = tkey.rstrip("\\/")
+                sep = "\\" if "\\" in tkey else "/"
+                if cand_key.startswith((prefix + sep) if prefix else sep):
+                    return True
+            return False
+
+        cancelled_ids = []
+        with self.condition:
+            raw = self.store.read()
+            for job_id, job in raw.get("jobs", {}).items():
+                if not isinstance(job, dict) or job.get("status") in TERMINAL:
+                    continue
+                req = job.get("_request") or {}
+                req_roots = {str(x) for x in req.get("roots") or [] if x}
+                scopes = req.get("scopes") or []
+                scope_ids = {
+                    str(scope.get(key) or "")
+                    for scope in scopes
+                    if isinstance(scope, dict)
+                    for key in ("root_id", "storage_root_id")
+                    if scope.get(key)
+                }
+                scope_paths = [
+                    str(scope.get("scan_path") or "")
+                    for scope in scopes
+                    if isinstance(scope, dict) and scope.get("scan_path")
+                ]
+                matched = bool((req_roots | scope_ids) & target_ids) or bool(
+                    req.get("legacy_identity_scan_complete")
+                ) or any(_path_matches_target(p) for p in scope_paths)
+                if not matched:
+                    continue
+                job["status"] = "cancelled"
+                job["phase"] = "cancelled"
+                job["error_code"] = "INDEX_ROOT_REMOVED"
+                job["version"] = int(job.get("version", 1)) + 1
+                job["updated_at"] = storage.now_iso()
+                cancelled_ids.append(job_id)
+            if cancelled_ids:
+                self.store.write(raw)
+            self._root_snapshot_cache.clear()
+            self.condition.notify_all()
+        invalidate_root_facets_cache()
+        return cancelled_ids
 
     def _job(self, job_id, auth):
         job = self.store.read()["jobs"].get(job_id)
@@ -1227,10 +1337,14 @@ class IndexJobs:
                 alias
                 for alias in aliases.values()
                 if alias["storage_root_id"] == alias["root_id"]
-                and alias.get("availability") != "invalid"
+                and alias.get("availability") not in {"invalid", "removed"}
             ]
             if selected is None
-            else [aliases[source_id] for source_id in selected]
+            else [
+                aliases[source_id]
+                for source_id in selected
+                if aliases[source_id].get("availability") != "removed"
+            ]
         )
         if not selected_aliases:
             _error(503, "INDEX_SOURCE_NOT_AVAILABLE", "没有可用的已登记索引来源", unavailable=True)
@@ -1685,6 +1799,16 @@ class IndexJobs:
                         data_status="not_integrated",
                         unavailable=True,
                     )
+            scan_data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
+            purging_ids, purging_keys = repo._purging_root_ids_and_keys(data_root=scan_data_root)
+            removed_ids = repo._removed_root_ids(data_root=scan_data_root) if scan_data_root is not None else set()
+            if (
+                root_id in purging_ids
+                or root_id in removed_ids
+                or str(scope.get("storage_root_id") or "") in (purging_ids | removed_ids)
+                or repo._path_within_any_key(scan_root_resolved, purging_keys)
+            ):
+                continue
             exclusion_roots = repo._index_scan_exclusions_for_scope(
                 scan_root_resolved,
                 configured_exclusion_roots,
@@ -1721,7 +1845,7 @@ class IndexJobs:
                         if stat.S_ISDIR(info.st_mode):
                             if repo._index_scan_directory_is_excluded(
                                 path, exclusion_roots
-                            ):
+                            ) or repo._path_within_any_key(path, purging_keys):
                                 continue
                             pending.append(path)
                             continue
@@ -1840,11 +1964,42 @@ class IndexJobs:
 
         def commit(raw):
             self._check(job)
+            # QIN-598：事务锁内二次校验允许根、已移出来源与清除墓碑，丢弃迟到扫描结果。
+            commit_data_root = getattr(self, "root", None) or repo._index_scan_runtime_data_root()
+            purging_ids, _ = repo._purging_root_ids_and_keys(raw, data_root=commit_data_root)
+            removed_ids = repo._removed_root_ids(data_root=commit_data_root) if commit_data_root is not None else set()
+            blocked_ids = purging_ids | removed_ids
+            scoped_root_ids = {
+                str(s.get("root_id") or "")
+                for s in (job.get("_request", {}).get("scopes") or [])
+                if s.get("root_id")
+            }
+            scoped_source_ids = {
+                str(s.get("storage_root_id") or "")
+                for s in (job.get("_request", {}).get("scopes") or [])
+                if s.get("storage_root_id")
+            }
+            live_root_ids = (
+                {storage.root_identity_id(r) for r in storage.allowed_roots()}
+                if scoped_root_ids
+                else set()
+            )
+            if (scoped_root_ids | scoped_source_ids) & blocked_ids or (
+                scoped_root_ids and any(rid not in live_root_ids for rid in scoped_root_ids)
+            ):
+                _error(403, "INDEX_ROOTS_CHANGED", "允许根或来源配置已移除或正在清除")
+            valid_files = [
+                item
+                for item in files
+                if str(item.get("root_id") or "") not in blocked_ids
+                and str(item.get("storage_root_id") or "") not in blocked_ids
+                and (not scoped_root_ids or str(item.get("root_id") or "") in live_root_ids)
+            ]
             receipts = raw.setdefault("index_job_receipts", {})
             if receipt_id in receipts:
                 return receipts[receipt_id]
             by_relpath = {}
-            for item in files:
+            for item in valid_files:
                 by_relpath.setdefault(item["canonical_relpath"], []).append(item)
             repair_queue = raw.setdefault("identity_repair_queue", [])
             if not isinstance(repair_queue, list):
@@ -1877,13 +2032,13 @@ class IndexJobs:
                 if canonical_relpath:
                     asset["canonical_relpath"] = canonical_relpath
                     known[(asset_root_id, canonical_relpath)] = asset
-            disk = {(x["root_id"], x["canonical_relpath"]) for x in files}
+            disk = {(x["root_id"], x["canonical_relpath"]) for x in valid_files}
             added = 0
             updated = 0
             if job["_request"]["kind"] == "reindex":
                 search_documents = {}
                 next_asset_number = repo._asset_sequence_start(raw)
-                for item in files:
+                for item in valid_files:
                     identity = (item["root_id"], item["canonical_relpath"])
                     existing = known.get(identity)
                     if existing is not None:
@@ -1986,7 +2141,7 @@ class IndexJobs:
                 result = {
                     "indexed": added,
                     "updated": updated,
-                    "scanned": len(files),
+                    "scanned": len(valid_files),
                     "revision": raw["revision"],
                 }
                 # QIN-600：生成元数据提取的可复核统计（终态后不变）。
@@ -1997,12 +2152,12 @@ class IndexJobs:
                 if job["_request"].get("hash_files"):
                     result["hashed"] = sum(
                         1
-                        for x in files
+                        for x in valid_files
                         if x.get("hash_mode") == HASH_MODE_FULL
                     )
                     result["hash_sampled_oversize"] = sum(
                         1
-                        for x in files
+                        for x in valid_files
                         if x.get("hash_mode") == HASH_MODE_SAMPLED
                     )
             else:

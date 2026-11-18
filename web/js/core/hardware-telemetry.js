@@ -991,6 +991,7 @@
           && this.authState.auth_mode === 'local_account';
         recoveryPanel.classList.toggle('hidden', !canManageCodes);
       }
+      this.syncPermissionsAllowedRootsMount();
 
       const setText = (node, text) => { if (node) node.textContent = text; };
       const mark = (node, kind, title) => {
@@ -1038,6 +1039,53 @@
       } else {
         setText(latEl, '未测量');
         mark(latEl, 'not_integrated', '未取到真实响应耗时');
+      }
+    },
+
+    syncPermissionsAllowedRootsMount: function() {
+      const mount = document.getElementById('permissionsAllowedRootsMount');
+      if (!mount) return;
+      const isAdmin = Boolean(this.authState?.authenticated)
+        && String(this.authState?.principal?.role || '') === 'admin';
+      if (!isAdmin) {
+        mount.classList.add('hidden');
+        mount.setAttribute('hidden', '');
+        mount.innerHTML = '';
+        return;
+      }
+      mount.classList.remove('hidden');
+      mount.removeAttribute('hidden');
+      if (!this.permissionsRootsBridgeBound) {
+        this.permissionsRootsBridgeBound = true;
+        window.addEventListener('message', event => {
+          if (event.origin !== window.location.origin) return;
+          if (event.data?.type !== 'gw-permissions-roots-height') return;
+          const height = Number(event.data.height || 0);
+          const frame = document.getElementById('permissionsAllowedRootsMount')?.querySelector('iframe');
+          if (frame && Number.isFinite(height) && height > 0) {
+            frame.style.height = `${Math.max(220, Math.ceil(height))}px`;
+          }
+        });
+        document.addEventListener('click', event => {
+          const btn = event.target?.closest?.('[data-section]');
+          if (!btn || btn.dataset.section === 'permissions') return;
+          const frame = document.getElementById('permissionsAllowedRootsMount')?.querySelector('iframe');
+          frame?.contentWindow?.postMessage({ type: 'gw-permissions-section-leave' }, window.location.origin);
+        });
+        window.addEventListener('pagehide', () => {
+          const frame = document.getElementById('permissionsAllowedRootsMount')?.querySelector('iframe');
+          frame?.contentWindow?.postMessage({ type: 'gw-permissions-section-leave' }, window.location.origin);
+        });
+      }
+      if (!mount.querySelector('iframe[data-permissions-roots-frame]')) {
+        mount.innerHTML = '';
+        const frame = document.createElement('iframe');
+        frame.className = 'permissions-settings-frame';
+        frame.src = '/static/asset-manager.html?settings=permissions&embedded=1';
+        frame.title = '允许根权限管理';
+        frame.loading = 'lazy';
+        frame.setAttribute('data-permissions-roots-frame', '');
+        mount.appendChild(frame);
       }
     },
 

@@ -107,6 +107,7 @@ import {
     detailViewerFontListCollapsed,
     detailViewerState,
     detailViewerVideo,
+    directorySettingsPage,
     ensureAssetTreeProjectData,
     ensureBoardNavigationState,
     ensureBuiltinLutsRegistered,
@@ -117,6 +118,7 @@ import {
     findWorkflowItem,
     gwSetAssetClipboard,
     isSystemPromptLibrary,
+    invalidateAllowedRootMutation,
     loadAll,
     loadAssetAllowedRootPaths,
     loadLocalAssets,
@@ -131,6 +133,7 @@ import {
     pendingDeleteAssetId,
     pendingDeletePromptId,
     pendingTreeDelete,
+    permissionsSettingsPage,
     projectBoard,
     projects,
     promptCategoriesFor,
@@ -196,6 +199,7 @@ import {
     renderRegistryPagination,
     renderRegistrySelectionBar,
     renderRegistryToolbar,
+    reportRegistryWriteRefreshFailure,
     requireExpectedVersion,
     resetRegistryScroll,
     root,
@@ -588,12 +592,24 @@ async function removeAssetSourceRegistrations(sourceIds=[], {deferViewCleanup=fa
     }));
     applyStorageSettingsData(data || {});
     if(!deferViewCleanup){
-        setRegistryAssets(registryAssets.filter(item => !removableIds.has(String(item.storage_root_id || ''))));
-        registryFacets.roots = (registryFacets.roots || []).filter(root => !removableIds.has(String(root.id || '')));
+        const aliasIds = new Set(removableIds);
+        (registryFacets.roots || []).forEach(root => {
+            const candidates = [root.id, ...(root.aliases || [])].map(String).filter(Boolean);
+            if(candidates.some(id => removableIds.has(id))) candidates.forEach(id => aliasIds.add(id));
+        });
+        setRegistryAssets(registryAssets.filter(item =>
+            !aliasIds.has(String(item.storage_root_id || '')) && !aliasIds.has(String(item.root_id || ''))));
+        registryFacets.roots = (registryFacets.roots || []).filter(root =>
+            ![root.id, ...(root.aliases || [])].some(id => aliasIds.has(String(id || ''))));
         if(registryStatus?.overview?.roots){
-            registryStatus.overview.roots = registryStatus.overview.roots.filter(root => !removableIds.has(String(root.id || '')));
+            registryStatus.overview.roots = registryStatus.overview.roots.filter(root =>
+                ![root.id, ...(root.aliases || [])].some(id => aliasIds.has(String(id || ''))));
         }
         registryAssetsQueryCache.clear();
+        if(!directorySettingsPage && !permissionsSettingsPage){
+            void refreshRegistryFacetData().catch(error => reportRegistryWriteRefreshFailure('素材来源已注销，但目录计数刷新失败', error));
+            void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('素材来源已注销，但列表刷新失败', error));
+        }
     }
     return removableIds;
 }
@@ -616,9 +632,11 @@ async function deleteCustomAssetBoard(id){
 let resourceFolderActionSeq = 0;
 let resourceFolderActionBusy = '';
 let resourceFolderInternalViewSwitch = false;
-const resourceFolderUnregisteredSources = new Set();
 function invalidateResourceFolderAction(){
-    if(!resourceFolderInternalViewSwitch) resourceFolderActionSeq += 1;
+    if(!resourceFolderInternalViewSwitch){
+        resourceFolderActionSeq += 1;
+        invalidateAllowedRootMutation();
+    }
 }
 function resolveResourceFolderIdentity(rootTarget={}){
     const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
@@ -665,15 +683,8 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
         }
         if(!current()) return {status:'stale'};
         if(action === 'remove'){
-            if(identity.sourceId && !resourceFolderUnregisteredSources.has(identity.sourceId)){
-                const removed = await removeAssetSourceRegistrations([identity.sourceId], {deferViewCleanup:true});
-                if(!removed?.has(identity.sourceId)) throw new Error('素材来源未移除，请刷新后重试');
-                resourceFolderUnregisteredSources.add(identity.sourceId);
-            }
-            if(!current()) return {status:'stale'};
             const result = await saveAllowedRootRemoval(identity.allowedRootId, {throwOnError:true});
             if(!current()) return {status:'stale'};
-            if(identity.sourceId) resourceFolderUnregisteredSources.delete(identity.sourceId);
             removeResourceFolderViewState(rootTarget, identity);
             setStatus('资源文件夹已移出资源库');
             return {status:'removed', result};
@@ -696,13 +707,19 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
 function removeResourceFolderViewState(rootTarget, identity){
     registryAssetsQueryCache.clear();
     const ids = new Set([identity.allowedRootId, identity.sourceId].filter(Boolean));
+    (registryFacets.roots || []).forEach(root => {
+        const candidates = [root.id, ...(root.aliases || [])].map(String).filter(Boolean);
+        if(candidates.some(id => ids.has(id))) candidates.forEach(id => ids.add(id));
+    });
     registryFacets.roots = (registryFacets.roots || []).filter(root =>
         ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
-    setRegistryAssets(registryAssets.filter(item => !ids.has(String(item.storage_root_id || ''))));
+    setRegistryAssets(registryAssets.filter(item =>
+        !ids.has(String(item.storage_root_id || '')) && !ids.has(String(item.root_id || ''))));
     if(registryStatus?.overview?.roots){
-        registryStatus.overview.roots = registryStatus.overview.roots.filter(root => !ids.has(String(root.id || '')));
+        registryStatus.overview.roots = registryStatus.overview.roots.filter(root =>
+            ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
     }
-    const rootKeys = [identity.allowedRootId, identity.sourceId, rootTarget.rootId].filter(Boolean).map(String);
+    const rootKeys = [...ids, rootTarget.rootId].filter(Boolean).map(String);
     if(rootTarget.key) assetTreeExpanded.delete(rootTarget.key);
     rootKeys.forEach(rootId => assetTreeExpanded.delete(`mine:root:${rootId}::__root__`));
     const selectedWithinRoot = rootKeys.some(rootId => String(assetTreeSelectedKey || '').startsWith(`mine:root:${rootId}`));
@@ -712,8 +729,10 @@ function removeResourceFolderViewState(rootTarget, identity){
         finally { resourceFolderInternalViewSwitch = false; }
         setAssetTreeSelectedKey('');
     }
-    void refreshRegistryFacetData();
-    void refreshRegistryAssets();
+    if(!directorySettingsPage && !permissionsSettingsPage){
+        void refreshRegistryFacetData().catch(error => reportRegistryWriteRefreshFailure('资源文件夹已更新，但目录计数刷新失败', error));
+        void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('资源文件夹已更新，但列表刷新失败', error));
+    }
     render();
 }
 async function removeGeneratedSourceBoard(rootId, name='素材库'){

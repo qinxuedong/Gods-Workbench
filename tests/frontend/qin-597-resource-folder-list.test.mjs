@@ -93,13 +93,13 @@ function loadDirectorySettingsBoot({loadSettings, facets={roots:[{id:'local_extr
   );
   const loader = loaderRuntime.load;
   Object.defineProperty(state, 'loadedFacets', {get:()=>loaderRuntime.getFacets()});
-  const bootFactory = new Function('directorySettingsPage','openDeferredDomainGate','loadGlobalDirectorySettings',
+  const bootFactory = new Function('directorySettingsPage','permissionsSettingsPage','openDeferredDomainGate','loadGlobalDirectorySettings','loadPermissionsAllowedRootsSettings',
     `const callback = () => {${bootBody}}; return callback;`);
-  const boot = bootFactory(true, () => state.calls.push(['gate']), () => {
+  const boot = bootFactory(true, false, () => state.calls.push(['gate']), () => {
     state.calls.push(['load-settings']);
     state.loaderPromise = loadSettings ? loadSettings(loader) : loader();
     return state.loaderPromise;
-  });
+  }, () => {});
   return {state, loader, boot};
 }
 
@@ -144,15 +144,13 @@ test('AC4: settings and sidebar invoke the registered shared action for both ope
   assert.match(organize, /executeResourceFolderAction,\s*invalidateResourceFolderAction/);
 });
 
-test('AC5/AC6: shared action maps QIN-596 aliases, retries partial removal and clears selected view state', () => {
+test('AC5/AC6: shared action maps QIN-596 aliases, delegates unified cascade and clears selected view state', () => {
   const identity = sliceBetween(organize, 'function resolveResourceFolderIdentity', 'function confirmResourceFolderPurge');
   const action = sliceBetween(organize, 'async function executeResourceFolderAction', 'function removeResourceFolderViewState');
-  const cleanup = sliceBetween(organize, 'function removeResourceFolderViewState', 'function ');
+  const cleanup = sliceBetween(organize, 'function removeResourceFolderViewState', 'async function removeGeneratedSourceBoard');
   assert.match(identity, /root_\[a-f0-9\]\{24\}/);
   assert.match(identity, /local_extra_/);
   assert.match(identity, /registryFacets\.roots/);
-  assert.match(action, /removeAssetSourceRegistrations\(\[identity\.sourceId\], \{deferViewCleanup:true\}\)/);
-  assert.match(action, /resourceFolderUnregisteredSources/);
   assert.match(action, /saveAllowedRootRemoval\(identity\.allowedRootId, \{throwOnError:true\}\)/);
   assert.match(cleanup, /registryAssetsQueryCache\.clear\(\)/);
   assert.match(cleanup, /registryFacets\.roots/);
@@ -181,14 +179,15 @@ function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = a
     registryFacets: {roots:[...roots]},
     registryAssetsQueryCache: {clear(){ this.cleared = true; }},
     registryAssets: [], registryStatus: {overview:{roots:[]}}, assetTreeExpanded: new Set(),
-    assetTreeSelectedKey:'', activeTab:'registry', statuses:[], toasts:[], removals:[], purges:[],
+    assetTreeSelectedKey:'', activeTab:'registry', statuses:[], toasts:[], purges:[], invalidatedMutations:0,
     confirmQueue:[...confirms]
   };
   const factory = new Function(
     'registryFacets','registryAssetsQueryCache','registryAssets','registryStatus','assetTreeExpanded',
     'assetTreeSelectedKey','activeTab','window','canManageAllowedRoots','setStatus','showAssetOrganizeToast',
-    'removeAssetSourceRegistrations','saveAllowedRootRemoval','saveAllowedRootPurge','setRegistryAssets',
+    'saveAllowedRootRemoval','saveAllowedRootPurge','setRegistryAssets',
     'setAssetTreeSelectedKey','setActiveTab','refreshRegistryFacetData','refreshRegistryAssets','render',
+    'invalidateAllowedRootMutation','directorySettingsPage','permissionsSettingsPage','reportRegistryWriteRefreshFailure',
     `${source}; return {executeResourceFolderAction, invalidateResourceFolderAction, state:()=>({registryFacets, assetTreeSelectedKey, activeTab})};`
   );
   const actions = factory(
@@ -198,19 +197,20 @@ function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = a
     () => true,
     message => state.statuses.push(message),
     message => state.toasts.push(message),
-    async ids => { state.removals.push(ids); return new Set(ids); },
     async id => { state.allowedRootRemovals = [...(state.allowedRootRemovals || []), id]; return removeRoot(id); },
     async id => { state.purges.push(id); return purgeRoot(id); },
     assets => { state.registryAssets = assets; },
     key => { state.assetTreeSelectedKey = key; },
     tab => { state.activeTab = tab; },
-    async () => {}, async () => {}, () => {}
+    async () => {}, async () => {}, () => {},
+    () => { state.invalidatedMutations += 1; },
+    false, false, () => {}
   );
   return {actions, state};
 }
 
-test('runtime: settings boot fetches facets and root-only access can be revoked without a source', async () => {
-  async function run({facets, expectedSourceId}) {
+test('runtime: settings boot fetches facets and root-only access can be revoked cleanly', async () => {
+  async function run({facets}) {
     const {state, boot} = loadDirectorySettingsBoot({facets});
     boot();
     await state.loaderPromise;
@@ -228,18 +228,16 @@ test('runtime: settings boot fetches facets and root-only access can be revoked 
     await dispatch(remove);
     assert.equal(remove.defaultPrevented, true);
     assert.equal(actionCalls.find(call => call[1] === 'executeResourceFolderAction')?.[3], 'remove');
-    assert.deepEqual(actionState.removals, expectedSourceId ? [[expectedSourceId]] : []);
     assert.deepEqual(actionState.allowedRootRemovals, ['root_0123456789abcdef01234567']);
   }
   await run({facets:{roots:[]}});
-  await run({facets:{roots:[{id:'local_extra_abc_123',aliases:['root_0123456789abcdef01234567'],path:'D:/Media/Film'}]},expectedSourceId:'local_extra_abc_123'});
+  await run({facets:{roots:[{id:'local_extra_abc_123',aliases:['root_0123456789abcdef01234567'],path:'D:/Media/Film'}]}});
 });
 
 test('runtime: move out, refresh, then purge removed root by allowed-root ID alone', async () => {
   const {actions, state} = loadResourceFolderActions({confirms:[true, true]});
   const active = {id:'root_0123456789abcdef01234567', path:'C:/Media', name:'Media'};
   assert.equal((await actions.executeResourceFolderAction(active, 'remove')).status, 'removed');
-  assert.deepEqual(state.removals, [['local_extra_abc_123']]);
   assert.deepEqual(state.allowedRootRemovals, ['root_0123456789abcdef01234567']);
 
   state.registryFacets.roots = [];
@@ -249,9 +247,9 @@ test('runtime: move out, refresh, then purge removed root by allowed-root ID alo
   assert.equal(state.confirmMessages.length, 2, 'move and final purge confirmations were shown');
 });
 
-test('runtime: partial move failure retains source-unregister progress for retry', async () => {
+test('runtime: failed move allows clean retry through single backend cascade', async () => {
   let revokeAttempts = 0;
-  const {actions, state} = loadResourceFolderActions({removeRoot: async () => {
+  const {actions} = loadResourceFolderActions({removeRoot: async () => {
     revokeAttempts += 1;
     if(revokeAttempts === 1) throw new Error('revision conflict');
     return {};
@@ -259,7 +257,6 @@ test('runtime: partial move failure retains source-unregister progress for retry
   const root = {id:'root_0123456789abcdef01234567', path:'C:/Media'};
   assert.equal((await actions.executeResourceFolderAction(root, 'remove')).status, 'failed');
   assert.equal((await actions.executeResourceFolderAction(root, 'remove')).status, 'removed');
-  assert.equal(state.removals.length, 1, 'retry must not unregister the source twice');
   assert.equal(revokeAttempts, 2);
 });
 

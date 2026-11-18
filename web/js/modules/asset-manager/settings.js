@@ -87,6 +87,7 @@ import {
     directorySettingsPage,
     directorySettingsReady,
     directorySettingsSaving,
+    embeddedSettingsPage,
     ensureBoardNavigationState,
     escapeAttr,
     escapeHtml,
@@ -111,6 +112,7 @@ import {
     localUploadTree,
     normalizeRegistryAsset,
     pendingPurgeRoot,
+    permissionsSettingsPage,
     projectDirectoryTemplateManagerState,
     refreshIcons,
     refreshRegistryAssets,
@@ -961,7 +963,7 @@ async function withDirectorySaving(closeBrowser, task){
         serverDirectoryBrowserState.saving = true;
         serverDirectoryBrowserState.error = '';
     }
-    if(directorySettingsPage){
+    if(embeddedSettingsPage){
         setDirectorySettingsSaving(true);
         renderGlobalDirectorySettings();
     } else if(closeBrowser) {
@@ -978,7 +980,7 @@ async function withDirectorySaving(closeBrowser, task){
         }
         setStatus(error.message || '保存目录失败');
     } finally {
-        if(directorySettingsPage){
+        if(embeddedSettingsPage){
             setDirectorySettingsSaving(false);
             renderGlobalDirectorySettings();
         } else if(closeBrowser) {
@@ -1541,6 +1543,7 @@ function renderPurgeConfirmModal(){
 }
 
 function renderAllowedRootsSettings(){
+    if(!canManageAllowedRoots()) return '';
     const statusLabel = root => root.availability === 'available' ? '在线'
         : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
     const seenPaths = new Set();
@@ -1553,14 +1556,16 @@ function renderAllowedRootsSettings(){
     }
     const entries = uniqueRoots.map(root => {
         const removable = canManageAllowedRoots() && !root.readOnly;
-        const status = root.active ? statusLabel(root) : '已移除';
+        const purgeIncomplete = root.availabilityReason === 'PURGE_INCOMPLETE';
+        const status = root.active ? statusLabel(root) : (purgeIncomplete ? '清除未完成' : '已移除');
+        const rowClass = root.active ? 'allowed-root-row' : 'allowed-root-row allowed-root-row--removed';
         // Legacy contract markers remain source-level only; visible copy is the resource-folder terminology.
         // 系统根（只读）
         // root.active ? root.aliasCandidates.map
         const actions = root.active
             ? `${root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${!canManageAllowedRoots() || allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('')}${removable ? `<button type="button" class="hw-btn" data-resource-folder-remove="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移出资源库</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`
-            : `${removable ? `<button type="button" class="hw-btn hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>恢复</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`;
-        return `<article class="allowed-root-row" data-allowed-root="${escapeAttr(root.id)}"><div class="allowed-root-info"><strong>${escapeHtml(resourceFolderDisplayName(root))}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code><small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(status)}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}${root.aliases.map(alias => `<small>已确认路径别名：<code>${escapeHtml(alias)}</code></small>`).join('')}</div><div class="allowed-root-actions">${actions}</div></article>`;
+            : `${removable ? `${purgeIncomplete ? '' : `<button type="button" class="hw-btn hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>恢复</button>`}<button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`;
+        return `<article class="${rowClass}" data-allowed-root="${escapeAttr(root.id)}"><div class="allowed-root-info"><strong>${escapeHtml(resourceFolderDisplayName(root))}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code><small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(status)}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}${root.aliases.map(alias => `<small>已确认路径别名：<code>${escapeHtml(alias)}</code></small>`).join('')}</div><div class="allowed-root-actions">${actions}</div></article>`;
     }).join('');
     const allowedRootPicker = canBrowseServerDirectories()
         ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + ALLOWED_ROOT_FIELD_KEY + '" title="浏览服务器目录" aria-label="浏览服务器资源文件夹"><i data-lucide="folder-open"></i></button>'
@@ -1582,7 +1587,12 @@ function renderGlobalDirectorySettings(){
     };
     const dirs = storageSettingsState.dirs || {};
     const clientSourceInput = () => '<label class="storage-dir-row"><span>客户端上传来源目录</span><div class="directory-input-row"><input id="clientUploadSourceDir" value="' + escapeAttr(clientUploadSourceDir) + '" autocomplete="off" title="保存在客户端本机，仅客户端上传素材时作为默认来源">' + '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-client-directory-picker="upload_source" title="选择客户端目录" aria-label="选择客户端上传来源目录"><i data-lucide="folder-open"></i></button></div></label>';
-    host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
+    if(permissionsSettingsPage){
+        host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="shield-check"></i>允许根权限管理</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取允许根配置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
+        ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
+        ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取允许根权限…'}</p>` : `<fieldset class="permissions-roots-fieldset" ${directorySettingsSaving ? 'disabled' : ''}>${renderAllowedRootsSettings()}</fieldset>${renderServerDirectoryBrowser()}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
+    } else {
+        host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
         <div class="directory-cards-column directory-cards-column--left">
@@ -1591,12 +1601,18 @@ function renderGlobalDirectorySettings(){
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         </div>
         <div class="directory-cards-column directory-cards-column--right">
-        ${renderAllowedRootsSettings()}
         ${renderProjectWorkspaceSettingsBody()}
         </div>
         </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
-    host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
+        host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
+    }
     refreshIcons();
+    if(permissionsSettingsPage && typeof window !== 'undefined' && window.parent && window.parent !== window){
+        requestAnimationFrame(() => {
+            const height = Math.max(220, Math.ceil(Math.max(host.scrollHeight || 0, document.documentElement?.scrollHeight || 0)));
+            window.parent.postMessage({type:'gw-permissions-roots-height', height}, window.location.origin);
+        });
+    }
     // 自动保存会整体重建页面，渲染后把焦点还给原字段，避免打断连续录入。
     requestAnimationFrame(() => {
         if(!focusId) return;
