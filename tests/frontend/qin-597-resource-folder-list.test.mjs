@@ -147,7 +147,7 @@ test('AC4: settings and sidebar invoke the registered shared action for both ope
 test('AC5/AC6: shared action maps QIN-596 aliases, delegates unified cascade and clears selected view state', () => {
   const identity = sliceBetween(organize, 'function resolveResourceFolderIdentity', 'function confirmResourceFolderPurge');
   const action = sliceBetween(organize, 'async function executeResourceFolderAction', 'function removeResourceFolderViewState');
-  const cleanup = sliceBetween(organize, 'function removeResourceFolderViewState', 'async function removeGeneratedSourceBoard');
+  const cleanup = sliceBetween(organize, 'function removeResourceFolderViewState', 'function togglePreviewDeleteCategory');
   assert.match(identity, /root_\[a-f0-9\]\{24\}/);
   assert.match(identity, /local_extra_/);
   assert.match(identity, /registryFacets\.roots/);
@@ -172,7 +172,7 @@ test('AC7: purge requires two confirmations, is irreversible, and preserves sour
 
 function loadResourceFolderActions({removeRoot = async () => ({}), purgeRoot = async () => ({}), confirms = [true], roots = [{id:'local_extra_abc_123', aliases:['root_0123456789abcdef01234567'], path:'C:/Media'}]} = {}) {
   const start = organize.indexOf('let resourceFolderActionSeq = 0;');
-  const end = organize.indexOf('async function removeGeneratedSourceBoard', start);
+  const end = organize.indexOf('function togglePreviewDeleteCategory', start);
   assert.ok(start >= 0 && end > start, 'resource-folder action block exists');
   const source = organize.slice(start, end);
   const state = {

@@ -30,11 +30,9 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
   );
   assert.ok(toolbar('inbox').includes('data-registry-add-url'), 'allowUrl:true 应输出添加 URL 控件');
 
-  // ④ 汇聚点调用签名契约：registry / projects 隐藏标题，收集箱 / 挂载文件夹显示；
-  //    并顺带锁定 QIN-602 顶栏标题按当前看板冻结（替代原字面量断言）。
-  // 挂载文件夹用真实看板状态（asset_board_navigation_v1），不伪造收集箱看板：
-  // 产品里 assetBoardById('inbox') 为 null，收集箱顶栏标题实际是兜底的「资源库」。
-  for(const [tab, hidden] of [['registry', true], ['projects', true], ['inbox', false], ['library_demo', false]]){
+  // ④ 汇聚点调用签名契约：registry / projects / scripts 隐藏标题，收集箱显示；
+  //    已移除的旧自定义看板 library_demo 会回落到 registry（hideHeading:true）。
+  for(const [tab, hidden] of [['registry', true], ['projects', true], ['scripts', true], ['inbox', false]]){
     await host.setTab(tab);
     assert.equal(
       host.root.innerHTML.includes('class="content-heading"'),
@@ -44,6 +42,9 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
     assert.ok(host.root.innerHTML.includes('data-registry-add-url'), `${tab} 应保留 allowUrl:true`);
     assert.equal(host.root.querySelectorAll('.content-toolbar.registry-toolbar').length, 1, `${tab} 工具栏应恰好 1 份`);
   }
+  await host.setTab('library_demo');
+  assert.equal(host.main.activeTab, 'registry', '已移除的自定义看板应回落到资产总览');
+  assert.equal(host.root.innerHTML.includes('class="content-heading"'), false, '回落到总览后应保持隐藏标题');
   host.dispose();
 });
 

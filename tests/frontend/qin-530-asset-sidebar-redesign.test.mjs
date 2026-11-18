@@ -45,9 +45,14 @@ test('QIN-560 AC3: QIN-544 内嵌树保留双标签、树选择与面包屑', ()
 
 test('QIN-560 AC3: 点击单栏树入口切换托管、上传与用户资源库看板', () => {
   const activatedBoardIds = [];
+  const setActiveTabCalls = [];
   const context = createContext({
     assetTreeSelectedKey: '',
     activatedBoardIds,
+    setActiveTabCalls,
+    setActiveTab: id => setActiveTabCalls.push(id),
+    setAssetTreeSelectedKey: k => { context.assetTreeSelectedKey = k; },
+    render: () => {},
     assetBoardById: id => ({id}),
     activateAssetBoard: id => activatedBoardIds.push(id),
     // QIN-591：看板激活派发已 gwCall 化，桩把网关调用转回被记录的激活入口。
@@ -67,10 +72,11 @@ test('QIN-560 AC3: 点击单栏树入口切换托管、上传与用户资源库�
       },
     };
     assert.equal(runInContext('handleAssetTreeNodeClick(event)', context), true);
-    assert.equal(runInContext('assetTreeSelectedKey', context), key);
-    assert.equal(activatedBoardIds.at(-1), boardId);
   }
-  assert.deepEqual(activatedBoardIds, ['assets', 'local', 'library_example', 'source_library_example']);
+  // QIN-599 AC2: 旧版 mine:board:* 用户/来源看板已移除，点击均回落到资产总览 'registry' 且不再触发看板激活。
+  assert.equal(runInContext('assetTreeSelectedKey', context), 'registry');
+  assert.deepEqual(activatedBoardIds, []);
+  assert.deepEqual(runInContext('setActiveTabCalls', context), ['registry', 'registry', 'registry', 'registry']);
 });
 
 test('QIN-560 AC3: 上传资源页返回根面包屑并清除 registry 筛选和旧选中态', async () => {

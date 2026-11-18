@@ -117,6 +117,7 @@ tests/frontend/qin-595-mounted-folder-empty-state.test.mjs
 tests/frontend/qin-596-resource-folder-add.test.mjs
 tests/frontend/qin-597-resource-folder-list.test.mjs
 tests/frontend/qin-598-allowed-roots-permissions.test.mjs
+tests/frontend/qin-599-remove-asset-boards.test.mjs
 tests/frontend/qin-602-asset-topbar-retention.test.mjs
 tests/frontend/qin-602-asset-view-harness.mjs
 tests/frontend/qin-603-asset-folder-switch-render.test.mjs

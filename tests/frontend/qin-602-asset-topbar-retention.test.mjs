@@ -52,7 +52,7 @@ const INBOX_CHAIN = "            return gwCall('inbox', 'openAssetInbox');";
 const PENDING_LOADER = '() => new Promise(() => {})';
 /** 真实加载边界注入：域模块仍真实 import，只是 loader 永远不落地（模拟慢网络/挂起）。 */
 const SLOW_DOMAINS = {inbox: PENDING_LOADER, organize: PENDING_LOADER, lut: PENDING_LOADER};
-const QUICK_TABS = ['inbox', 'lut', 'library_demo', 'scripts', 'projects'];
+const QUICK_TABS = ['inbox', 'scripts', 'workflows', 'projects', 'lut'];
 
 /**
  * 建一个「从引导段开始就捕获 console.error」的真实宿主。
@@ -97,12 +97,18 @@ test('QIN-602 AC1/AC4：真实入口切收集箱 → 挂载文件夹 → 总览�
     assert.equal(toolbarTitle(host.root), '资源库', '收集箱没有独立看板，顶栏标题取兜底「资源库」');
     assert.equal(main.activeTab, 'inbox', '状态已切到收集箱');
 
+    window.GWAssetTreeBridge.activate('system:lut');
+    await wait(120);
+    assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '系统分类入口：顶栏各 1 份');
+    assert.equal(toolbarTitle(host.root), 'LUT 库', '系统分类入口顶栏标题取真实看板名');
+    assert.equal(main.activeTab, 'lut', '状态已切到 LUT 库');
+
+    // QIN-599 AC2 / 选中态风险：点击旧版被删看板 key 时优雅回落到资产总览
     main.setAssetTreeSelectedKey('mine:board:library_demo');
     window.GWAssetTreeBridge.activate('mine:board:library_demo');
-    await wait(120);
-    assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '挂载文件夹：顶栏各 1 份');
-    assert.equal(toolbarTitle(host.root), '挂载文件夹A', '挂载文件夹顶栏标题取真实看板名');
-    assert.equal(main.activeTab, 'library_demo', '状态已切到挂载文件夹');
+    await wait(80);
+    assert.equal(main.activeTab, 'registry', '旧版自定义看板已删除，状态回落到资产总览');
+    assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '回落总览：顶栏各 1 份');
 
     window.GWAssetTreeBridge.activate('registry');
     await wait(120);
@@ -321,8 +327,8 @@ test('QIN-602 AC2：多域加载挂起时连续快速切换，不累积多排顶
             main.setActiveTab(tab);
             main.render();
             assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, `快速切到 ${tab} 后顶栏仍各 1 份`);
-            if (tab === 'library_demo') {
-                assert.equal(toolbarTitle(host.root), '挂载文件夹A', '顶栏标题必须属于最后选中的视图');
+            if (tab === 'lut') {
+                assert.equal(toolbarTitle(host.root), 'LUT 库', '顶栏标题必须属于最后选中的视图');
             }
         }
         assert.ok(!host.root.querySelector('[data-asset-view-error]'), '挂起中的域不得误判成加载失败');
@@ -386,10 +392,10 @@ test('QIN-602：organize 的 board 无效旁路必须经汇聚点（顶栏不丢
 
     main.render();
     await wait(60);
-    main.setActiveTab('library_demo');
+    main.setActiveTab('projects');
     main.render();
     await wait(120);
-    assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '挂载文件夹顶栏各 1 份');
+    assert.deepEqual(topbar(host.root), {overview: 1, toolbar: 1, marked: 2}, '项目制片顶栏各 1 份');
 
     // 真实旁路：看板已被删除，activeTab 还停在旧 id，render() 必须经无效看板旁路回总览
     main.setActiveTab('library_removed');

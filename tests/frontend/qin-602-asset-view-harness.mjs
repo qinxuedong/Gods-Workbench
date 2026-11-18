@@ -570,8 +570,8 @@ after(() => {
 });
 
 const MOUNTED_BOARD = {
-    customBoards: [{id: 'library_demo', name: '挂载文件夹A', preset: 'all'}],
-    order: ['registry', 'library_demo'],
+    customBoards: [],
+    order: ['registry'],
     hidden: [],
 };
 
