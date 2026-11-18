@@ -163,17 +163,28 @@ function patchDocId(document) {
         };
     }
     const origSetInterval = globalThis.setInterval;
+    const origSetTimeout = globalThis.setTimeout;
     const intervals = new Set();
+    const timeouts = new Set();
     globalThis.setInterval = (...args) => {
         const handle = origSetInterval(...args);
         if (handle && typeof handle.unref === 'function') handle.unref();
         intervals.add(handle);
         return handle;
     };
+    globalThis.setTimeout = (...args) => {
+        const handle = origSetTimeout(...args);
+        if (handle && typeof handle.unref === 'function') handle.unref();
+        timeouts.add(handle);
+        return handle;
+    };
     return () => {
         for (const handle of intervals) clearInterval(handle);
+        for (const handle of timeouts) clearTimeout(handle);
         intervals.clear();
+        timeouts.clear();
         globalThis.setInterval = origSetInterval;
+        globalThis.setTimeout = origSetTimeout;
     };
 }
 
@@ -705,6 +716,7 @@ test('必改3：20s 慢迁移期间 setActiveTab 切走立即取消解锁，切�
         const secondRes = await main.gwCall('organize', 'runAssetBoardOneTimeMigration', {trigger: 'retry'});
         assert.equal(secondRes.status, 'done', '立即重跑必须进入新一轮并成功迁移');
         assert.deepEqual(JSON.parse(host.storage.getItem(ASSET_BOARD_KEY) || '{}').customBoards, []);
+        await wait(20);
     } finally {
         if (firstSlowTimer) clearTimeout(firstSlowTimer);
         cleanupHost();
