@@ -1927,6 +1927,15 @@ class IndexJobs:
                             else:
                                 item["sha256"] = self._hash(job_id, attempt, path, info)
                                 item["hash_mode"] = HASH_MODE_FULL
+                                from gw.asset_registry.dedup_confirm import (
+                                    build_full_sha256_cache,
+                                )
+
+                                item["full_sha256_cache"] = build_full_sha256_cache(
+                                    item["sha256"],
+                                    info,
+                                    source="index_full",
+                                )
                         files.append(item)
                         now = time.monotonic()
                         if (
@@ -2043,6 +2052,7 @@ class IndexJobs:
                     existing = known.get(identity)
                     if existing is not None:
                         changed = False
+                        cache_invalidated = False
                         was_lut = existing.get("kind") == "lut"
                         for field in (
                             "storage_root_id",
@@ -2057,6 +2067,40 @@ class IndexJobs:
                             if field in item and existing.get(field) != item[field]:
                                 existing[field] = item.get(field)
                                 changed = True
+                                if field in (
+                                    "storage_root_id",
+                                    "canonical_relpath",
+                                    "size_bytes",
+                                    "sha256",
+                                    "hash_mode",
+                                    "modified_at",
+                                ):
+                                    cache_invalidated = True
+                        if cache_invalidated and "full_sha256_cache" in existing:
+                            existing.pop("full_sha256_cache", None)
+                        if (
+                            "full_sha256_cache" in item
+                            and item.get("hash_mode") == HASH_MODE_FULL
+                        ):
+                            prev_cache = existing.get("full_sha256_cache")
+                            next_cache = item["full_sha256_cache"]
+                            same_version = (
+                                isinstance(prev_cache, dict)
+                                and isinstance(next_cache, dict)
+                                and all(
+                                    prev_cache.get(k) == next_cache.get(k)
+                                    for k in ("sha256", "size_bytes", "mtime_ns", "ino", "dev", "verified")
+                                )
+                            )
+                            if not same_version:
+                                existing["full_sha256_cache"] = next_cache
+                                changed = True
+                        elif (
+                            item.get("hash_mode") == HASH_MODE_SAMPLED
+                            and "full_sha256_cache" in existing
+                            and cache_invalidated
+                        ):
+                            existing.pop("full_sha256_cache", None)
                         if was_lut and "kind" not in item:
                             existing["kind"] = "indexed"
                             changed = True
@@ -2208,3 +2252,9 @@ def shutdown():
     """应用关闭只停止自身索引线程，不清理任务、资产和用户文件。"""
     if _default is not None:
         _default.shutdown()
+    try:
+        from gw.asset_registry.dedup_confirm import shutdown as shutdown_dedup_confirm
+
+        shutdown_dedup_confirm()
+    except Exception:
+        pass

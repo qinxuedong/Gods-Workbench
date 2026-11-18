@@ -1090,6 +1090,8 @@ def import_assets(items: List[Dict[str, Any]], source_kind: str, expected_versio
                 extra["project_ids"] = list(entry["project_ids"])
             record = _plain_asset(asset_id, name, str(entry.get("kind") or source_kind or "unknown"),
                                   **extra)
+            # QIN-619：禁止导入 JSON 伪造或直接注入已验真完整 SHA 确认缓存。
+            record.pop("full_sha256_cache", None)
             raw["assets"][asset_id] = record
             raw["sequences"][asset_id] = True
             created.append(dict(record))
@@ -1143,6 +1145,11 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
                 root_id, canonical_relpath, prior_source_id
             )
             item["canonical_relpath"] = canonical_relpath
+            item.pop("full_sha256_cache", None)
+        for cache_key in ("size_bytes", "modified_at", "sha256", "hash_mode"):
+            if cache_key in payload and payload[cache_key] is not None and item.get(cache_key) != payload[cache_key]:
+                item[cache_key] = payload[cache_key]
+                item.pop("full_sha256_cache", None)
         item["version"] = int(item.get("version", 1)) + 1
         item["updated_at"] = storage.now_iso()
         revision = _bump(raw)
@@ -1171,6 +1178,7 @@ def rename_asset_file(
         item["name"] = new_name
         item["display_path"] = display_path
         item["canonical_relpath"] = storage.canonical_relpath(display_path)
+        item.pop("full_sha256_cache", None)
         item["version"] = int(item.get("version", 1)) + 1
         item["updated_at"] = storage.now_iso()
         revision = _bump(raw)
@@ -1283,6 +1291,7 @@ def restore_from_recycle(entry_id: str, context=None, expected_version: Optional
                     raise CleanroomException(409, "ASSET_RESTORE_CONFLICT", "恢复目标资产已经存在")
                 payload = dict(entry["payload"])
                 payload.pop("library_item", None)
+                payload.pop("full_sha256_cache", None)
                 raw["assets"][entry["asset_id"]] = payload
                 audit_sink.append_event(raw, "asset.recycle_restored", entry["asset_id"], context)
             del raw["recycle_bin"][entry_id]

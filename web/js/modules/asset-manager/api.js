@@ -175,6 +175,30 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        getGovernanceSuggestions(init = {}) {
+            return transport.request('/api/asset-registry/governance/suggestions', {
+                ...init,
+                method: 'GET',
+                credentials: 'same-origin',
+            });
+        },
+        confirmGovernanceSuggestion(payload, init = {}) {
+            return transport.request('/api/asset-registry/governance/suggestions/confirm', {
+                ...jsonInit(payload, {...init, method: 'POST'}),
+                credentials: 'same-origin',
+            });
+        },
+        startDedupConfirmJob(payload = {}, init = {}) {
+            const headers = jsonHeaders(init.headers);
+            if (!Object.keys(headers).some(name => name.toLowerCase() === 'idempotency-key') && init.idempotencyKey) {
+                headers['Idempotency-Key'] = String(init.idempotencyKey);
+            }
+            const {idempotencyKey: _idem, ...requestInit} = init;
+            return transport.request('/api/asset-registry/governance/dedup-confirm-jobs', {
+                ...jsonInit(payload, {...requestInit, headers, method: 'POST'}),
+                credentials: 'same-origin',
+            });
+        },
         getStorageSettings(init = {}) {
             return transport.request('/api/storage-settings', {...init, credentials: 'same-origin'});
         },

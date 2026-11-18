@@ -37,7 +37,7 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, Body, Depends, File, Form, Header, Query, Request, Response, status, UploadFile
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 
-from gw.asset_registry import governance, media_probe, repository as repo, index_jobs
+from gw.asset_registry import dedup_confirm, governance, media_probe, repository as repo, index_jobs
 from gw.asset_registry.service import (
     ASSET_REGISTRY_NOT_INTEGRATED,
     DATA_STATUS_NOT_INTEGRATED,
@@ -233,12 +233,17 @@ def get_registry_status(
     from gw.core.asset_visibility import asset_visible
     visible_count = sum(asset_visible(asset) for asset in raw['assets'].values())
     snapshot = repo.features_snapshot()
+    combined_jobs = sorted(
+        index_jobs.service().listing(actor) + dedup_confirm.service().listing(actor),
+        key=lambda item: str(item.get("created_at") or ""),
+        reverse=True,
+    )[:100]
     return {
         "ready": True,
         "backend": "json-state",
         "revision": raw["revision"],
         "assets_count": visible_count,
-        "jobs": index_jobs.service().listing(actor),
+        "jobs": combined_jobs,
         "overview": {
             "assets": visible_count,
             "projects": len({e.get("project_id") for e in raw["project_entities"].values()}),
@@ -874,6 +879,27 @@ def get_governance_suggestion_confirmations(
     return governance.list_confirmations()
 
 
+@router.post(
+    "/governance/dedup-confirm-jobs",
+    summary="提交疑似重复素材完整 SHA 后台确认任务（QIN-619）",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def submit_dedup_confirm_job(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    """按文件大小筛疑似重复候选并限速计算完整 SHA-256；返回 202 + job_id + poll_hint。"""
+    actor = _governance_auth(authorization, x_user_role)
+    body = _payload(payload)
+    key = (idempotency_key or str(body.get("idempotency_key") or "")).strip()
+    return JSONResponse(
+        dedup_confirm.service().submit(body, actor, key),
+        status_code=status.HTTP_202_ACCEPTED,
+    )
+
+
 @router.get("/preferences/team", summary="读取团队素材偏好", status_code=status.HTTP_200_OK)
 def get_team_preferences(
     authorization: Optional[str] = Header(None),
@@ -938,6 +964,8 @@ def get_workspace_job(
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
     actor = _read_auth(authorization, x_user_role)
+    if job_id.startswith(dedup_confirm.JOB_ID_PREFIX):
+        return dedup_confirm.service().detail(job_id, actor)
     job = index_jobs.service().store.read()["jobs"].get(job_id)
     if job and job.get("project_id"):
         owner_key = None
@@ -2115,6 +2143,11 @@ def operate_workspace_job(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
 ):
+    if job_id.startswith(dedup_confirm.JOB_ID_PREFIX):
+        if action not in dedup_confirm.ACTIONS:
+            raise CleanroomException(400, "INVALID_ACTION", "不支持的任务操作")
+        actor = _edit_auth(authorization, x_user_role)
+        return dedup_confirm.service().operate(job_id, action, _payload(payload), actor)
     if action not in index_jobs.ACTIONS:
         raise CleanroomException(400, "INVALID_ACTION", "不支持的任务操作")
     actor = _read_auth(authorization, x_user_role)

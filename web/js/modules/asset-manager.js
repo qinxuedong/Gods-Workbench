@@ -5257,6 +5257,11 @@ let governanceSuggestionsData = null;
 let governanceSuggestionsLoading = false;
 let governanceSuggestionsError = null;
 let governanceDrawerOpen = false;
+let governanceSelectedSuggestionId = '';
+let governanceRefreshNotice = '';
+let dedupConfirmJob = null;
+let dedupConfirmLoading = false;
+let dedupConfirmError = '';
 const GOVERNANCE_SUGGESTION_KIND_LABELS = {
     naming:'命名建议',
     similar_names:'相似名（仅提示）',
@@ -5268,7 +5273,7 @@ const GOVERNANCE_SUGGESTION_KIND_LABELS = {
 const GOVERNANCE_SUGGESTION_GROUPS = [
     {id:'naming', label:'命名建议', icon:'text-search', description:'发现不符合统一命名要求的素材名称。', action:'打开素材后按命名规则改名，或确认系统给出的建议名称。'},
     {id:'similar_names', label:'相似名（仅提示）', icon:'scan-search', description:'发现规范化后名称相近的素材。', action:'打开素材人工核对后改名；此类仅作提示，不会自动合并。'},
-    {id:'duplicate_files', label:'文件查重', icon:'files', description:'发现文件内容哈希相同的素材。', action:'打开素材核对内容，确认后可建立重复素材关联。'},
+    {id:'duplicate_files', label:'文件查重', icon:'files', description:'先按大小筛候选，再通过完整 SHA 确认内容一致；疑似条目核验后才可建立关联。', action:'疑似重复请先核验完整 SHA；完整 SHA 已确认后可建立重复关联。'},
     {id:'duplicate_shots', label:'镜头查重', icon:'film', description:'发现不同素材中内容相同的镜头片段。', action:'打开相关视频核对时间片段，确认后可建立镜头关联。'},
     {id:'vector_duplicates', label:'向量近重', icon:'scan-search', description:'发现向量相似度达到阈值的素材对。', action:'打开素材人工复核，确认后可建立近重关联。'},
     {id:'tagging', label:'受控打标', icon:'tags', description:'发现可映射到受控词表的自由标签。', action:'打开素材手动打标，或确认写入建议的受控标签。'},
@@ -11613,6 +11618,11 @@ function setGovernanceSuggestionsData(v){ governanceSuggestionsData = v; }
 function setGovernanceSuggestionsLoading(v){ governanceSuggestionsLoading = v; }
 function setGovernanceSuggestionsError(v){ governanceSuggestionsError = v; }
 function setGovernanceDrawerOpen(v){ governanceDrawerOpen = v; }
+function setGovernanceSelectedSuggestionId(v){ governanceSelectedSuggestionId = v; }
+function setGovernanceRefreshNotice(v){ governanceRefreshNotice = v; }
+function setDedupConfirmJob(v){ dedupConfirmJob = v; }
+function setDedupConfirmLoading(v){ dedupConfirmLoading = v; }
+function setDedupConfirmError(v){ dedupConfirmError = v; }
 function setRegistryDiskFolderPermissionDenied(v){ registryDiskFolderPermissionDenied = v; }
 function setRegistryDiskFolderPermissionNoticed(v){ registryDiskFolderPermissionNoticed = v; }
 function setDetailMediaLutSplitDragEndedAt(v){ detailMediaLutSplitDragEndedAt = v; }
@@ -12026,12 +12036,22 @@ export {
     findPromptItem,
     findWorkflowItem,
     formatMediaDuration,
+    dedupConfirmError,
+    dedupConfirmJob,
+    dedupConfirmLoading,
     governanceDrawerOpen,
+    governanceRefreshNotice,
+    governanceSelectedSuggestionId,
     governanceSuggestionTotal,
     governanceSuggestionsData,
     governanceSuggestionsError,
     governanceSuggestionsLoading,
     governanceTriggerLabel,
+    setDedupConfirmError,
+    setDedupConfirmJob,
+    setDedupConfirmLoading,
+    setGovernanceRefreshNotice,
+    setGovernanceSelectedSuggestionId,
     groupedAssetClassificationEntries,
     // 【QIN-603 返工】延后域网关导出的是「模块本体」，供真实 import 的用例直接驱动：
     // 之前只能从源码切片后在 vm 里重建，测到的是复制品而不是产品代码（违反 §4.2）。

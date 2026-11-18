@@ -111,6 +111,7 @@
     "taskCenter.longTaskImport": { zh: "导入素材", en: "Asset import" },
     "taskCenter.longTaskThumbnail": { zh: "素材缩略图", en: "Asset thumbnail" },
     "taskCenter.longTaskTranscode": { zh: "视频转码", en: "Video transcode" },
+    "taskCenter.longTaskDedup": { zh: "查重完整 SHA", en: "Duplicate full SHA" },
     "taskCenter.activity": { zh: "活动时间线", en: "Activity timeline" },
     "taskCenter.activitySubtitle": { zh: "统一事件投影的安全摘要", en: "Safe summaries from the unified event projection." },
     "taskCenter.viewAllEvents": { zh: "查看全部事件", en: "View all events" },

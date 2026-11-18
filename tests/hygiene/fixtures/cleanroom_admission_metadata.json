@@ -1115,7 +1115,7 @@
     {
       "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
       "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "3909947fda23e3aaad587389f39b75de00fd4111cb4a721523da9e067c9918ed"
+      "sha256": "766199d0ad3de7ea50d6b59fdf115b4649b437711132a1c7664eb49660d31872"
     },
     {
       "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",

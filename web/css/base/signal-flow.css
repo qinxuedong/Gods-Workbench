@@ -4967,6 +4967,9 @@ html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-kind {
 html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-kind.import { border-color: var(--sf-cyan) !important; color: var(--sf-cyan) !important; }
 html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-kind.thumbnail { border-color: var(--sf-mint) !important; color: var(--sf-mint) !important; }
 html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-kind.transcode { border-color: var(--sf-amber) !important; color: var(--sf-amber) !important; }
+html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-kind.dedup { border-color: var(--sf-gold) !important; color: var(--sf-gold) !important; }
+html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-row.is-selected,
+html body.gw-signal.gw-page--task-center tr[data-job-row].is-selected { box-shadow: inset 0 0 0 1px var(--sf-gold); background: color-mix(in srgb, var(--sf-gold) 9%, var(--sf-raised)) !important; }
 
 html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-status {
   display: block;
@@ -5005,7 +5008,7 @@ html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-status .sta
   color: var(--sf-mint) !important;
 }
 
-html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-status .status-chip:is(.queued, .pending) {
+html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-status .status-chip:is(.queued, .pending, .paused) {
   border-color: var(--sf-amber) !important;
   background: color-mix(in srgb, var(--sf-amber) 12%, transparent) !important;
   color: var(--sf-amber) !important;

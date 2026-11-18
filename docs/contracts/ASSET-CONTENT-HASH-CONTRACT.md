@@ -77,3 +77,44 @@ QIN575_BASELINE_FORMULA=head(4MiB)||tail(4MiB)||str(size).encode()
 
 - 不改 `_sampled_hash` 算法、不改 512MiB 阈值、不改基线工具（本地私有 `<本地证据包>`）。
 - 本契约描述的是当前实现事实；任何口径统一、阈值调整或字段重命名都需另开票，并同步本文、锚点、防漂移测试与洁净室准入登记的哈希。
+
+## 7. 查重确认完整 SHA 与失效边界（QIN-619 / #748）
+
+> **边界说明**：本节补充 QIN-619 引入的「疑似重复素材完整 SHA 确认」契约，**不改变**第 1～6 节的 `hash_mode` 枚举值、`512MiB` 采样阈值、`_sampled_hash` 算法、`QIN575_*` 防漂移锚点或 `shot_source_key` 原口径。
+
+### 7.1 `full_sha256_cache` 与 `sha256`/`hash_mode` 共存规则
+
+- `hash_mode` 仍只有 `full` / `sampled` 两个取值；扫描期对 `size > 512MiB` 写入的 `sha256` + `hash_mode="sampled"` 保持原样，**不得**被改写为 `full`，也**不得**被完整 SHA 覆盖（防止重扫震荡与 `shot_source_key` 分裂）。
+- 资产记录新增可选字典字段 `full_sha256_cache`，仅在真实读取完整文件字节流并通过读前后文件版本校验后写入：
+  - `sha256`：64 位小写十六进制标准 SHA-256；
+  - `size_bytes`、`mtime_ns`、`ino`、`dev`：与该摘要绑定的文件版本签名；
+  - `verified`：仅当完整流式校验成功时为 `true`；
+  - `source`：`dedup_confirm`、`index_full` 或只读核验通过的 `collector`；
+  - `generation`：确认任务的单调递增代际号；`computed_at`：UTC 时间戳。
+- **严禁升级与混用**：
+  - `hash_mode="sampled"` 的采样摘要、未知或缺失 `hash_mode` 的历史 `sha256`、未通过版本校验的缓存，都**不得**写入 `full_sha256_cache`，也**不得**升级为 `confirmed`（已确认）。
+
+### 7.2 size 分桶筛选与 `suspected` / `confirmed` 确认边界
+
+- **非全库普查**：默认索引扫描的 `hash_files` 仍为 `false`。确认任务先按精确 `size_bytes` 分桶，**只对桶内资产数 `>= 2` 的疑似重复候选计算完整 SHA**；唯一大小的文件不必为本票计算完整 SHA。
+- **疑似 vs 确认（方案 A）**：
+  - `dedup_status = "confirmed"`：组内成员数 `>= 2`，且**全部**成员均持有 `verified == true` 并与当前文件版本匹配的完整 SHA，且完整 SHA 全部相等。只有 `confirmed` 分组允许调用 `POST /api/asset-registry/governance/suggestions/confirm` 建立 `duplicate` 关联。
+  - `dedup_status = "suspected"`：仅 `size_bytes` 相同、含 `sampled` / 未知 `hash_mode`、或存在成员缓存失效/未计算。只作疑似信号引导核验，后端确认门禁必须拒绝（`409 DEDUP_NOT_CONFIRMED`）。
+  - 完整 SHA 计算后若不等，不再因旧 `sampled` 相同而保持为重复或确认。
+  - **永不自动删除**：任何疑似或完整 SHA 确认结果均不得触发自动删除。
+
+### 7.3 版本失效与只读复用边界
+
+- **文件版本失效**：当文件 `size_bytes`、`mtime_ns`、`ino`、`dev` 或路径/内容发生变更（含读中修改、`reindex._commit` 更新、`update_asset` 或恢复替换）时，旧 `full_sha256_cache` 立即失效且不得提交中途结果。
+- **收集与导入隔离**：只读复用 `metadata.collect_sha256` 时不阻塞收集入库、不反向改写收集记录；QIN-577 导入回灌维持 `_IMPORT_HASH_MODES = {"full", "sampled"}` 原口径，不将未经本地验真的导入记录直接写成 `verified=true` 的确认缓存。
+
+### 7.4 QIN-619 确认契约锚点
+
+```text
+QIN619_DEDUP_STATUSES=suspected,confirmed
+QIN619_DEFAULT_MAX_READ_BYTES_PER_SEC=20971520
+QIN619_DEFAULT_MAX_CONCURRENCY=2
+QIN619_DEFAULT_CHUNK_SIZE_BYTES=1048576
+QIN619_SAMPLED_CAN_CONFIRM=false
+QIN619_AUTO_DELETE_ALLOWED=false
+```
