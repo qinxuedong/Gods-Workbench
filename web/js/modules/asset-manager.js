@@ -10320,11 +10320,6 @@ document.querySelector('.asset-breadcrumbs .asset-heading-row')?.addEventListene
     const crumb = event.target.closest?.('[data-asset-tree-crumb]');
     if(crumb) handleAssetTreeCrumbClick(crumb.dataset.assetTreeCrumb || '');
 });
-const DETAIL_BACKQUOTE_DOUBLE_TAP_MS = 500;
-let lastDetailBackquoteTap = null;
-let detailPreviewBackquoteCloseTimer = 0;
-let detailImageEditorBackquoteCloseTimer = 0;
-let detailTextEditorBackquoteInput = null;
 function isBackquoteKey(event){
     return event.code === 'Backquote' || ['·','~','`'].includes(event.key);
 }
@@ -10332,30 +10327,7 @@ function isBackquoteShortcut(event){
     return isBackquoteKey(event)
         && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing;
 }
-function detailBackquoteTappedTwice(event, context){
-    if(!isBackquoteShortcut(event) || event.repeat) return false;
-    const now = Date.now();
-    if(lastDetailBackquoteTap?.context === context
-        && now - lastDetailBackquoteTap.at <= DETAIL_BACKQUOTE_DOUBLE_TAP_MS){
-        lastDetailBackquoteTap = null;
-        return true;
-    }
-    lastDetailBackquoteTap = {at:now,context};
-    return false;
-}
-function detailBackquoteContext(source, id){
-    return `${String(source || '')}:${String(id || '')}`;
-}
-function detailEditableType(source, item){
-    const type = detailViewerType(source,item);
-    if(type === 'image') return true;
-    return type === 'text' && detailViewerCanEditText(source,item);
-}
 document.addEventListener('keydown', event => {
-    if(!isBackquoteShortcut(event)){
-        lastDetailBackquoteTap = null;
-        detailTextEditorBackquoteInput = null;
-    }
     if(event.key === 'Escape'){
         // 【QIN-580】「套用 LUT」下拉菜单是最外层浮层，ESC 先收它，不直接关详情。
         if(detailViewerState.mediaLutMenu?.open){
@@ -10428,16 +10400,8 @@ document.addEventListener('keydown', event => {
         if(isBackquoteShortcut(event)){
             event.preventDefault();
             event.stopPropagation();
-            if(event.repeat) return;
-            const context = `image-editor:${state.itemId || ''}`;
-            if(detailBackquoteTappedTwice(event,context)){
-                clearTimeout(detailImageEditorBackquoteCloseTimer);
-                detailImageEditorBackquoteCloseTimer = 0;
-                gwCall('preview', 'requestCloseDetailImageEditor', '关闭编辑器')
-                    .catch(err => setStatus(err.message || '单图编辑关闭失败'));
-            } else {
-                gwCall('preview', 'deferDetailImageEditorCloseForBackquote', state);
-            }
+            if(!event.repeat) gwCall('preview', 'requestCloseDetailImageEditor', '返回素材预览')
+                .catch(err => setStatus(err.message || '单图编辑关闭失败'));
             return;
         }
         const key=String(event.key||'').toLowerCase();
@@ -10480,36 +10444,36 @@ document.addEventListener('keydown', event => {
         );
         return;
     }
+    if(detailToggleShortcut && detailViewerState.open){
+        if(detailViewerState.textEditing
+            && (event.target?.closest?.('[data-detail-text-editor]') || !keyboardEditing)){
+            event.preventDefault();
+            event.stopPropagation();
+            if(!event.repeat){
+                gwCall('preview', 'exitDetailTextEditFromBackquote', document.querySelector('[data-detail-text-editor]'));
+            }
+            return;
+        }
+        if(detailViewerState.textVersionEditing
+            && (event.target?.closest?.('[data-detail-version-editor]') || !keyboardEditing)){
+            event.preventDefault();
+            event.stopPropagation();
+            if(!event.repeat){
+                gwCall('preview', 'cancelDetailTextVersionEdit');
+            }
+            return;
+        }
+    }
     if(detailToggleShortcut && !keyboardEditing){
         event.preventDefault();
         event.stopPropagation();
         if(event.repeat) return;
         if(detailViewerState.open){
-            const item = detailViewerState.items[detailViewerState.index]
-                || detailViewerItem(detailViewerState.source,detailViewerState.id);
-            if(item && detailEditableType(detailViewerState.source,item)){
-                const context = detailBackquoteContext(detailViewerState.source,item.id);
-                if(detailBackquoteTappedTwice(event,context)){
-                    clearTimeout(detailPreviewBackquoteCloseTimer);
-                    detailPreviewBackquoteCloseTimer = 0;
-                    gwCall('preview', 'enterCurrentDetailEditableContent');
-                } else {
-                    gwCall('preview', 'deferDetailPreviewCloseForBackquote', detailViewerState);
-                }
-            } else {
-                closeDetailPreview();
-            }
+            closeDetailPreview();
         } else {
             const reference = currentDetailViewerReference();
             if(reference?.id){
-                const item = detailViewerItem(reference.source,reference.id);
-                const editable = item && detailEditableType(reference.source,item);
-                const isDouble = editable && detailBackquoteTappedTwice(
-                    event,
-                    detailBackquoteContext(reference.source,reference.id),
-                );
                 gwCall('preview', 'showDetailPreview', reference.source,reference.id);
-                if(isDouble) gwCall('preview', 'enterCurrentDetailEditableContent');
             }
         }
         return;
@@ -10533,30 +10497,6 @@ document.addEventListener('keydown', event => {
             } else if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's'){
                 event.preventDefault();
                 gwCall('settings', 'saveDetailTextEdit').catch(err => setStatus(err.message || '正文保存失败'));
-            } else if(isBackquoteShortcut(event)){
-                if(event.repeat){
-                    event.preventDefault();
-                    lastDetailBackquoteTap = null;
-                    detailTextEditorBackquoteInput = null;
-                    return;
-                }
-                const editor = event.target;
-                const context = `text-editor:${detailBackquoteContext(detailViewerState.source,detailViewerState.id)}`;
-                if(detailBackquoteTappedTwice(event,context)){
-                    event.preventDefault();
-                    gwCall('preview', 'exitDetailTextEditFromBackquote', editor,detailTextEditorBackquoteInput);
-                } else {
-                    const start = Number(editor.selectionStart || 0);
-                    const end = Number(editor.selectionEnd || start);
-                    detailTextEditorBackquoteInput = {
-                        context,
-                        editor,
-                        before:String(editor.value || ''),
-                        start,
-                        end,
-                        key:event.key,
-                    };
-                }
             }
             return;
         }
@@ -11793,9 +11733,6 @@ function setRegistryDiskFolderPermissionDenied(v){ registryDiskFolderPermissionD
 function setRegistryDiskFolderPermissionNoticed(v){ registryDiskFolderPermissionNoticed = v; }
 function setDetailMediaLutSplitDragEndedAt(v){ detailMediaLutSplitDragEndedAt = v; }
 function gwSetDetailMediaCanvasCoverflowVisible(v){ detailMediaCanvasCoverflowVisible = v; }
-function setDetailPreviewBackquoteCloseTimer(v){ detailPreviewBackquoteCloseTimer = v; }
-function setDetailImageEditorBackquoteCloseTimer(v){ detailImageEditorBackquoteCloseTimer = v; }
-function setDetailTextEditorBackquoteInput(v){ detailTextEditorBackquoteInput = v; }
 
 // 【QIN-591】延后域网关：首屏只加载列表与卡片所需代码。14 个延后域只在
 // 「首卡绘制完成（闸门开启）」之后、且真正被用到时才动态 import；域模块加载完成即在
@@ -11970,7 +11907,6 @@ export {
     BOARD_CREATE_PATH_FIELD_KEY,
     CLIENT_SETTING_KEY_UPLOAD_SOURCE,
     DEFAULT_LOCAL_LIBRARY_NAME,
-    DETAIL_BACKQUOTE_DOUBLE_TAP_MS,
     DETAIL_LUT_SAMPLE_HEIGHT,
     DETAIL_LUT_SAMPLE_WIDTH,
     DETAIL_MEDIA_CANVAS_GROUP_COLORS,
@@ -12132,7 +12068,6 @@ export {
     customBoardFolderTree,
     defaultCanvasAssetCategory,
     detailActiveImageItem,
-    detailImageEditorBackquoteCloseTimer,
     detailImageEditorState,
     detailImageVersionAssetId,
     detailMediaCanvasAnnotationSnapshot,
@@ -12166,7 +12101,6 @@ export {
     detailMediaLutListCache,
     detailMediaLutSamples,
     detailMediaLutSplitDragEndedAt,
-    detailPreviewBackquoteCloseTimer,
     detailReferenceFromTarget,
     detailVideoStoryboardEnabled,
     detailViewerAudioFrame,
@@ -12474,7 +12408,6 @@ export {
     setCanvasAssetsData,
     setClientSettingBusy,
     setClientUploadSourceDir,
-    setDetailImageEditorBackquoteCloseTimer,
     setDetailImageEditorState,
     setDetailMediaCanvasAnnotationSnapshot,
     setDetailMediaCanvasColorSnapshot,
@@ -12484,8 +12417,6 @@ export {
     setDetailMediaCanvasPanState,
     setDetailMediaLibraryDragId,
     setDetailMediaLutSplitDragEndedAt,
-    setDetailPreviewBackquoteCloseTimer,
-    setDetailTextEditorBackquoteInput,
     setDetailViewerAudioFrame,
     setDetailViewerFontExpandedPreference,
     setDetailViewerFontListCollapsed,
