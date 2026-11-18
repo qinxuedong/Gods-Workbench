@@ -677,3 +677,31 @@ test('QIN-619 必改5：running 态关闭抽屉后重开必须自动恢复轮询
         host.dispose();
     }
 });
+
+test('QIN-619 QA-AC15：治理分组与查重状态条必须绑定双主题令牌，严禁回落未定义的 --vault-raised 黑底', () => {
+    const cssPath = path.join(ROOT, 'web/css/pages/asset-manager.css');
+    const vaultPath = path.join(ROOT, 'web/css/pages/asset-vault.css');
+    const cssText = fs.readFileSync(cssPath, 'utf-8');
+    const vaultText = fs.readFileSync(vaultPath, 'utf-8');
+
+    assert.match(vaultText, /--vault-surface:\s*var\(--gw-surface-panel\)/);
+    assert.match(vaultText, /--vault-card:\s*var\(--gw-surface-card\)/);
+
+    const govStart = cssText.indexOf('.governance-topbar-entry');
+    const govEnd = cssText.indexOf('/* 【QIN-547】');
+    assert.ok(govStart > 0 && govEnd > govStart, '必须定位到治理样式区段');
+    const govSection = cssText.slice(govStart, govEnd);
+
+    assert.equal(
+        govSection.includes('--vault-raised'),
+        false,
+        '治理抽屉样式不得引用未定义的 --vault-raised（会导致浅色主题回落纯黑 #14171d）'
+    );
+    assert.equal(
+        govSection.includes('--vault-text-secondary'),
+        false,
+        '治理抽屉正文不得引用未定义的 --vault-text-secondary（会导致浅色主题字色偏浅）'
+    );
+    assert.match(govSection, /\.governance-suggestion-group\s*\{[^}]*var\(--vault-surface/);
+    assert.match(govSection, /\.governance-dedup-bar\s*\{[^}]*var\(--vault-card/);
+});
