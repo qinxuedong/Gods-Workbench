@@ -188,16 +188,16 @@
 
       <!-- CENTER: 系统中央总线引擎与当前项目 -->
       <div class="flex items-center space-x-2 gw-topbar-msg-slot min-w-0">
+        <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchWorkshop.prevProject()" title="切换至上一个项目" aria-label="切换至上一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner gw-topbar-msg-bar">
-          <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchWorkshop.prevProject()" title="切换至上一个项目" aria-label="切换至上一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
           <div class="flex items-center space-x-2 px-1.5 min-w-0 flex-1">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse shrink-0"></span>
             <span class="gw-type-body-sm font-mono font-bold text-[#eddab3] shrink-0" id="workshopProjectTitle" data-gw-topbar-title>《神谕之地》· 影视工坊流水线</span>
             <span class="h-4 w-px bg-white/15 shrink-0" data-gw-topbar-divider aria-hidden="true"></span>
             <span role="status" aria-live="polite" data-gw-topbar-status data-gw-idle-text="准备就绪" class="gw-type-body-sm font-mono"><span data-gw-topbar-runner>准备就绪</span></span>
           </div>
-          <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchWorkshop.nextProject()" title="切换至下一个项目" aria-label="切换至下一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
         </div>
+        <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchWorkshop.nextProject()" title="切换至下一个项目" aria-label="切换至下一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-right" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
       </div>
 
       <!-- RIGHT: 右侧RAM电平表 + 播控 + 时钟 + 返回首页 -->

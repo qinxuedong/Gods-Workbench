@@ -54,18 +54,77 @@
 /* ========================================================================= */
 /* GW-UI-SHELL-01: Workbench shell geometry. Keep nav controls stable while
    route content changes; page-specific markup may only change active state. */
-/* ===== QIN-612 全站顶栏操作/提示信息栏 =====
-   黑底圆角 + 金色脉冲点 + 页名 + 分隔线 + 状态文案；超长文字从右向左滚动，不用省略号。 */
+/* ===== QIN-612 / QIN-622 全站顶栏操作/提示信息栏 =====
+   黑底圆角 + 金色脉冲点 + 页名 + 分隔线 + 状态文案；超长文字从右向左滚动，不用省略号。
+   QIN-622：统一 42px 基准高度（剧集制片实测）、相对顶栏水平居中、空闲 15s 对称向中心收起。 */
+.topbar-master-deck {
+  --gw-topbar-msg-height: 42px;
+  --gw-topbar-text-fade-ms: 150ms;
+  --gw-topbar-box-scale-ms: 250ms;
+}
 .topbar-master-deck .gw-topbar-msg-slot {
   min-width: 0;
   flex: 0 1 auto;
   max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-master-deck .gw-topbar-msg-slot.is-centered {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
 }
 .topbar-master-deck .gw-topbar-msg-bar {
+  height: var(--gw-topbar-msg-height, 42px);
+  min-height: var(--gw-topbar-msg-height, 42px);
   min-width: var(--gw-topbar-min-width, 258px) !important; /* AC4：实测改前 assets 中条含箭头 257.578125px，向上取整不得改窄 */
   max-width: 100%;
   box-sizing: border-box;
   width: fit-content;
+  transform-origin: center center;
+  transition:
+    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar > div {
+  transition: opacity var(--gw-topbar-text-fade-ms, 150ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-text-visible="0"] > div {
+  opacity: 0;
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="collapsing"] {
+  transform: scaleX(0);
+  opacity: 0;
+  pointer-events: none;
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="collapsed"],
+.topbar-master-deck .gw-topbar-msg-bar.is-narrow[data-gw-topbar-collapse="collapsed"] {
+  min-width: 0 !important;
+  max-width: 0 !important;
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-left-width: 0 !important;
+  border-right-width: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scaleX(0);
+  opacity: 0;
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="expanding"] {
+  transform: scaleX(1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
 }
 /* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
    长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */
@@ -115,6 +174,11 @@
   min-width: 0;
 }
 @media (prefers-reduced-motion: reduce) {
+  .topbar-master-deck .gw-topbar-msg-bar,
+  .topbar-master-deck .gw-topbar-msg-bar > div {
+    transition: none !important;
+    animation: none !important;
+  }
   .topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] { animation-duration: 30s; }
 }
 /* AC5/AC11：窄屏空隙不足 258px 时，中条退让到实测空隙内；页名与分隔线收起，

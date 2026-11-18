@@ -760,6 +760,10 @@
   const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
   const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
   const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
+  const GW_TOPBAR_IDLE_COLLAPSE_MS = 15000; // QIN-622 AC3：空闲挂载/回空闲后 15s 自动收起
+  const GW_TOPBAR_TEXT_FADE_MS = 150;       // QIN-622：文字先隐/后显过渡时长
+  const GW_TOPBAR_BOX_SCALE_MS = 250;       // QIN-622：底框对称缩放/展开过渡时长
+  const GW_TOPBAR_BASE_HEIGHT_PX = 42;      // QIN-622 AC1：剧集制片页基准布局实测 DOM 高度 42px
   // QIN-612 AC6/AC8：全站统一的状态文案分类规则，供各业务调用方复用。
   // 转后台且不再由前台轮询收尾的提示维持 done（4s 后回空闲），避免永驻顶栏。
   const GW_TOPBAR_DETACHED_NOTICE_RE = /^(?:已转入后台|已开始缓存|AI 智能分类已启动)|可稍后刷新查看|可前往任务中心查看|请稍后再切换/;
@@ -793,8 +797,8 @@
 
   function createTopbarStatusEngine(host) {
     const timers = host.timers || {
-      setTimeout: (fn, ms) => setTimeout(fn, ms),
-      clearTimeout: id => clearTimeout(id)
+      setTimeout: (fn, ms) => (host.setTimeout || setTimeout)(fn, ms),
+      clearTimeout: id => (host.clearTimeout || clearTimeout)(id)
     };
     let generation = 0;          // 单调代际，新消息 +1
     let phase = 'idle';          // idle | progress | done
@@ -802,11 +806,84 @@
     let idleText = '准备就绪';
     let text = idleText;         // 空闲态默认即为 idleText，未 configure 也不空白（AC1）
     let idleTimer = null;
+    let collapseTimer = null;
+    let animTimer = null;
     let scrolling = false;
     let scrollEndAt = 0;
+    let collapseState = 'expanded'; // expanded | hiding-text | collapsing | collapsed | expanding
+    let textVisible = true;
 
+    function isReducedMotion() {
+      if (typeof host.prefersReducedMotion === 'function') return Boolean(host.prefersReducedMotion());
+      if (typeof host.prefersReducedMotion === 'boolean') return host.prefersReducedMotion;
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        return Boolean(window.matchMedia('(prefers-reduced-motion: reduce)')?.matches);
+      }
+      return false;
+    }
     function cancelIdleTimer() {
       if (idleTimer !== null) { timers.clearTimeout(idleTimer); idleTimer = null; }
+    }
+    function cancelCollapseTimers() {
+      if (collapseTimer !== null) { timers.clearTimeout(collapseTimer); collapseTimer = null; }
+      if (animTimer !== null) { timers.clearTimeout(animTimer); animTimer = null; }
+    }
+    function cancelAllTimers() {
+      cancelIdleTimer();
+      cancelCollapseTimers();
+    }
+    function scheduleIdleCollapse(token) {
+      cancelCollapseTimers();
+      if (phase !== 'idle') return;
+      collapseTimer = timers.setTimeout(() => {
+        collapseTimer = null;
+        if (token !== generation || phase !== 'idle') return;
+        if (isReducedMotion()) {
+          collapseState = 'collapsed';
+          textVisible = false;
+          host.render && host.render(snapshot());
+          return;
+        }
+        // AC3：先隐去文字，再让底框左右对称向中心缩放收起
+        collapseState = 'hiding-text';
+        textVisible = false;
+        host.render && host.render(snapshot());
+        animTimer = timers.setTimeout(() => {
+          animTimer = null;
+          if (token !== generation || phase !== 'idle') return;
+          collapseState = 'collapsing';
+          host.render && host.render(snapshot());
+          animTimer = timers.setTimeout(() => {
+            animTimer = null;
+            if (token !== generation || phase !== 'idle') return;
+            collapseState = 'collapsed';
+            host.render && host.render(snapshot());
+          }, GW_TOPBAR_BOX_SCALE_MS);
+        }, GW_TOPBAR_TEXT_FADE_MS);
+      }, GW_TOPBAR_IDLE_COLLAPSE_MS);
+    }
+    function ensureExpandedForMessage(token) {
+      if (isReducedMotion()) {
+        collapseState = 'expanded';
+        textVisible = true;
+        host.render && host.render(snapshot());
+        return;
+      }
+      if (collapseState === 'expanded' && textVisible) {
+        host.render && host.render(snapshot());
+        return;
+      }
+      // AC4：反向展开底框，再显示文字；旧计时已在入口取消，只认最新代际
+      collapseState = 'expanding';
+      textVisible = false;
+      host.render && host.render(snapshot());
+      animTimer = timers.setTimeout(() => {
+        animTimer = null;
+        if (token !== generation) return;
+        collapseState = 'expanded';
+        textVisible = true;
+        host.render && host.render(snapshot());
+      }, GW_TOPBAR_BOX_SCALE_MS);
     }
     function scheduleBackToIdle(token) {
       cancelIdleTimer();
@@ -826,19 +903,25 @@
       }, GW_TOPBAR_TTL);
     }
     function toIdle() {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       phase = 'idle';
       tone = 'info';
       text = idleText;
       scrolling = false;
       scrollEndAt = 0;
+      collapseState = 'expanded';
+      textVisible = true;
       host.render && host.render(snapshot());
+      scheduleIdleCollapse(generation);
     }
     function snapshot() {
       return {
         generation, phase, tone, text, idleText, scrolling,
-        scrollEndAt, ttl: GW_TOPBAR_TTL, minWidth: GW_TOPBAR_MIN_WIDTH
+        scrollEndAt, ttl: GW_TOPBAR_TTL, minWidth: GW_TOPBAR_MIN_WIDTH,
+        collapseState, textVisible, reducedMotion: isReducedMotion(),
+        idleCollapseMs: GW_TOPBAR_IDLE_COLLAPSE_MS,
+        baseHeightPx: GW_TOPBAR_BASE_HEIGHT_PX
       };
     }
     function configure(options = {}) {
@@ -848,7 +931,7 @@
       return snapshot();
     }
     function announce(message, options = {}) {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       const nextTone = options.tone === 'danger' ? 'danger' : 'info';
       const nextPhase = options.phase === 'progress' ? 'progress' : 'done';
@@ -858,8 +941,8 @@
       scrolling = Boolean(options.scrolling);
       scrollEndAt = scrolling ? Number(options.scrollEndAt || 0) : 0;
       const token = generation;
-      host.render && host.render(snapshot());
-      // 进行中提示挂到结束，不自动回空闲；完成/普通提示 ~4s 后回空闲（滚动则等滚完）。
+      ensureExpandedForMessage(token);
+      // 进行中提示挂到结束，不自动回空闲也不触发 15s 收起；完成/普通提示 ~4s 后回空闲（滚动则等滚完）。
       if (phase === 'done') scheduleBackToIdle(token);
       return token;
     }
@@ -874,15 +957,20 @@
       scrollEndAt = scrolling ? (host.now ? host.now() : Date.now()) + Math.max(0, Number(durationMs) || 0) : 0;
     }
     function clear() {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       phase = 'idle';
       tone = 'info';
       text = idleText;
       scrolling = false;
       scrollEndAt = 0;
+      collapseState = 'expanded';
+      textVisible = true;
       host.render && host.render(snapshot());
+      scheduleIdleCollapse(generation);
     }
+    // 初始挂载即处于空闲态，启动 15s 空闲收起计时
+    scheduleIdleCollapse(generation);
     return Object.freeze({configure, announce, settle, clear, notifyScrolling, snapshot});
   }
 
@@ -930,7 +1018,17 @@
     const rightGap = rightFits ? leftInset : 4;
     const gapRight = rightFits ? Math.min(right.left, safeRight) : safeRight;
     const available = Math.max(0, Math.floor(gapRight - slotLeft - rightGap));
-    return {available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight, headerRect, leftInset, rightFits};
+    // QIN-622 AC2：以整个顶栏中心为轴，计算不碰左右簇的对称可用宽度。
+    const headerWidth = headerRect ? headerRect.width : (window.innerWidth || 0);
+    const headerCenter = headerRect ? (headerRect.left + headerRect.width / 2) : (headerWidth / 2);
+    const symLeftEdge = left ? (left.right + 8) : (safeLeft + 8);
+    const symRightEdge = (right && right.width > 0) ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
+    const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
+    const centered = headerWidth > 760 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
+    return {
+      available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight,
+      headerRect, leftInset, rightFits, symAvailable, centered
+    };
   }
   // 把可用空隙写成 slot 的 max-width：父链 min-width:max-content 会让 100% 失效，
   // 必须有基于左右簇实测间隙的硬上限，超长时状态节点才会 overflow 并触发滚动。
@@ -944,19 +1042,28 @@
       // 先让非仪表徽章退位再量一次，确保状态文案始终有可视宽；CPU/RAM 仪表不动。
       const header = bar.closest?.('.topbar-master-deck');
       header?.classList.remove('is-topbar-starved');
+      slot.classList?.remove('is-centered');
       let measure = topbarMeasureWidths(bar);
       if (measure.available < GW_TOPBAR_MIN_STATUS_WIDTH && header) {
         header.classList.add('is-topbar-starved');
         measure = topbarMeasureWidths(bar);
       }
-      const {available, wide} = measure;
-      // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
-      // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
-      // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
-      slot.style.maxWidth = `${available}px`;
-      slot.style.width = `${available}px`;
-      slot.classList.toggle('is-narrow', !wide);
-      bar.classList.toggle('is-narrow', !wide);
+      if (measure.centered) {
+        slot.classList?.add('is-centered');
+        slot.style.maxWidth = `${measure.symAvailable}px`;
+        slot.style.width = 'fit-content';
+        slot.classList.remove('is-narrow');
+        bar.classList.remove('is-narrow');
+      } else {
+        const {available, wide} = measure;
+        // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
+        // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
+        // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
+        slot.style.maxWidth = `${available}px`;
+        slot.style.width = `${available}px`;
+        slot.classList.toggle('is-narrow', !wide);
+        bar.classList.toggle('is-narrow', !wide);
+      }
       // 页名 shrink-0 曾把状态节点挤到 0 宽，长文案既不可见也不滚动；
       // 空间不足时先收起页名与分隔线，把余量全部留给状态文案。
       bar.classList.remove('is-compact');
@@ -986,6 +1093,14 @@
       if (bar) {
         bar.classList.remove('is-compact');
         if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+        if (bar.dataset) {
+          bar.dataset.gwTopbarCollapse = state.collapseState || 'expanded';
+          bar.dataset.gwTopbarTextVisible = state.textVisible === false ? '0' : '1';
+        }
+        if (typeof bar.setAttribute === 'function' && typeof bar.removeAttribute === 'function') {
+          if (state.collapseState === 'collapsed') bar.setAttribute('aria-hidden', 'true');
+          else bar.removeAttribute('aria-hidden');
+        }
       }
       node.classList.toggle('is-danger', state.tone === 'danger');
       node.setAttribute('aria-busy', state.phase === 'progress' ? 'true' : 'false');
@@ -1038,7 +1153,14 @@
     settle(token, message, options) { return topbarEngine ? topbarEngine.settle(token, message, options) : false; },
     clear() { return topbarEngine ? topbarEngine.clear() : undefined; },
     snapshot() { return topbarEngine ? topbarEngine.snapshot() : null; },
-    CONSTANTS: Object.freeze({MIN_WIDTH: GW_TOPBAR_MIN_WIDTH, TTL: GW_TOPBAR_TTL})
+    CONSTANTS: Object.freeze({
+      MIN_WIDTH: GW_TOPBAR_MIN_WIDTH,
+      TTL: GW_TOPBAR_TTL,
+      IDLE_COLLAPSE_MS: GW_TOPBAR_IDLE_COLLAPSE_MS,
+      TEXT_FADE_MS: GW_TOPBAR_TEXT_FADE_MS,
+      BOX_SCALE_MS: GW_TOPBAR_BOX_SCALE_MS,
+      BASE_HEIGHT_PX: GW_TOPBAR_BASE_HEIGHT_PX
+    })
   });
 
   function init() {
