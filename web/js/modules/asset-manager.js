@@ -2954,32 +2954,15 @@ function registryCanRecycle(item={}){
         ? item.can_recycle
         : Boolean(item.storage_root_path && !item.storage_root_read_only && !item.is_remote);
 }
-// 【QIN-553】内置 LUT 包：首次进入 LUT 库幂等登记；隐藏/恢复显示经服务端守卫。
-// ensure 只做登记并同步隐藏态集合，列表刷新由调用方统一执行，避免双刷新。
+// 【QIN-621】内置 LUT 包：首次进入 LUT 库幂等登记；已取消隐藏/恢复显示。
 let registryBuiltinLutsEnsured = false;
-let registryBuiltinHiddenIds = new Set();
+let lutImportBusy = false;
+function setLutImportBusy(value){ lutImportBusy = Boolean(value); }
 async function ensureBuiltinLutsRegistered(options={}){
-    if(registryBuiltinLutsEnsured && !options.reveal) return null;
-    const data = await apiJsonResponse(assetManagerApi.ensureBuiltinLuts(Boolean(options.reveal)));
+    if(registryBuiltinLutsEnsured && !options.force) return null;
+    const data = await apiJsonResponse(assetManagerApi.ensureBuiltinLuts());
     registryBuiltinLutsEnsured = true;
-    registryBuiltinHiddenIds = new Set(Array.isArray(data?.hidden) ? data.hidden : []);
     return data;
-}
-async function toggleRegistryBuiltinHidden(assetId, hidden){
-    if(!assetId) return;
-    try {
-        await apiJsonResponse(assetManagerApi.updateRegistryAsset(assetId, {
-            hidden,
-            expected_version: requireExpectedVersion(registryStatus.revision, '资产注册表'),
-        }));
-        if(hidden) registryBuiltinHiddenIds.add(assetId);
-        else registryBuiltinHiddenIds.delete(assetId);
-        await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-        render();
-        setStatus(hidden ? '内置 LUT 已隐藏（源文件保留）' : '内置 LUT 已恢复显示');
-    } catch(err){
-        setStatus(err.message || '内置 LUT 显示状态更新失败');
-    }
 }
 // 【QIN-554】LUT 预览：浏览器内解析 .cube 并套用统一样片，只读、不落盘。
 // 预置 LUT 仅十余 KB（8³ 采样），因此按需 fetch 原文 + 前端三线性插值，
@@ -3009,12 +2992,6 @@ function renderRegistryRecycleButton(item={}, className=''){
     if(item.is_remote){
         return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-delete-remote="${escapeAttr(item.id || '')}" title="删除 URL 资产" aria-label="删除 ${escapeAttr(item.name || 'URL 资产')}"><i data-lucide="trash-2"></i></button>`;
     }
-    // 【QIN-553】内置资产不可移入回收站（服务端同步 403 守卫），卡片提供隐藏开关。
-    if(item.metadata?.builtin === true || item.builtin === true){
-        const hidden = item.hidden === true;
-        const label = hidden ? '显示内置 LUT' : '隐藏内置 LUT';
-        return `<button class="${escapeAttr(className)} registry-card-recycle registry-card-builtin-hide" type="button" data-registry-builtin-hidden="${escapeAttr(item.id || '')}" data-hidden-state="${hidden ? '1' : '0'}" title="${label}" aria-label="${label} ${escapeAttr(item.name || '内置素材')}"><i data-lucide="${hidden ? 'eye' : 'eye-off'}"></i></button>`;
-    }
     const disabled = !registryCanRecycle(item);
     const title = disabled ? '当前素材来源为只读，不能移入回收站' : '移入 god-recycler';
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
@@ -3023,9 +3000,12 @@ function renderRegistryRecycleButton(item={}, className=''){
 // 保留真实 src 会在 8 并发队列之外同时发起请求，破坏并发上限与视口优先）。
 // 首屏由 scheduleRegistryPreviewImages 的 fallback activateVisible 首帧激活，经队列消化。
 function deferRegistryPreviewThumb(markup){
+    const raw = String(markup || '');
+    if(!raw.includes('<img')) return raw;
     const template = document.createElement('template');
-    template.innerHTML = String(markup || '');
-    template.content.querySelectorAll('img[src]').forEach(image => {
+    template.innerHTML = raw;
+    const scope = template.content || template;
+    scope.querySelectorAll('img[src]').forEach(image => {
         const source = image.getAttribute('src') || '';
         if(!source || source === REGISTRY_PREVIEW_PLACEHOLDER) return;
         image.setAttribute('src', REGISTRY_PREVIEW_PLACEHOLDER);
@@ -3489,6 +3469,7 @@ function registryQueryString({offset=0, limit=null, cursor=''}={}){
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
     if(registryKind) params.set('kind', registryKind);
     if(registryStatCategory) params.set('category', registryStatCategory);
+    else if(activeTab === 'registry' && !registryKind) params.set('category', 'image,video');
     if(registryCollectionId) params.set('collection_id', registryCollectionId);
     const board = assetBoardById(activeTab);
     const folderRoot = board?.system === false ? (board.sourceBoard ? board.rootId : boardSourceSelection[board.id]) : registryNavFolder.rootId;
@@ -5944,11 +5925,6 @@ function renderRegistryFilterChips(){
         chips.push(`<button type="button" data-registry-clear="project">项目：${escapeHtml(proj?.name || registryProjectFilterId)} <i data-lucide="x"></i></button>`);
     }
     if(registryStatCategory) chips.push(`<button type="button" data-registry-clear="category">统计：${escapeHtml(registryCategoryLabel(registryStatCategory))} <i data-lucide="x"></i></button>`);
-    // 【QIN-553】LUT 视图存在已隐藏的内置条目时，提供一键恢复显示入口。
-    // 【QIN-580】LUT 改成独立子页面后，入口条件同时认 category 与 board。
-    if(registryBuiltinHiddenIds.size && (registryStatCategory === 'lut' || activeTab === 'lut')){
-        chips.push(`<button type="button" data-registry-reveal-builtin>恢复显示内置 LUT（${registryBuiltinHiddenIds.size}）<i data-lucide="eye"></i></button>`);
-    }
     if(registryRecentDays) chips.push(`<button type="button" data-registry-clear="recent">最近 ${registryRecentDays} 天 <i data-lucide="x"></i></button>`);
     if(registryKind) chips.push(`<button type="button" data-registry-clear="kind">类型：${escapeHtml(registryKindLabel(registryKind))} <i data-lucide="x"></i></button>`);
     if(registryCollectionId){
@@ -6412,6 +6388,7 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
             <button class="hw-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
             ${options.allowUrl ? '<button class="hw-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
             ${groupActions}
+            ${(options.lutImport || activeTab === 'lut') ? `<button class="hw-btn hw-btn-gold registry-lut-import-btn" type="button" data-lut-import-trigger ${(options.lutImportBusy || lutImportBusy) ? 'disabled="disabled" aria-busy="true"' : ''}><i data-lucide="upload"></i><span>${(options.lutImportBusy || lutImportBusy) ? '正在导入…' : '导入 LUT'}</span></button><input type="file" accept=".cube" multiple data-lut-import-input hidden>` : ''}
         </div>
     </div>`;
 }
@@ -8469,21 +8446,13 @@ async function handleClick(event){
     if(registryDeleteRemote){ await deleteRegistryRemoteAsset(registryDeleteRemote.dataset.registryDeleteRemote || ''); return; }
     const registryFreshApply = target.closest?.('[data-registry-fresh-apply]');
     if(registryFreshApply){ event.stopPropagation(); await refreshRegistryAssets(); return; }
-    const registryBuiltinHidden = target.closest?.('[data-registry-builtin-hidden]');
-    if(registryBuiltinHidden){
-        event.stopPropagation();
-        await toggleRegistryBuiltinHidden(registryBuiltinHidden.dataset.registryBuiltinHidden || '',
-            registryBuiltinHidden.dataset.hiddenState !== '1');
+    if(target.closest?.('[data-lut-import-trigger]')){
+        const input = root.querySelector('[data-lut-import-input]');
+        if(input) input.click();
         return;
     }
-    if(target.closest?.('[data-registry-reveal-builtin]')){
-        event.stopPropagation();
-        try {
-            await ensureBuiltinLutsRegistered({reveal:true});
-            await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-            render();
-            setStatus('已恢复显示内置 LUT');
-        } catch(err){ setStatus(err.message || '恢复显示内置 LUT 失败'); }
+    if(target.closest?.('[data-lut-async-retry]')){
+        gwCall('lut', 'retryLutListRefresh');
         return;
     }
     const registryRecycle = target.closest?.('[data-registry-recycle]');
@@ -10744,6 +10713,13 @@ root.addEventListener('input', event => {
     }
 });
 root.addEventListener('change', event => {
+    const lutImportInput = event.target.closest?.('[data-lut-import-input]');
+    if(lutImportInput){
+        const files = lutImportInput.files;
+        if(files?.length) void gwCall('lut', 'importLutFiles', files);
+        lutImportInput.value = '';
+        return;
+    }
     const inlineLocalUploadName = event.target.closest?.('[data-localup-inline-name]');
     if(inlineLocalUploadName){
         gwCall('upload', 'saveLocalUploadInlineName', inlineLocalUploadName.dataset.localupInlineName || '', inlineLocalUploadName.value || '').catch(err => setStatus(err.message || '保存失败'));
@@ -10863,6 +10839,12 @@ root.addEventListener('dragstart', event => {
     tab.classList.add('dragging');
 });
 root.addEventListener('dragover', event => {
+    const lutZone = event.target.closest?.('[data-lut-dropzone]');
+    if(lutZone){
+        event.preventDefault();
+        lutZone.classList.add('is-drag-over');
+        return;
+    }
     const libraryTab = event.target.closest?.('[data-local-library-tab]');
     if(localLibraryDragId && libraryTab){
         event.preventDefault();
@@ -10875,9 +10857,21 @@ root.addEventListener('dragover', event => {
     drop.classList.add('drag-over');
 });
 root.addEventListener('dragleave', event => {
+    const lutZone = event.target.closest?.('[data-lut-dropzone]');
+    if(lutZone && (!event.relatedTarget || !lutZone.contains(event.relatedTarget))){
+        lutZone.classList.remove('is-drag-over');
+    }
     event.target.closest?.('#assetDrop, #localUploadDrop, #workflowDrop')?.classList.remove('drag-over');
 });
 root.addEventListener('drop', event => {
+    const lutZone = event.target.closest?.('[data-lut-dropzone]');
+    if(lutZone && !assetOrganizeDrag && !localLibraryDragId){
+        event.preventDefault();
+        lutZone.classList.remove('is-drag-over');
+        const files = event.dataTransfer?.files;
+        if(files?.length) void gwCall('lut', 'importLutFiles', files);
+        return;
+    }
     const libraryTab = event.target.closest?.('[data-local-library-tab]');
     if(localLibraryDragId && libraryTab){
         event.preventDefault();
@@ -12365,6 +12359,7 @@ export {
     setPromptLibrary,
     setPromptTreeEdit,
     setRegistryArchiveBusy,
+    setLutImportBusy,
     setRegistryAssets,
     setRegistryBulkPanel,
     setRegistryCanvasLoading,

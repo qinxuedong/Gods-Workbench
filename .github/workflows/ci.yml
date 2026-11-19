@@ -246,6 +246,7 @@ jobs:
               "web/vendor/fonts/SourceHanSansCN-Bold.otf",
               "web/vendor/fonts/SourceHanSansCN-Medium.otf",
               "web/vendor/fonts/SourceHanSansCN-Normal.otf",
+              "web/vendor/luts/default-preview.png",
           }
           violations = []
           # 已跟踪文件不受忽略规则豁免；只排除未跟踪且已忽略的本地运行产物。

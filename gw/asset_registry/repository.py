@@ -38,6 +38,7 @@ import math
 import os
 import re
 import threading
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import zipfile
@@ -477,8 +478,9 @@ def _is_builtin_record(record: Dict[str, Any]) -> bool:
 
 
 def _hidden_builtin(record: Dict[str, Any]) -> bool:
-    """QIN-553：用户已隐藏的内置条目——从列表/统计/预热/收件箱全部读路径剔除。"""
-    return _is_builtin_record(record) and bool(record.get("hidden"))
+    """QIN-621：已取消内置 LUT 隐藏功能，所有未删内置条目一律可见。"""
+    del record
+    return False
 
 
 def _read_json_snapshot_no_lock(path: Path) -> Dict[str, Any]:
@@ -1108,17 +1110,14 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         _cas(raw, payload.get("expected_version"))
         builtin = _is_builtin_record(item)
         if "hidden" in payload and payload["hidden"] is not None:
-            if not builtin:
-                raise CleanroomException(400, "INVALID_REQUEST",
-                                         "仅内置资产支持隐藏开关")
-            item["hidden"] = bool(payload["hidden"])
+            raise CleanroomException(400, "INVALID_REQUEST", "隐藏功能已取消")
         if payload.get("name"):
             item["name"] = str(payload["name"]).strip()
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 if builtin:
                     raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                             "内置资产不允许改类型、路径或归档，隐藏请用 hidden 开关")
+                                             "内置资产不允许改类型、路径或归档")
                 item[key] = payload[key]
         if "tags" in payload and isinstance(payload["tags"], list):
             item["tags"] = payload["tags"]
@@ -1198,7 +1197,7 @@ def archive_assets(asset_ids: List[str], expected_version: Optional[int]) -> Dic
             item = _require(raw, asset_id)
             if _is_builtin_record(item):
                 raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                         "内置资产不允许归档，请使用隐藏")
+                                         "内置资产不允许归档，如需移除请删除至回收站")
             item["archived"] = True
             item["archived_at"] = storage.now_iso()
             item["version"] = int(item.get("version", 1)) + 1
@@ -1226,16 +1225,18 @@ def delete_asset(asset_id: str, expected_version: Optional[int], context=None) -
     from gw.asset_library.service import default_asset_library_service
     snapshot = state().read()
     _require(snapshot, asset_id)
-    if _is_builtin_record(snapshot["assets"][asset_id]):
-        raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                 "内置资产不可移入回收站，可在卡片上选择隐藏")
     _cas(snapshot, expected_version, required=True)
     library_item = default_asset_library_service.remove_item_snapshot(asset_id)
     try:
         def mutate(raw: Dict[str, Any]) -> Any:
             item = _require(raw, asset_id)
             _cas(raw, expected_version, required=True)
+            is_builtin = _is_builtin_record(item)
             del raw["assets"][asset_id]
+            if is_builtin:
+                deleted_builtins = raw.setdefault("deleted_builtin_luts", [])
+                if asset_id not in deleted_builtins:
+                    deleted_builtins.append(asset_id)
             payload = dict(item)
             if library_item is not None:
                 payload["library_item"] = library_item
@@ -1292,7 +1293,14 @@ def restore_from_recycle(entry_id: str, context=None, expected_version: Optional
                 payload = dict(entry["payload"])
                 payload.pop("library_item", None)
                 payload.pop("full_sha256_cache", None)
+                if _is_builtin_record(payload):
+                    payload["hidden"] = False
                 raw["assets"][entry["asset_id"]] = payload
+                deleted_builtins = raw.get("deleted_builtin_luts")
+                if isinstance(deleted_builtins, list) and entry["asset_id"] in deleted_builtins:
+                    raw["deleted_builtin_luts"] = [
+                        aid for aid in deleted_builtins if aid != entry["asset_id"]
+                    ]
                 audit_sink.append_event(raw, "asset.recycle_restored", entry["asset_id"], context)
             del raw["recycle_bin"][entry_id]
             revision = _bump(raw)
@@ -1321,8 +1329,11 @@ def restore_asset(asset_id: str, context=None) -> Dict[str, Any]:
 
 
 def get_asset(asset_id: str) -> Dict[str, Any]:
+    from gw.asset_registry import builtin_luts
     raw = state().read()
     item = annotate_asset_provenance([_require(raw, asset_id)], raw=raw)[0]
+    if builtin_luts.is_managed_lut_display_path(item.get("display_path")):
+        item["can_recycle"] = True
     # 详情同时回填已关联素材，前端据此渲染关联列表与「解除关联」入口。
     return {**item, "related_assets": _related_assets_for(raw, item)}
 
@@ -1560,12 +1571,13 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         str(root.get("id") or ""): str(root.get("availability_reason") or "")
         for root in root_facets
     }
+    from gw.asset_registry import builtin_luts
     from gw.settings.service import default_storage_settings_service
     source_read_only = default_storage_settings_service.get_snapshot().local_library_read_only
     for item in items:
         source_id = str(item.get("storage_root_id") or "")
         asset_root_id = str(item.get("root_id") or "")
-        item["can_recycle"] = False
+        item["can_recycle"] = builtin_luts.is_managed_lut_display_path(item.get("display_path"))
         if not item.get("is_remote") and (source_id or asset_root_id):
             availability_id = source_id or asset_root_id
             item["can_recycle"] = not source_read_only.get(availability_id, False) and root_availability.get(availability_id) == "available"
@@ -1654,7 +1666,12 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     if cutoff:
         items = [a for a in items if str(a.get("created_at") or "") >= cutoff]
     if category:
-        items = [a for a in items if _asset_category(a) == category]
+        categories = [part.strip().lower() for part in str(category).split(",") if part.strip()]
+        valid_categories = {*_ASSET_CATEGORY_EXTENSIONS, "other"}
+        if not categories or any(part not in valid_categories for part in categories):
+            raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "不支持的资产分类筛选")
+        category_set = set(categories)
+        items = [a for a in items if _asset_category(a) in category_set]
     if project_id:
         if project_id == "__all__":
             items = [a for a in items if a.get("project_ids") or a.get("project_id")]
@@ -4486,6 +4503,205 @@ def stored_upload_path(asset_id: str, filename: str) -> Path:
     target_dir = storage.data_root() / "registry_uploads"
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / ("%s_%s" % (asset_id, safe))
+
+
+def _safe_user_lut_disk_name(display_name: str, suffix_num: int = 0) -> str:
+    """生成仅含 ASCII 安全字符的 user-lut 落盘文件名，保留 .cube 扩展名。"""
+    stem = display_name[:-5] if display_name.lower().endswith(".cube") else display_name
+    clean_stem = "".join(
+        ch for ch in stem if ch.isascii() and (ch.isalnum() or ch in "-_")
+    ).strip("-_") or "lut"
+    if len(clean_stem) > 72:
+        clean_stem = clean_stem[:72]
+    if suffix_num > 0:
+        return f"{clean_stem}_{suffix_num}.cube"
+    return f"{clean_stem}.cube"
+
+
+def import_user_lut_bytes(
+    filename: str,
+    data: bytes,
+    *,
+    conflict_resolution: str = "ask",
+    client_request_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """把合法 .cube 上传并登记到系统默认 LUT 目录下的 user-lut 子目录。
+
+    支持：
+    - 路径穿越与严格 .cube 校验（复用 parse_lut_cube_bytes）；
+    - 同名冲突策略：ask/reject (409 LUT_NAME_CONFLICT)、rename、overwrite；
+    - client_request_id 幂等去重；
+    - 临时文件原子写入与失败回滚，避免半写入。
+    """
+    from gw.asset_registry import builtin_luts
+    from gw.asset_registry.lut_cube import LutCubeError, parse_lut_cube_bytes
+
+    raw_name = str(filename or "").strip()
+    if (
+        not raw_name
+        or "/" in raw_name
+        or "\\" in raw_name
+        or ".." in raw_name
+        or any(ord(ch) < 32 for ch in raw_name)
+    ):
+        raise CleanroomException(400, "INVALID_LUT_PATH", "LUT 文件名非法")
+    if not raw_name.lower().endswith(".cube"):
+        raise CleanroomException(400, "INVALID_LUT_FORMAT", "仅支持导入 .cube 格式 LUT")
+    if not data:
+        raise CleanroomException(400, "INVALID_REQUEST", "上传文件为空")
+    try:
+        lut_meta = parse_lut_cube_bytes(data)
+    except LutCubeError as exc:
+        status_code = 413 if exc.code == "LUT_CUBE_TOO_LARGE" else 400
+        raise CleanroomException(status_code, exc.code, str(exc)) from exc
+
+    resolution = str(conflict_resolution or "ask").strip().lower()
+    if resolution not in {"ask", "reject", "rename", "overwrite"}:
+        raise CleanroomException(400, "INVALID_REQUEST", "不支持的冲突处理策略")
+
+    lut_dir = builtin_luts.user_lut_dir()
+    lut_dir.mkdir(parents=True, exist_ok=True)
+
+    snapshot = state().read()
+    token = str(client_request_id or "").strip()
+    if token:
+        existing_id = (snapshot.get("lut_import_tokens") or {}).get(token)
+        if existing_id and existing_id in (snapshot.get("assets") or {}):
+            asset = get_asset(existing_id)
+            return {
+                "asset": asset,
+                "assets": [asset],
+                "asset_ids": [existing_id],
+                "deduplicated": True,
+                "revision": snapshot["revision"],
+                "data_status": DATA_STATUS_OK,
+                "data_gaps": [],
+            }
+
+    display_name = raw_name
+    stem = display_name[:-5]
+    active_user_luts = [
+        item for item in (snapshot.get("assets") or {}).values()
+        if isinstance(item, dict)
+        and builtin_luts.is_user_lut_display_path(item.get("display_path"))
+    ]
+    conflict_item = next(
+        (
+            item for item in active_user_luts
+            if str(item.get("name") or "").casefold() == display_name.casefold()
+        ),
+        None,
+    )
+    disk_name = _safe_user_lut_disk_name(display_name)
+    disk_conflict = (lut_dir / disk_name).exists() and conflict_item is None
+
+    if conflict_item is not None or disk_conflict:
+        if resolution in {"ask", "reject"}:
+            raise CleanroomException(
+                409,
+                "LUT_NAME_CONFLICT",
+                f"已存在同名 LUT：{display_name}",
+                extra={
+                    "filename": display_name,
+                    "existing_asset_id": conflict_item.get("asset_id") if conflict_item else None,
+                },
+                expose_extra_fields={"filename", "existing_asset_id"},
+            )
+        if resolution == "rename":
+            existing_names = {str(item.get("name") or "").casefold() for item in active_user_luts}
+            idx = 1
+            while True:
+                candidate_name = f"{stem} ({idx}).cube"
+                candidate_disk = _safe_user_lut_disk_name(display_name, suffix_num=idx)
+                if candidate_name.casefold() not in existing_names and not (lut_dir / candidate_disk).exists():
+                    display_name = candidate_name
+                    disk_name = candidate_disk
+                    conflict_item = None
+                    break
+                idx += 1
+        elif resolution == "overwrite" and conflict_item is not None:
+            existing_display = str(conflict_item.get("display_path") or "")
+            if existing_display.startswith(f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/"):
+                disk_name = existing_display.rsplit("/", 1)[-1]
+
+    target = lut_dir / disk_name
+    tmp_path = lut_dir / f".{disk_name}.{int(time.time() * 1000)}.tmp"
+    try:
+        tmp_path.write_bytes(data)
+    except OSError as exc:
+        tmp_path.unlink(missing_ok=True)
+        raise CleanroomException(500, "LUT_WRITE_FAILED", "LUT 文件写入磁盘失败") from exc
+
+    now = storage.now_iso()
+    metadata_payload = {
+        "extension": "cube",
+        "user_lut": True,
+        "lut": {
+            "title": lut_meta.get("title"),
+            "lut_3d_size": lut_meta.get("lut_3d_size"),
+            "lut_1d_size": lut_meta.get("lut_1d_size"),
+            "sample_count": lut_meta.get("sample_count"),
+        },
+    }
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        assets = raw.setdefault("assets", {})
+        if token:
+            prior_id = (raw.get("lut_import_tokens") or {}).get(token)
+            if prior_id and prior_id in assets:
+                return {"asset_id": prior_id, "revision": raw["revision"], "deduplicated": True}
+
+        if resolution == "overwrite" and conflict_item is not None and conflict_item.get("asset_id") in assets:
+            aid = str(conflict_item["asset_id"])
+            item = assets[aid]
+            item["name"] = display_name
+            item["display_path"] = f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/{disk_name}"
+            item["size_bytes"] = len(data)
+            item["metadata"] = {**(item.get("metadata") or {}), **metadata_payload}
+            item["version"] = int(item.get("version", 1)) + 1
+            item["updated_at"] = now
+        else:
+            aid = _seq(raw, "ast_", assets.keys())
+            assets[aid] = {
+                "id": aid,
+                "asset_id": aid,
+                "name": display_name,
+                "kind": "lut",
+                "archived": False,
+                "version": 1,
+                "created_at": now,
+                "updated_at": now,
+                "tags": [],
+                "relations": [],
+                "display_path": f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/{disk_name}",
+                "size_bytes": len(data),
+                "metadata": metadata_payload,
+            }
+        if token:
+            raw.setdefault("lut_import_tokens", {})[token] = aid
+        revision = _bump(raw)
+        return {"asset_id": aid, "revision": revision, "deduplicated": False}
+
+    try:
+        tx = state().mutate(mutate)
+        if not tx.get("deduplicated"):
+            os.replace(tmp_path, target)
+        else:
+            tmp_path.unlink(missing_ok=True)
+    except Exception:
+        tmp_path.unlink(missing_ok=True)
+        raise
+
+    asset = get_asset(tx["asset_id"])
+    return {
+        "asset": asset,
+        "assets": [asset],
+        "asset_ids": [tx["asset_id"]],
+        "deduplicated": bool(tx.get("deduplicated")),
+        "revision": tx["revision"],
+        "data_status": DATA_STATUS_OK,
+        "data_gaps": [],
+    }
 
 
 def related_assets(asset_ids: List[str], kind: str, expected_version: Optional[int]) -> Dict[str, Any]:

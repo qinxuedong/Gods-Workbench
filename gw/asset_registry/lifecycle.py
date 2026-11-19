@@ -367,6 +367,7 @@ def recycle_asset(
         _local_state,
         _remove_local_index_path_best_effort,
     )
+    from gw.asset_registry import builtin_luts
     from gw.asset_registry import repository as repo
 
     entry_id = str(delete_result.get("recycle_entry_id") or "")
@@ -377,6 +378,9 @@ def recycle_asset(
     asset = dict(entry.get("payload") or {})
     if not asset.get("display_path"):
         return None
+    is_managed_lut = builtin_luts.is_managed_lut_display_path(asset.get("display_path"))
+    if is_managed_lut:
+        recycler_mode = "managed"
     source = _local_file_from_record(repo, asset)
     fingerprint = _fingerprint(source)
     op_id = _next_id("fop_")
@@ -486,13 +490,21 @@ def recycle_asset(
             continue
         derived_paths.append(_recycler_path_reference(path, recycler_root_id))
 
+    original_identity = (
+        {
+            **_file_record(source),
+            "display_path": str(asset.get("display_path") or ""),
+        }
+        if is_managed_lut
+        else _identity(source)
+    )
     manifest = {
         "op_id": op_id,
         "asset_id": asset_id,
         "kind": asset.get("kind") or "other",
         **({"recycler_root_id": recycler_root_id} if recycler_root_id else {}),
         "original": {
-            **_identity(source),
+            **original_identity,
             "fingerprint": fingerprint,
             "filename": source.name,
             "recycler_path": _recycler_path_reference(original_target, recycler_root_id),
@@ -590,10 +602,17 @@ def restore_asset_files(
         raise CleanroomException(  # noqa: B904
             500, "RESTORE_MANIFEST_INVALID", "回收清单与文件不一致"
         )
-    root = _allowed_root_for_identity(str(original.get("root_id") or ""))
-    original_target = root / str(
-        original.get("display_path") or original.get("canonical_relpath") or ""
-    )
+    storage_path = original.get("storage_path")
+    is_managed_storage = isinstance(storage_path, str) and bool(storage_path.strip())
+    if is_managed_storage:
+        original_target = storage.resolve_output_path(
+            str(storage_path), must_exist=False
+        )
+    else:
+        root = _allowed_root_for_identity(str(original.get("root_id") or ""))
+        original_target = root / str(
+            original.get("display_path") or original.get("canonical_relpath") or ""
+        )
     target = original_target
     suffix_applied = False
     if target.exists():
@@ -654,7 +673,7 @@ def restore_asset_files(
             "recycler_path": original.get("recycler_path"),
             "canonical_relpath": original.get("canonical_relpath"),
         },
-        "target": _identity(target),
+        "target": _file_record(target) if is_managed_storage else _identity(target),
         "fingerprint": _fingerprint(source),
         "state": "pending",
         "started_at": storage.now_iso(),
@@ -707,18 +726,23 @@ def restore_asset_files(
             error_message=message,
         )
         raise
+    restored_display_path = (
+        str(_file_record(target).get("storage_path") or original.get("display_path") or "")
+        if is_managed_storage
+        else _identity(target)["display_path"]
+    )
     _update_journal(
         op_id,
         state="done",
         finished_at=storage.now_iso(),
-        result={"display_path": _identity(target)["display_path"]},
+        result={"display_path": restored_display_path},
     )
     return {
         **updated,
         "asset_id": entry.get("asset_id"),
         "operation": get_operation(op_id),
         "suffix_applied": suffix_applied,
-        "display_path": _identity(target)["display_path"],
+        "display_path": restored_display_path,
         "data_status": "ok",
         "data_gaps": [],
     }

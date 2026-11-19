@@ -1,0 +1,43 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 752,
+  "authorization_basis": "GitHub Issue #752 (QIN-621), PM设计表确认授权 2026-11-18",
+  "files": [
+    ".github/workflows/ci.yml",
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/builtin_luts.py",
+    "gw/asset_registry/lifecycle.py",
+    "gw/asset_registry/repository.py",
+    "tests/contracts/assets/test_qin_553_builtin_luts.py",
+    "tests/contracts/assets/test_qin_621_lut_library_import_delete_preview.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-553-builtin-luts.test.mjs",
+    "tests/frontend/qin-621-lut-library-import-delete-preview.test.mjs",
+    "tests/hygiene/cleanroom_extensions.py",
+    "tests/hygiene/fixtures/admissions/issue-752.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/hygiene/test_public_resource_integrity.py",
+    "web/css/pages/asset-vault.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/lut.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/vendor/MANIFEST.md",
+    "web/vendor/luts/default-preview.png"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_621_lut_library_import_delete_preview.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #752 (QIN-621), 2026-11-18",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-621-lut-library-import-delete-preview.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #752 (QIN-621), 2026-11-18",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-621：资产总量列表数据源层仅显示图片与视频（不改统计口径）；取消 LUT 隐藏并统一删除/回收站恢复且 ensure 不自动补回；新增「导入 LUT」按钮与拖入统一写入 user-lut；纳入授权默认预览图 web/vendor/luts/default-preview.png。"
+}

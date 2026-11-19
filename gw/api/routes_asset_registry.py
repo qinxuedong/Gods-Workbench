@@ -1005,6 +1005,16 @@ async def import_registry_assets(
             raise CleanroomException(400, "INVALID_REQUEST", "上传文件为空")
         if len(data) > MAX_IMPORT_BYTES:
             raise CleanroomException(413, "PAYLOAD_TOO_LARGE", "上传文件超过 64MB 上限")
+        raw_filename = str(getattr(upload, "filename", "") or form.get("name") or "").strip()
+        target_scope = str(form.get("target") or "").strip().lower()
+        requested_kind = str(form.get("kind") or "").strip().lower()
+        if target_scope == "user-lut" or requested_kind == "lut" or _kind_from_name(raw_filename) == "lut":
+            return repo.import_user_lut_bytes(
+                raw_filename or str(form.get("name") or ""),
+                data,
+                conflict_resolution=str(form.get("conflict_resolution") or "ask"),
+                client_request_id=str(form.get("client_request_id") or "") or None,
+            )
         name = str(form.get("name") or getattr(upload, "filename", "") or "未命名素材").strip()
         result = repo.import_assets([{"name": name, "kind": _kind_from_name(name),
                                       "size_bytes": len(data)}], "upload", None)
