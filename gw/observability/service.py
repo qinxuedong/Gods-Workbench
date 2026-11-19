@@ -651,9 +651,14 @@ class ObservabilityService:
         # 2. 已落盘工作区作业运行事件（asset_registry）
         if auth_context is not None and requested_source in {"", "runtime", "agent_runtime", "asset_registry"}:
             try:
-                from gw.asset_registry import index_jobs
+                from gw.asset_registry import dedup_confirm, index_jobs
 
-                for item in index_jobs.service().listing(auth_context):
+                ws_items = list(index_jobs.service().listing(auth_context))
+                try:
+                    ws_items.extend(dedup_confirm.service().listing(auth_context))
+                except Exception:
+                    pass
+                for item in ws_items:
                     job_id = str(item.get("job_id") or "")
                     if not job_id:
                         continue
@@ -911,14 +916,18 @@ class ObservabilityService:
         persistent_gaps: list[str] = []
         if auth_context is not None:
             try:
-                from gw.asset_registry import index_jobs
+                from gw.asset_registry import dedup_confirm, index_jobs
 
                 index_items = index_jobs.service().listing(auth_context)
-                index_tasks = [self._project_index_task(item) for item in index_items]
+                dedup_items = dedup_confirm.service().listing(auth_context)
+                index_tasks = [
+                    self._project_index_task(item)
+                    for item in (index_items + dedup_items)
+                ]
                 tasks.extend(index_tasks)
                 source_limits["asset_registry"] = 100
                 source_counts["asset_registry"] = len(index_tasks)
-                if len(index_items) >= 100:
+                if len(index_items) >= 100 or len(dedup_items) >= 100:
                     truncated_sources.append("asset_registry")
                     persistent_gaps.append("SOURCE_WINDOW_TRUNCATED:asset_registry")
             except Exception:
@@ -938,10 +947,20 @@ class ObservabilityService:
             except Exception:
                 degraded_sources.append("video_tasks")
                 persistent_gaps.append("SOURCE_UNAVAILABLE:video_tasks")
+
+        def _task_status_matches(filter_status: str | None, task_status: str) -> bool:
+            if not filter_status:
+                return True
+            wanted = filter_status.strip().lower()
+            actual = str(task_status or "").strip().lower()
+            if wanted in {"canceled", "cancelled"}:
+                return actual in {"canceled", "cancelled"}
+            return actual == wanted
+
         selected = [
             task
             for task in tasks
-            if (not filters.status or task.status == filters.status.strip().lower())
+            if _task_status_matches(filters.status, task.status)
             and (not filters.job_id or task.job_id == filters.job_id)
             and (not filters.project_id or task.project_id == filters.project_id)
             and (not filters.entity_id or task.entity_id == filters.entity_id)
@@ -1021,10 +1040,10 @@ class ObservabilityService:
             job_id=str(item.get("job_id") or ""),
             status=str(item.get("status") or "unknown"),
             poll_hint=f"/api/asset-registry/workspace-jobs/{item.get('job_id')}",
-            has_result=bool(item.get("result_unknown") is False and item.get("status") == "completed"),
+            has_result=bool(item.get("result_unknown") is False and item.get("status") in {"completed", "succeeded"}),
             error_safe=str(item.get("error_code") or "") or None,
             source="asset_registry",
-            job_type=str(item.get("kind") or item.get("operation") or "index"),
+            job_type=str(item.get("job_type") or item.get("kind") or item.get("operation") or "index"),
             created_at=item.get("created_at"),
             updated_at=item.get("updated_at"),
             project_id=item.get("project_id"),

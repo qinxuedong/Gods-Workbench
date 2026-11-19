@@ -1232,18 +1232,19 @@
     if (!EMBEDDED && !acquireDataRequest('refresh')) return;
     const gen = ++requestGeneration;
     if (activeAbortController) activeAbortController.abort();
-    const controller = new AbortController();
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
     activeAbortController = controller;
+    const reqOpts = controller ? {signal: controller.signal} : undefined;
     state.loading = true; state.assetVolumeLoading = !EMBEDDED; state.longTaskLoading = !EMBEDDED; state.loadError = ''; state.loadErrorKind = ''; state.tasksError = ''; state.eventsError = ''; state.renderError = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; if (!EMBEDDED) { state.stalledTasks = []; state.assetVolumes = []; } state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
     const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED && !eventQuery.get('source')) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
     if (EMBEDDED) {
       try {
         const [events, tasks] = await Promise.allSettled([
-          api(`${ENDPOINTS.events}?${eventQuery}`, {signal: controller.signal}),
-          api(`${ENDPOINTS.tasks}?${taskQuery}`, {signal: controller.signal}),
+          api(`${ENDPOINTS.events}?${eventQuery}`, reqOpts),
+          api(`${ENDPOINTS.tasks}?${taskQuery}`, reqOpts),
         ]);
-        if (gen !== requestGeneration || controller.signal.aborted) return;
+        if (gen !== requestGeneration || controller?.signal?.aborted) return;
         let hasFailure = false;
         if (events.status === 'fulfilled') {
           if (hasSourceUnavailableEmpty(events.value)) {
@@ -1284,7 +1285,7 @@
           state.lastUpdated = state.lastUpdated || new Date().toISOString();
         }
       } catch (error) {
-        if (gen !== requestGeneration || controller.signal.aborted || error?.name === 'AbortError') return;
+        if (gen !== requestGeneration || controller?.signal?.aborted || error?.name === 'AbortError') return;
         state.loadError = taskCenterDegradationNotice(error);
         showToast(state.loadError, 'error');
       } finally {
