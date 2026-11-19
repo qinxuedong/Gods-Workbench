@@ -16,7 +16,6 @@ function trackUnrefTimers() {
     };
     globalThis.setTimeout = (...args) => {
         const id = prevSetTimeout(...args);
-        id?.unref?.();
         timeouts.add(id);
         return id;
     };
