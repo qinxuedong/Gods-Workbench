@@ -33,6 +33,7 @@ import base64
 import copy
 import hashlib
 import json
+import uuid
 import logging
 import math
 import os
@@ -94,6 +95,7 @@ def _blank() -> Dict[str, Any]:
 
 
 def state() -> storage.JsonState:
+    _recover_user_lut_import()
     return storage.JsonState(NS_REGISTRY, _blank)
 
 
@@ -257,6 +259,7 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
     ``storage.load`` 的调用次数即可精确代表注册表解析次数。
     """
     global _REGISTRY_SNAPSHOT_CACHE
+    _recover_user_lut_import()
     path, _ = _snapshot_paths()
     before = _registry_snapshot_signature(path)
     with _REGISTRY_SNAPSHOT_LOCK:
@@ -4521,7 +4524,62 @@ def _safe_user_lut_disk_name(display_name: str, suffix_num: int = 0) -> str:
     return f"{clean_stem}.cube"
 
 
+def _durable_lut_write(path: Path, data: bytes) -> None:
+    with path.open("wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _recover_user_lut_import() -> None:
+    from gw.asset_registry import builtin_luts
+
+    root = builtin_luts.user_lut_dir()
+    journal = root / ".lut-import.json"
+    if not journal.is_file():
+        return
+    with storage.namespace_lock(NS_REGISTRY):
+        if not journal.is_file():
+            return
+        intent = json.loads(journal.read_text(encoding="utf-8"))
+        disk_name = intent["target"]
+        if Path(disk_name).name != disk_name or not disk_name.endswith(".cube"):
+            raise ValueError("LUT 导入恢复记录的目标文件名无效")
+        backup = root / ".lut-import.backup"
+        stage = root / ".lut-import.tmp"
+        registry, ok = storage.load_with_status(NS_REGISTRY, None)
+        if not ok:
+            raise OSError("无法读取注册表以恢复 LUT 导入")
+        if (registry or {}).get("lut_import_commit") != intent["id"]:
+            target = root / disk_name
+            if intent["had_target"]:
+                previous = backup.read_bytes()
+                if not target.is_file() or target.read_bytes() != previous:
+                    _durable_lut_write(stage, previous)
+                    os.replace(stage, target)
+            else:
+                target.unlink(missing_ok=True)
+        journal.unlink()
+        stage.unlink(missing_ok=True)
+        backup.unlink(missing_ok=True)
+
+
 def import_user_lut_bytes(
+    filename: str,
+    data: bytes,
+    *,
+    conflict_resolution: str = "ask",
+    client_request_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    # 名称选择、文件发布与注册表提交共用注册表锁。
+    with storage.namespace_lock(NS_REGISTRY):
+        return _import_user_lut_bytes_locked(
+            filename, data, conflict_resolution=conflict_resolution,
+            client_request_id=client_request_id,
+        )
+
+
+def _import_user_lut_bytes_locked(
     filename: str,
     data: bytes,
     *,
@@ -4565,12 +4623,23 @@ def import_user_lut_bytes(
     lut_dir = builtin_luts.user_lut_dir()
     lut_dir.mkdir(parents=True, exist_ok=True)
 
-    snapshot = state().read()
+    registry = state()
+    snapshot = registry.read()
     token = str(client_request_id or "").strip()
+    fingerprint = hashlib.sha256(data).hexdigest()
     if token:
         existing_id = (snapshot.get("lut_import_tokens") or {}).get(token)
-        if existing_id and existing_id in (snapshot.get("assets") or {}):
+        if existing_id:
+            saved = (snapshot.get("lut_import_fingerprints") or {}).get(token)
+            if saved != {"filename": raw_name, "sha256": fingerprint}:
+                raise CleanroomException(409, "LUT_REQUEST_ID_CONFLICT", "请求 ID 已用于不同的导入")
+            if existing_id not in (snapshot.get("assets") or {}):
+                raise CleanroomException(409, "LUT_REQUEST_ID_STALE", "原导入资产已不存在")
             asset = get_asset(existing_id)
+            current_name = str(asset.get("display_path") or "").rsplit("/", 1)[-1]
+            current_path = lut_dir / current_name
+            if not current_path.is_file() or hashlib.sha256(current_path.read_bytes()).hexdigest() != fingerprint:
+                raise CleanroomException(409, "LUT_REQUEST_ID_STALE", "原导入文件已变更或不存在")
             return {
                 "asset": asset,
                 "assets": [asset],
@@ -4599,6 +4668,8 @@ def import_user_lut_bytes(
     disk_conflict = (lut_dir / disk_name).exists() and conflict_item is None
 
     if conflict_item is not None or disk_conflict:
+        if disk_conflict and resolution == "overwrite":
+            raise CleanroomException(409, "LUT_NAME_CONFLICT", "目标文件未登记，不能覆盖")
         if resolution in {"ask", "reject"}:
             raise CleanroomException(
                 409,
@@ -4628,12 +4699,11 @@ def import_user_lut_bytes(
                 disk_name = existing_display.rsplit("/", 1)[-1]
 
     target = lut_dir / disk_name
-    tmp_path = lut_dir / f".{disk_name}.{int(time.time() * 1000)}.tmp"
-    try:
-        tmp_path.write_bytes(data)
-    except OSError as exc:
-        tmp_path.unlink(missing_ok=True)
-        raise CleanroomException(500, "LUT_WRITE_FAILED", "LUT 文件写入磁盘失败") from exc
+    tmp_path = lut_dir / ".lut-import.tmp"
+    backup = lut_dir / ".lut-import.backup"
+    journal = lut_dir / ".lut-import.json"
+    journal_stage = lut_dir / ".lut-import-journal.tmp"
+    transaction_id = uuid.uuid4().hex
 
     now = storage.now_iso()
     metadata_payload = {
@@ -4649,18 +4719,18 @@ def import_user_lut_bytes(
 
     def mutate(raw: Dict[str, Any]) -> Any:
         assets = raw.setdefault("assets", {})
-        if token:
-            prior_id = (raw.get("lut_import_tokens") or {}).get(token)
-            if prior_id and prior_id in assets:
-                return {"asset_id": prior_id, "revision": raw["revision"], "deduplicated": True}
-
         if resolution == "overwrite" and conflict_item is not None and conflict_item.get("asset_id") in assets:
             aid = str(conflict_item["asset_id"])
             item = assets[aid]
             item["name"] = display_name
             item["display_path"] = f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/{disk_name}"
             item["size_bytes"] = len(data)
-            item["metadata"] = {**(item.get("metadata") or {}), **metadata_payload}
+            metadata = item.get("metadata") or {}
+            item["metadata"] = {
+                **metadata,
+                **metadata_payload,
+                "lut": {**(metadata.get("lut") or {}), **metadata_payload["lut"]},
+            }
             item["version"] = int(item.get("version", 1)) + 1
             item["updated_at"] = now
         else:
@@ -4682,18 +4752,30 @@ def import_user_lut_bytes(
             }
         if token:
             raw.setdefault("lut_import_tokens", {})[token] = aid
+            raw.setdefault("lut_import_fingerprints", {})[token] = {
+                "filename": raw_name, "sha256": fingerprint,
+            }
+        raw["lut_import_commit"] = transaction_id
         revision = _bump(raw)
         return {"asset_id": aid, "revision": revision, "deduplicated": False}
 
     try:
-        tx = state().mutate(mutate)
-        if not tx.get("deduplicated"):
-            os.replace(tmp_path, target)
-        else:
-            tmp_path.unlink(missing_ok=True)
-    except Exception:
-        tmp_path.unlink(missing_ok=True)
-        raise
+        had_target = target.exists()
+        if had_target:
+            _durable_lut_write(backup, target.read_bytes())
+        _durable_lut_write(tmp_path, data)
+        # 先持久化恢复记录，重启后根据注册表提交标记判断保留还是回滚。
+        intent = {"id": transaction_id, "target": disk_name, "had_target": had_target}
+        _durable_lut_write(journal_stage, json.dumps(intent).encode("utf-8"))
+        os.replace(journal_stage, journal)
+        os.replace(tmp_path, target)
+        tx = registry.mutate(mutate)
+    finally:
+        # 进程中断时 finally 不会执行，读取注册表时走同一恢复入口。
+        _recover_user_lut_import()
+        if not journal.exists():
+            for path in (tmp_path, backup, journal_stage):
+                path.unlink(missing_ok=True)
 
     asset = get_asset(tx["asset_id"])
     return {

@@ -30,6 +30,7 @@ import {
     assetBoardById,
     canvasAssetsData,
     customAssetLibraryBaseItems,
+    lutCustomPreviewUrl,
     detailMediaLutCache,
     detailMediaLutDraw,
     detailMediaLutListCache,
@@ -428,7 +429,8 @@ async function importLutFiles(fileList){
     try {
         for(const file of files){
             if(token !== lutImportSeq || activeTab !== 'lut') return;
-            const reqId = `lut_${token}_${file.name}_${file.size}`;
+            const nonce = crypto.getRandomValues(new Uint8Array(16));
+            const reqId = `lut_${Array.from(nonce, byte => byte.toString(16).padStart(2, '0')).join('')}`;
             try {
                 await uploadSingleLutFile(file, 'ask', reqId, controller.signal);
                 importedCount += 1;
@@ -1306,7 +1308,7 @@ function renderDetailLutWorkspace(source, item){
     const samples = Number(meta.sample_count) > 0 ? String(Number(meta.sample_count)) : '—';
     return `<div class="asset-detail-lut-workspace" data-detail-lut-workspace>
         ${renderDetailLutLibrary(item)}
-        <section class="asset-detail-lut-stage" data-detail-lut-stage data-lut-state="loading" data-compare="${escapeAttr(mode)}">
+        <section class="asset-detail-lut-stage" data-detail-lut-stage data-lut-custom-preview-url="${escapeAttr(lutCustomPreviewUrl(item))}" data-lut-state="loading" data-compare="${escapeAttr(mode)}">
             <header>
                 <div><i data-lucide="palette"></i><strong>LUT 效果预览</strong><span data-detail-lut-title title="${escapeAttr(item.name || 'LUT')}">${escapeHtml(meta.title || item.name || 'LUT')}</span></div>
                 <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">

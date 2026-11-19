@@ -246,3 +246,83 @@ def test_ac4_default_preview_static_asset_available(client: TestClient):
     resp = client.get("/static/vendor/luts/default-preview.png")
     assert resp.status_code == 200
     assert resp.headers.get("content-type", "").startswith("image/png")
+
+
+def test_import_request_id_rejects_different_content(client: TestClient):
+    first = _upload_lut(client, "same.cube", VALID_CUBE, client_request_id="same-id")
+    assert first.status_code == 200
+    other = VALID_CUBE.replace(b'Test QIN621', b'Else QIN621')
+    second = _upload_lut(client, "same.cube", other, client_request_id="same-id")
+    assert second.status_code == 409
+    assert second.json()["detail"]["code"] == "LUT_REQUEST_ID_CONFLICT"
+
+
+def test_import_publication_failure_does_not_commit(client: TestClient, monkeypatch):
+    from gw.asset_registry import repository
+
+    original = repository.os.replace
+    def fail_publish(src, dst):
+        if str(dst).endswith("fail.cube"):
+            raise OSError("injected publication failure")
+        return original(src, dst)
+
+    monkeypatch.setattr(repository.os, "replace", fail_publish)
+    import pytest
+    with pytest.raises(OSError):
+        repository.import_user_lut_bytes("fail.cube", VALID_CUBE, client_request_id="retry-id")
+    assert "retry-id" not in repository.state().read().get("lut_import_tokens", {})
+    assert not (builtin_luts.user_lut_dir() / "fail.cube").exists()
+    monkeypatch.setattr(repository.os, "replace", original)
+    result = repository.import_user_lut_bytes("fail.cube", VALID_CUBE, client_request_id="retry-id")
+    assert not result["deduplicated"]
+    assert (builtin_luts.user_lut_dir() / "fail.cube").read_bytes() == VALID_CUBE
+
+
+def test_concurrent_same_name_has_single_winner(client: TestClient):
+    from concurrent.futures import ThreadPoolExecutor
+    from gw.asset_registry import repository
+    from gw.core.errors import CleanroomException
+
+    def run(i):
+        try:
+            return repository.import_user_lut_bytes("race.cube", VALID_CUBE, client_request_id=f"race-{i}")
+        except CleanroomException as exc:
+            return exc
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        results = list(pool.map(run, range(2)))
+    assert sum(isinstance(item, dict) for item in results) == 1
+    assert sum(isinstance(item, CleanroomException) for item in results) == 1
+    assert (builtin_luts.user_lut_dir() / "race.cube").read_bytes() == VALID_CUBE
+
+
+def test_overwrite_recovers_after_publication_before_commit(client: TestClient, monkeypatch):
+    from gw.asset_registry import repository
+
+    original = repository.import_user_lut_bytes("recover.cube", VALID_CUBE, client_request_id="original")
+    replacement = VALID_CUBE.replace(b"Test QIN621", b"Else QIN621")
+    target = builtin_luts.user_lut_dir() / "recover.cube"
+    recover = repository._recover_user_lut_import
+
+    def interrupted_commit(self, mutator):
+        assert target.read_bytes() == replacement
+        # 模拟发布后进程中断，直到下一次冷读才允许运行恢复。
+        monkeypatch.setattr(repository, "_recover_user_lut_import", lambda: None)
+        raise OSError("interrupted before registry commit")
+
+    import pytest
+
+    with monkeypatch.context() as patch:
+        patch.setattr(repository.storage.JsonState, "mutate", interrupted_commit)
+        with pytest.raises(OSError, match="interrupted before registry commit"):
+            repository.import_user_lut_bytes(
+                "recover.cube", replacement, conflict_resolution="overwrite", client_request_id="retry",
+            )
+    monkeypatch.setattr(repository, "_recover_user_lut_import", recover)
+    assert target.read_bytes() == replacement
+    assert repository.readonly_registry_snapshot()["assets"][original["asset_ids"][0]]["version"] == 1
+    assert target.read_bytes() == VALID_CUBE
+    result = repository.import_user_lut_bytes(
+        "recover.cube", replacement, conflict_resolution="overwrite", client_request_id="retry",
+    )
+    assert result["asset"]["version"] == 2
+    assert target.read_bytes() == replacement

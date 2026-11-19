@@ -99,6 +99,7 @@ test('QIN-621 AC2：LUT 库内置与用户卡片统一渲染删除按钮，无�
         makeLutItem('builtin_lut_neutral', 'builtin_lut_neutral.cube', true),
         makeLutItem('ast_user_lut_1', 'my_film.cube', false),
     ];
+    lutItems[1].metadata.lut.preview_url = '/static/fixture/custom-preview.png';
     const host = await createAssetViewHost({
         tab: 'registry',
         fetchImpl: async (url) => {
@@ -124,6 +125,10 @@ test('QIN-621 AC2：LUT 库内置与用户卡片统一渲染删除按钮，无�
         const recycleButtons = host.root.querySelectorAll('[data-registry-recycle]');
         assert.equal(recycleButtons.length, 2, '内置与用户 LUT 卡片都应渲染删除按钮');
         assert.ok(!recycleButtons[0].hasAttribute('disabled') && !recycleButtons[1].hasAttribute('disabled'), '受管 LUT 删除按钮应可点击');
+        const previews = [...host.root.querySelectorAll('[data-lut-custom-preview-url]')];
+        assert.deepEqual(previews.map(node => node.getAttribute('data-lut-custom-preview-url')), [
+            '', '/static/fixture/custom-preview.png',
+        ]);
     } finally {
         restoreQsa();
         host.dispose();

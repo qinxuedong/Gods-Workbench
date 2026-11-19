@@ -475,7 +475,10 @@ async function activateAssetBoard(requestedId){
     const board = assetBoardById(id);
     if(!board) return;
     const previousTab = activeTab;
-    setActiveTab(id);
+    setActiveTab(id, {cancelLut:false});
+    if(previousTab === 'lut' && id !== 'lut'){
+        GW_DEFERRED?.lut?.cancelLutAsyncOperations?.();
+    }
     setRegistryRackSnapshot(null);
     setRegistryRequestSeq(registryRequestSeq + 1);
     setRegistryPageLoading(false);
@@ -507,9 +510,6 @@ async function activateAssetBoard(requestedId){
     }
     if(board.preset === 'lut' || (board.kinds || []).includes('lut')){
         try { await ensureBuiltinLutsRegistered(); } catch(err){ setStatus(err.message || '内置 LUT 登记失败'); }
-    }
-    if(previousTab === 'lut' && id !== 'lut'){
-        GW_DEFERRED?.lut?.cancelLutAsyncOperations?.();
     }
     if(id === 'lut'){
         // 【QIN-580】LUT 库是独立子页面：按 kind=lut 取数，客户端再按 .cube 收口。

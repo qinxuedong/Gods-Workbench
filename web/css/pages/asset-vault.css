@@ -1624,6 +1624,19 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
 }
 
 /* QIN-621：LUT 库导入按钮、拖入热区、异步状态条与同名冲突弹窗（dark/light 自适应） */
+@media (max-width: 900px) {
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut.asset-manager-root-rack {
+        grid-template-columns: minmax(0,1fr) !important;
+        grid-template-rows: auto auto minmax(360px,1fr) auto !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut > .registry-content {
+        grid-row: 3 !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut > .registry-detail-panel {
+        grid-row: 4;
+    }
+}
+
 .registry-lut-import-btn {
     flex-shrink: 0;
     white-space: nowrap;

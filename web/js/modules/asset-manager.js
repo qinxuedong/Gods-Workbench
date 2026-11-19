@@ -2984,9 +2984,12 @@ function lutPreviewSourceUrl(item={}, source='registry'){
     if(source === 'registry' && assetId) return `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`;
     return '';
 }
+export function lutCustomPreviewUrl(item={}){
+    return String(item.metadata?.lut?.preview_url || item.metadata?.preview_url || item.preview_url || '').trim();
+}
 function renderRegistryLutThumb(item={}){
     const url = lutPreviewSourceUrl(item, 'registry');
-    return `<span class="registry-lut-thumb" data-lut-thumb><canvas class="registry-lut-thumb-canvas" data-lut-thumb-url="${escapeAttr(url)}" width="${LUT_THUMB_SAMPLE_WIDTH}" height="${LUT_THUMB_SAMPLE_HEIGHT}" role="img" aria-label="${escapeAttr(item.name || 'LUT')} 样片预览"></canvas><span class="registry-lut-thumb-badge"><i data-lucide="palette"></i>LUT</span></span>`;
+    return `<span class="registry-lut-thumb" data-lut-thumb><canvas class="registry-lut-thumb-canvas" data-lut-thumb-url="${escapeAttr(url)}" data-lut-custom-preview-url="${escapeAttr(lutCustomPreviewUrl(item))}" width="${LUT_THUMB_SAMPLE_WIDTH}" height="${LUT_THUMB_SAMPLE_HEIGHT}" role="img" aria-label="${escapeAttr(item.name || 'LUT')} 样片预览"></canvas><span class="registry-lut-thumb-badge"><i data-lucide="palette"></i>LUT</span></span>`;
 }
 function renderRegistryRecycleButton(item={}, className=''){
     if(item.is_remote){
@@ -4102,7 +4105,7 @@ function syncRegistrySelectionViews(keepDetailScroll=false){
 async function openRegistryAssetFromGlobalSearch(assetId, startTime = null){
     const id = touchbarStableId(assetId);
     if(!id) return;
-    activeTab = 'registry';
+    setActiveTab('registry');
     registryQuery = '';
     registryDetailPanelCollapsed = false;
     await refreshRegistryAssets(false);
@@ -4199,7 +4202,7 @@ function handleAssetTreeCrumbClick(key){
         registryProjectEntityFilter = null;
         registryNavFolder = {rootId:'', path:''};
         registryRootId = '';
-        activeTab = 'registry';
+        setActiveTab('registry');
         assetTreeSelectedKey = '';
         render();
         void refreshRegistryAssets(false).then(render, render);
@@ -4299,13 +4302,16 @@ function mergeRegistryAssetUpdate(updated={}){
     }
 }
 let registryFacetRefreshGeneration = 0;
-async function refreshRegistryFacetData(){
+async function refreshRegistryFacetData(options={}){
     // QIN-596 §2 乱序防护：连续两次刷新只采用最新代际——迟到的旧响应不得
     // 覆盖新 facets（登记后连续刷新场景）。
     const generation = ++registryFacetRefreshGeneration;
-    const facets = await apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null);
+    const facets = await apiJsonResponse(assetManagerApi.getRegistryFacets({signal:options.signal})).catch(error => {
+        if(options.strict) throw error;
+        return null;
+    });
     if(!facets) return;
-    if(generation !== registryFacetRefreshGeneration) return;
+    if(generation !== registryFacetRefreshGeneration || options.signal?.aborted) return;
     registryFacets = {
         kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
         categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -6388,7 +6394,7 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
             <button class="hw-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
             ${options.allowUrl ? '<button class="hw-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
             ${groupActions}
-            ${(options.lutImport || activeTab === 'lut') ? `<button class="hw-btn hw-btn-gold registry-lut-import-btn" type="button" data-lut-import-trigger ${(options.lutImportBusy || lutImportBusy) ? 'disabled="disabled" aria-busy="true"' : ''}><i data-lucide="upload"></i><span>${(options.lutImportBusy || lutImportBusy) ? '正在导入…' : '导入 LUT'}</span></button><input type="file" accept=".cube" multiple data-lut-import-input hidden>` : ''}
+            ${(options.lutImport || activeTab === 'lut') ? `<button class="hw-btn" type="button" data-registry-recycle-bin-open><i data-lucide="trash-2"></i><span>回收站</span></button><button class="hw-btn hw-btn-gold registry-lut-import-btn" type="button" data-lut-import-trigger ${(options.lutImportBusy || lutImportBusy) ? 'disabled="disabled" aria-busy="true"' : ''}><i data-lucide="upload"></i><span>${(options.lutImportBusy || lutImportBusy) ? '正在导入…' : '导入 LUT'}</span></button><input type="file" accept=".cube" multiple data-lut-import-input hidden>` : ''}
         </div>
     </div>`;
 }
@@ -7379,7 +7385,7 @@ function selectAssetTreeNode(key){
         const path = separator > 0 ? body.slice(separator + 2) : '';
         if(activeTab !== 'registry'){
             // 【QIN-595 审核官反馈第 1 项】若当前在非目标视图（如 LUT），点挂载子目录需切回资产总览并彻底重置其过滤定义
-            activeTab = 'registry';
+            setActiveTab('registry');
             registryRackSnapshot = null;
             // 【QIN-603 缺陷A】同上：经 organize 域网关派发，不再裸调域内私有函数。
             gwCall('organize', 'resetBoardSelections');
@@ -7784,7 +7790,7 @@ function systemBoardRackActive(){
 }
 async function refreshRegistryAssetsFromRack(){
     if(systemBoardRackActive()){
-        activeTab = 'registry';
+        setActiveTab('registry');
         renderBoardNavigation();
     }
     await refreshRegistryAssets();
@@ -8336,7 +8342,7 @@ async function handleClick(event){
             // 树选中态同步到「画布资产」节点下的「全部画布」分类子节点。
             registryStatCategory = '';
             assetTreeSelectedKey = 'system:canvas-assets:cat:all';
-            activeTab = 'canvas-assets';
+            setActiveTab('canvas-assets');
             activeCanvasAssetCategory = 'all';
             activeCanvasAssetCanvasId = '';
             selectedCanvasAssetId = '';
@@ -8348,7 +8354,7 @@ async function handleClick(event){
         applyRegistryFilterDefinition({category, groupSimilar:registryGroupSimilar});
         // 【QIN-569 AC3】统计卡是资产总览的组件：从其他视图（项目/剧本/提示词等）点击统计卡
         // 即切换回资产总览并应用该分类筛选，保证「切换回资产分类仍可正常筛选」。
-        if(activeTab !== 'registry') activeTab = 'registry';
+        setActiveTab('registry');
         // 【审核残留修复】统计卡筛选同样收口持久化（侧栏选中清空后旧 mine:* 键不应残留）。
         saveAssetTreeState();
         // 【QIN-553】首次打开 LUT 库统计视图时，幂等登记内置 LUT 包。
@@ -8822,7 +8828,7 @@ async function handleClick(event){
     }
     const tabBtn = target.closest?.('[data-tab]');
     if(tabBtn){
-        activeTab = tabBtn.dataset.tab || 'assets';
+        setActiveTab(tabBtn.dataset.tab || 'assets');
         selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear();
         if(activeTab === 'local' && !localAssetsLoaded){
             const loading = loadLocalAssets();
@@ -11330,6 +11336,8 @@ async function applyRegistryBrowseSessionScroll(desired){
 }
 window.addEventListener('pagehide', () => {
     saveRegistryBrowseSession();
+    GW_DEFERRED.lut?.cancelLutAsyncOperations?.();
+    GW_DEFERRED.recycle?.invalidateRecycleOperations?.();
     invalidateAllowedRootMutation();
     GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
     cancelActiveBoardMigration();
@@ -11451,8 +11459,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function setDirectorySettingsSaving(v){ directorySettingsSaving = v; }
 function setClientUploadSourceDir(v){ clientUploadSourceDir = v; }
 function setClientSettingBusy(v){ clientSettingBusy = v; }
-function setActiveTab(v){
+function setActiveTab(v, {cancelLut=true}={}){
     if(activeTab !== v){
+        if(activeTab === 'lut'){
+            if(cancelLut) GW_DEFERRED.lut?.cancelLutAsyncOperations?.();
+            registryRequestSeq += 1;
+            abortRegistryAssetRequests();
+        }
+        GW_DEFERRED.recycle?.invalidateRecycleOperations?.();
         GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
         if(boardMigrationState.running){
             cancelActiveBoardMigration();
