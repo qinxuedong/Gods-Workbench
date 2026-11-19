@@ -719,6 +719,54 @@ test("AC6 R2阻断2: 任务与日志翻页被新筛选取代后，迟到成功�
   assert.equal(nodes["#taskToast"].textContent, "");
 });
 
+test("AC6 R3: 往返缓存恢复时作废在途分页并重新加载，迟到结果不能污染恢复后的状态", async () => {
+  for (const kind of ["tasks", "events"]) {
+    for (const lateError of [false, true]) {
+      let firstPages = 0;
+      let pending;
+      let pageCalls = 0;
+      const { nodes, windowObj } = bootTaskCenter((url, options = {}) => {
+        const parsed = new URL(url, "http://localhost");
+        const isTask = parsed.pathname.endsWith("/tasks");
+        const cursor = parsed.searchParams.get("cursor");
+        if (!cursor && isTask) firstPages++;
+        if (cursor && ((kind === "tasks") === isTask)) {
+          pageCalls++;
+          if (pageCalls === 1) return new Promise((resolve, reject) => { pending = { resolve, reject, signal: options.signal }; });
+          return Promise.resolve(isTask
+            ? { items: [{ job_id: "fresh-page-job", status: "running" }] }
+            : { items: [{ event_id: "fresh-page-event", message_safe: "fresh-page-event" }] });
+        }
+        return Promise.resolve(isTask
+          ? { items: [{ job_id: "current-job", status: "running" }], next_cursor: "next", has_more: true }
+          : { items: [{ event_id: "current-event", message_safe: "current-event" }], next_cursor: "next", has_more: true });
+      });
+      const tick = () => new Promise((resolve) => setTimeout(resolve, 10));
+      await tick();
+      const button = nodes[kind === "tasks" ? "#loadMoreTasks" : "#loadMoreEvents"];
+      button.dispatchEvent({ type: "click" });
+      await tick();
+      assert.ok(pending);
+      windowObj.dispatchWindowEvent("pagehide", { persisted: true });
+      assert.equal(pending.signal.aborted, true);
+      windowObj.dispatchWindowEvent("pageshow", { persisted: true });
+      await tick();
+      assert.equal(firstPages, 2);
+      assert.equal(button.disabled, false);
+      nodes["#taskToast"].textContent = "";
+      if (lateError) pending.reject(new Error("stale page error"));
+      else pending.resolve({ items: [{ job_id: "stale-page-job", event_id: "stale-page-event", message_safe: "stale-page-event" }] });
+      await tick();
+      assert.doesNotMatch(nodes["#taskRows"].innerHTML + nodes["#logRows"].innerHTML, /stale-page/);
+      assert.equal(nodes["#taskToast"].textContent, "");
+      button.dispatchEvent({ type: "click" });
+      await tick();
+      assert.equal(pageCalls, 2);
+      assert.match(nodes[kind === "tasks" ? "#taskRows" : "#logRows"].innerHTML, /fresh-page/);
+    }
+  }
+});
+
 test("AC6 1500ms 与 5000ms 等值虚拟时钟控制: 返回前不提前就绪，5000ms 定时轮询不中断慢请求", async (t) => {
   t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
   let delayMs = 1500;

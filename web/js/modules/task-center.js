@@ -1559,6 +1559,7 @@
     ++requestGeneration;
     if (activeAbortController) { activeAbortController.abort(); activeAbortController = null; }
     if (activePageAbortController) { activePageAbortController.abort(); activePageAbortController = null; }
+    if (EMBEDDED) state.loading = false;
   });
   window.addEventListener('hashchange', () => {
     const hash = location.hash.slice(1);
