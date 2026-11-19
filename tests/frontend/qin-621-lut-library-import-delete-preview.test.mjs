@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { createAssetViewHost, wait } from './qin-602-asset-view-harness.mjs';
 
 function trackUnrefTimers() {
@@ -67,6 +69,98 @@ function makeLutItem(id, name, builtin = false) {
         version: 1,
     };
 }
+
+test('QIN-621：同页重开回收站不会作废在途恢复，切页仍作废旧响应', async () => {
+    const restoreTimers = trackUnrefTimers();
+    let finishRestore;
+    let loads = 0;
+    const entry = {entry_id:'recycle_1', kind:'asset', payload:{name:'grade.cube', kind:'lut'}};
+    const host = await createAssetViewHost({
+        tab:'registry',
+        fetchImpl: async url => {
+            if (url === '/api/asset-registry/recycle-bin') {
+                loads += 1;
+                return okJson({items:[entry]});
+            }
+            if (url.endsWith('/recycle-bin/recycle_1/restore')) {
+                return new Promise(resolve => { finishRestore = resolve; });
+            }
+            if (url === '/api/asset-registry/status') return okJson({revision:1});
+            return okJson({});
+        },
+    });
+    try {
+        await host.main.gwCall('organize', 'activateAssetBoard', 'lut');
+        await host.main.gwCall('recycle', 'openRegistryRecycleBin');
+        const { restoreRegistryRecycleEntry: restore } = await import(pathToFileURL(join(
+            host.tree, 'web/js/modules/asset-manager/recycle.js',
+        )).href);
+        const overlay = () => host.document.getElementById('registryRecycleBinOverlay');
+        const success = restore('recycle_1');
+        await host.main.gwCall('recycle', 'openRegistryRecycleBin');
+        assert.equal(loads, 2);
+        finishRestore(okJson({restored:{name:'grade.cube'}}));
+        await success;
+        assert.match(overlay().innerHTML, /回收站暂无素材/, '同页读回后，恢复成功仍应移除已恢复条目');
+
+        await host.main.gwCall('recycle', 'openRegistryRecycleBin');
+        const failure = restore('recycle_1');
+        await host.main.gwCall('recycle', 'openRegistryRecycleBin');
+        finishRestore({...okJson({detail:{message:'恢复请求失败'}}), ok:false, status:409});
+        await failure;
+        assert.match(overlay().innerHTML, /重新加载/);
+        await host.main.gwCall('recycle', 'openRegistryRecycleBin');
+        assert.doesNotMatch(overlay().innerHTML, /data-registry-recycle-restore="recycle_1" disabled/);
+
+        const stale = restore('recycle_1');
+        await host.main.gwCall('organize', 'activateAssetBoard', 'registry');
+        finishRestore(okJson({restored:{name:'grade.cube'}}));
+        await stale;
+        assert.ok(!host.document.body.querySelector('[id="registryRecycleBinOverlay"]'), '切页后不应重开回收站');
+    } finally {
+        host.dispose();
+        restoreTimers();
+    }
+});
+
+test('QIN-621 AC4：自定义样片优先进入绘制流程，加载失败才回落默认图', async () => {
+    const restoreTimers = trackUnrefTimers();
+    const previousImage = globalThis.Image;
+    const lutFile = 'web/js/modules/asset-manager/lut.js';
+    const host = await createAssetViewHost({
+        tab:null,
+        fileEdits:[{file:lutFile, append:'export { loadLutDefaultPreviewFrame };'}],
+    });
+    const requested = [];
+    globalThis.Image = class {
+        set src(url) {
+            requested.push(url);
+            this.url = url;
+            queueMicrotask(() => url.includes('missing') ? this.onerror() : this.onload());
+        }
+    };
+    const createElement = host.document.createElement.bind(host.document);
+    host.document.createElement = tag => {
+        if (tag !== 'canvas') return createElement(tag);
+        let value = 0;
+        return { getContext: () => ({
+            fillRect() {},
+            drawImage(image) { value = image.url.includes('custom.png') ? 213 : 42; },
+            getImageData() { return {data:new Uint8ClampedArray([value, 0, 0, 255])}; },
+        }) };
+    };
+    try {
+        const { loadLutDefaultPreviewFrame: sample } = await import(pathToFileURL(join(host.tree, lutFile)).href);
+        assert.equal((await sample(1, 1, '/custom.png')).data[0], 213);
+        assert.deepEqual(requested, ['/custom.png']);
+        assert.equal((await sample(1, 1, '/missing.png')).data[0], 42);
+        assert.deepEqual(requested.slice(1), ['/missing.png', '/static/vendor/luts/default-preview.png']);
+    } finally {
+        globalThis.Image = previousImage;
+        host.dispose();
+        restoreTimers();
+    }
+});
 
 test('QIN-621 AC1：资产总量查询携带 category=image,video，独立 LUT 看板携带 kind=lut', async () => {
     const restoreTimers = trackUnrefTimers();
