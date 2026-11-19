@@ -234,16 +234,21 @@
 .topbar-master-deck [data-gw-topbar-project-slot].is-narrow > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
   flex: 0 1 auto;
 }
-/* 工作流窄屏放不下仪表和两个项目箭头时，将项目栏移到独立一行。 */
+/* 窄屏为状态和项目控件留一整行，顶栏随内容增高，避免被导航遮挡。 */
 @media (max-width: 760px) {
-  .topbar-master-deck .gw-topbar-wrap-project {
+  .topbar-master-deck:has(> .gw-topbar-wrap-project) {
+    height: auto !important;
+  }
+  .topbar-master-deck > .gw-topbar-wrap-project.flex {
+    min-width: 0;
     flex-wrap: wrap;
   }
-  .topbar-master-deck .gw-topbar-wrap-project > [data-gw-topbar-project-slot] {
+  .topbar-master-deck .gw-topbar-wrap-project > .gw-topbar-msg-slot {
     order: 1;
     flex: 0 0 100% !important;
     width: 100% !important;
     max-width: 100% !important;
+    min-height: var(--gw-topbar-msg-height);
     gap: 8px;
   }
 }
