@@ -46,8 +46,8 @@ decisions:
       snapshot_disclosed: "tasks 的时间窗（range/start_ms/end_ms）→ 任务表无时间戳，属当前状态快照语义；返回真实快照 + degraded，并在 data_gaps 写明时间条件未生效（前端默认携带 range，返回空会把真实任务误报为窗口内无任务）"
     note: "本阶段真实可求值的过滤条件：events 的 status/level/source/event_id/时间窗；tasks 的 status/job_id。"
   events_source:
-    decision: "events 仅投影 core.audit 的已脱敏认证审计白名单字段（event/outcome/reason/subject/role/auth_mode/at）"
-    rationale: "审计缓冲本身即为脱敏白名单；本阶段不接入任何其它事件总线。"
+    decision: "events 默认投影 core.audit 的已脱敏认证审计白名单字段；当指定 source=runtime/agent_runtime/asset_registry/video_tasks 时投影对应持久脱敏运行事件（严禁回退至 core.audit）"
+    rationale: "左侧审计时间线与右侧协作中心运行日志严格隔离；运行事件均经过路径与凭据脱敏处理，不含敏感信息。"
   hardware_telemetry:
     decision: "2026-09-26 Phase 12 A4 更新：hardware_telemetry 改为真实 psutil 读数（CPU/内存/磁盘）；psutil 不可用才降级为 not_integrated"
     rationale: "旧决策「固定 not_integrated」已被取代：本机已安装 psutil 7.2.1，health 必须暴露真实数值而不是占位。"
@@ -208,7 +208,7 @@ interfaces:
             event_name: string
             level: "enum(info|warn)"
             status: "enum(running|succeeded|denied|rejected|unknown)"
-            source: "string（当前仅 core.audit）"
+            source: "string（core.audit 或 agent_runtime / asset_registry / video_tasks）"
             message_safe: string
             timestamp: "string(datetime)"
             subject: "string | null"
@@ -271,7 +271,7 @@ interfaces:
       400: "range / limit / start_ms / end_ms / cursor 取值非法"
       401: "未认证"
       403: "角色不在已知集合内"
-    acceptance: "任务只能来自 GodCanvasService 当前内存任务表；不得伪造任务，也不得返回未记录字段。作用域 ID 或 source/level 过滤无法求值时必须返回空 + degraded 并披露；时间窗（range/start_ms/end_ms）无法求值，必须返回真实快照 + degraded 并披露时间条件未生效。禁止静默忽略任何过滤条件。"
+    acceptance: "任务来自当前授权可见的 GodCanvasService 内存任务与已落盘工作区作业（asset_registry、video_tasks）；不得伪造任务，也不得返回未记录字段。带作用域 ID 过滤时只返回匹配作用域的已落盘作业并在 data_gaps 披露内存任务无法按作用域过滤；source/level 无法求值时返回空 + degraded 并披露；时间窗（range/start_ms/end_ms）无法求值，必须返回真实快照 + degraded 并披露时间条件未生效。禁止静默忽略任何过滤条件。"
 
   - name: get_observability_health
     method: GET

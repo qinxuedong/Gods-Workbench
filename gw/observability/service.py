@@ -43,6 +43,7 @@ import base64
 import binascii
 import hashlib
 import json
+import re
 import sqlite3
 import time
 from collections.abc import Mapping, Sequence
@@ -112,6 +113,26 @@ _ID_SCOPE_LABELS = (
     ("asset_id", "asset_id"),
     ("canvas_id", "canvas_id"),
 )
+
+
+_SENSITIVE_PATTERNS = (
+    re.compile(r"Bearer\s+[A-Za-z0-9._\-]+", re.IGNORECASE),
+    re.compile(r"\bsk-[A-Za-z0-9_\-]{8,}"),
+    re.compile(r"\b(?:api[_-]?key|token|secret|password)\s*[:=]\s*[^\s,;]+", re.IGNORECASE),
+    re.compile(r"[A-Za-z]:\\[^\s\"']+"),
+    re.compile(r"\\\\[^\s\"']+"),
+    re.compile(r"/(?:Users|home|var|tmp|opt|etc)/[^\s\"']+"),
+)
+
+
+def _sanitize_runtime_message(raw: Any, *, fallback: str = "运行事件") -> str:
+    """对运行事件摘要做路径与凭据脱敏并限制长度。"""
+    text = str(raw or "").strip()
+    if not text:
+        return fallback
+    for pattern in _SENSITIVE_PATTERNS:
+        text = pattern.sub("[REDACTED]", text)
+    return text[:512]
 
 
 def _now_ms() -> int:
@@ -488,8 +509,9 @@ class ObservabilityService:
     # 事件（真实审计缓冲）
     # ------------------------------------------------------------------
     def events(self, filters: AppliedFilters, auth_context=None) -> ObservabilityListResponse:
-        """只投影真实审计记录；无法求值的过滤条件返回空 + degraded，不静默忽略。"""
-        if filters.source and filters.source.strip().lower() == "agent_runtime":
+        """投影认证审计事件（core.audit）或工作区/智能体运行事件（runtime/agent_runtime）。"""
+        normalized_source = (filters.source or "").strip().lower()
+        if normalized_source in {"agent_runtime", "runtime", "asset_registry", "video_tasks"}:
             return self._runtime_events(filters, auth_context)
         start_ms, end_ms = filters.resolve_window(_now_ms())
         gaps: list[str] = []
@@ -554,88 +576,213 @@ class ObservabilityService:
         )
 
     def _runtime_events(self, filters: AppliedFilters, auth_context=None) -> ObservabilityListResponse:
-        """读取 Agent Runtime 的持久脱敏事件；认证审计不作为运行事件回退。"""
+        """读取 Agent Runtime 与已落盘工作区作业的持久脱敏运行事件；认证审计不作为运行事件回退。"""
         start_ms, end_ms = filters.resolve_window(_now_ms())
         gaps: list[str] = []
-        try:
-            database = resolve_runtime_paths().data_root / "agent" / "runtime.sqlite3"
-            with sqlite3.connect(database) as connection:
-                connection.row_factory = sqlite3.Row
-                if filters.event_id:
-                    rows = connection.execute(
-                        "SELECT r.project_id, r.run_id, e.event_id, e.event_json "
-                        "FROM runs r JOIN events e ON e.run_id = r.run_id "
-                        "WHERE e.event_id=? ORDER BY e.event_seq DESC LIMIT 1",
-                        (filters.event_id,),
-                    ).fetchall()
-                else:
-                    rows = connection.execute(
-                        "SELECT r.project_id, r.run_id, e.event_id, e.event_json "
-                        "FROM runs r JOIN events e ON e.run_id = r.run_id "
-                        "ORDER BY e.event_seq DESC LIMIT ?",
-                        (min(filters.limit + 1, 1001),),
-                    ).fetchall()
-        except Exception:
-            return ObservabilityListResponse(
-                data_status=DataStatus.DEGRADED,
-                items=[],
-                total=0,
-                limit=filters.limit,
-                has_more=False,
-                next_cursor=None,
-                start_ms=start_ms,
-                end_ms=end_ms,
-                data_gaps=["SOURCE_UNAVAILABLE:agent_runtime"],
-                degraded_sources=["agent_runtime"],
-                applied_filters=filters,
-            )
+        degraded_sources: list[str] = []
+        requested_source = (filters.source or "").strip().lower()
         try:
             from gw.projects_hub.service import owner_key_for_context
 
             owner_key = owner_key_for_context(auth_context)
         except Exception:
             owner_key = None
-        selected: list[ObservabilityEvent] = []
-        for row in rows:
+
+        candidates: list[tuple[ObservabilityEvent, dict[str, str | None]]] = []
+
+        # 1. Agent Runtime 持久事件（runtime.sqlite3 尚未创建或无表时视为空运行源）
+        if requested_source in {"", "runtime", "agent_runtime"}:
+            database = resolve_runtime_paths().data_root / "agent" / "runtime.sqlite3"
+            if database.is_file():
+                try:
+                    with sqlite3.connect(database) as connection:
+                        connection.row_factory = sqlite3.Row
+                        has_tables = connection.execute(
+                            "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('runs', 'events')"
+                        ).fetchall()
+                        if len({r["name"] for r in has_tables}) == 2:
+                            if filters.event_id:
+                                rows = connection.execute(
+                                    "SELECT r.project_id, r.run_id, e.event_id, e.event_json "
+                                    "FROM runs r JOIN events e ON e.run_id = r.run_id "
+                                    "WHERE e.event_id=? ORDER BY e.event_seq DESC LIMIT 1",
+                                    (filters.event_id,),
+                                ).fetchall()
+                            else:
+                                rows = connection.execute(
+                                    "SELECT r.project_id, r.run_id, e.event_id, e.event_json "
+                                    "FROM runs r JOIN events e ON e.run_id = r.run_id "
+                                    "ORDER BY e.event_seq DESC LIMIT ?",
+                                    (min(filters.limit + 1, 1001),),
+                                ).fetchall()
+                        else:
+                            rows = []
+                except Exception:
+                    rows = []
+                    degraded_sources.append("agent_runtime")
+                    gaps.append("SOURCE_UNAVAILABLE:agent_runtime")
+                for row in rows:
+                    try:
+                        if owner_key is not None and not default_projects_service.can_read_project(
+                            row["project_id"],
+                            owner_key=owner_key,
+                            role=getattr(auth_context, "role", ""),
+                        ):
+                            continue
+                        payload = json.loads(row["event_json"])
+                    except Exception:
+                        gaps.append("EVENT_RECORD_INVALID")
+                        continue
+                    timestamp = payload.get("occurred_at") or payload.get("timestamp")
+                    event_type = str(payload.get("event_type") or "runtime.event")
+                    event = ObservabilityEvent(
+                        event_id=str(row["event_id"]),
+                        event_name=event_type,
+                        level="error" if "fail" in event_type.lower() else "info",
+                        status="failed" if "fail" in event_type.lower() else "running",
+                        source="agent_runtime",
+                        message_safe=_sanitize_runtime_message(payload.get("summary"), fallback="运行事件"),
+                        timestamp=str(timestamp or ""),
+                        job_id=str(payload.get("job_id") or row["run_id"]),
+                        run_id=str(row["run_id"]),
+                    )
+                    candidates.append((event, {"project_id": row["project_id"]}))
+
+        # 2. 已落盘工作区作业运行事件（asset_registry）
+        if auth_context is not None and requested_source in {"", "runtime", "agent_runtime", "asset_registry"}:
             try:
-                if owner_key is not None and not default_projects_service.can_read_project(
-                    row["project_id"],
-                    owner_key=owner_key,
-                    role=getattr(auth_context, "role", ""),
-                ):
-                    continue
-                payload = json.loads(row["event_json"])
+                from gw.asset_registry import dedup_confirm, index_jobs
+
+                ws_items = list(index_jobs.service().listing(auth_context))
+                try:
+                    ws_items.extend(dedup_confirm.service().listing(auth_context))
+                except Exception:
+                    pass
+                for item in ws_items:
+                    job_id = str(item.get("job_id") or "")
+                    if not job_id:
+                        continue
+                    scope = {
+                        "project_id": item.get("project_id"),
+                        "entity_id": item.get("entity_id"),
+                        "asset_id": item.get("asset_id"),
+                        "canvas_id": item.get("canvas_id"),
+                    }
+                    raw_events = item.get("events") if isinstance(item.get("events"), list) else []
+                    if raw_events:
+                        for idx, ev in enumerate(raw_events):
+                            if not isinstance(ev, Mapping):
+                                continue
+                            ev_type = str(ev.get("type") or ev.get("event_type") or item.get("status") or "updated")
+                            ev_status = str(ev.get("status") or item.get("status") or "running").lower()
+                            ev_level = "error" if ev_status in {"failed", "interrupted"} or "fail" in ev_type.lower() else "info"
+                            ts = str(ev.get("at") or ev.get("timestamp") or item.get("updated_at") or item.get("created_at") or "")
+                            summary = str(ev.get("message") or item.get("kind") or item.get("operation") or "工作区任务")
+                            candidates.append((
+                                ObservabilityEvent(
+                                    event_id=str(ev.get("event_id") or f"wsjob:{job_id}:{idx}"),
+                                    event_name=ev_type if "." in ev_type else f"job.{ev_type}",
+                                    level=ev_level,
+                                    status=ev_status,
+                                    source="asset_registry",
+                                    message_safe=_sanitize_runtime_message(summary, fallback="工作区任务"),
+                                    timestamp=ts,
+                                    job_id=job_id,
+                                ),
+                                scope,
+                            ))
+                    else:
+                        job_status = str(item.get("status") or "unknown").lower()
+                        ev_level = "error" if job_status in {"failed", "interrupted"} else "info"
+                        ts = str(item.get("updated_at") or item.get("created_at") or "")
+                        kind = str(item.get("kind") or item.get("operation") or "index")
+                        candidates.append((
+                            ObservabilityEvent(
+                                event_id=f"wsjob:{job_id}:{job_status}",
+                                event_name=f"job.{job_status}",
+                                level=ev_level,
+                                status=job_status,
+                                source="asset_registry",
+                                message_safe=_sanitize_runtime_message(f"{kind} · {job_status}", fallback="工作区任务"),
+                                timestamp=ts,
+                                job_id=job_id,
+                            ),
+                            scope,
+                        ))
             except Exception:
-                gaps.append("EVENT_RECORD_INVALID")
+                degraded_sources.append("asset_registry")
+                gaps.append("SOURCE_UNAVAILABLE:asset_registry")
+
+        # 3. 已落盘视频任务运行事件（video_tasks）
+        if auth_context is not None and requested_source in {"", "runtime", "agent_runtime", "video_tasks"}:
+            try:
+                from gw.video_tasks.service import get_video_service
+
+                video_items = get_video_service().list_jobs(auth_context, 50)
+                for item in video_items.get("items") or []:
+                    job_id = str(item.get("job_id") or "")
+                    if not job_id:
+                        continue
+                    job_status = str(item.get("status") or "unknown").lower()
+                    ev_level = "error" if job_status in {"failed", "interrupted"} else "info"
+                    ts = str(item.get("updated_at") or item.get("created_at") or "")
+                    operation = str(item.get("operation") or "video")
+                    scope = {
+                        "project_id": item.get("project_id"),
+                        "entity_id": item.get("entity_id"),
+                        "asset_id": item.get("asset_id"),
+                        "canvas_id": item.get("canvas_id"),
+                    }
+                    candidates.append((
+                        ObservabilityEvent(
+                            event_id=f"vtask:{job_id}:{job_status}",
+                            event_name=f"job.{job_status}",
+                            level=ev_level,
+                            status=job_status,
+                            source="video_tasks",
+                            message_safe=_sanitize_runtime_message(f"{operation} · {job_status}", fallback="视频任务"),
+                            timestamp=ts,
+                            job_id=job_id,
+                        ),
+                        scope,
+                    ))
+            except Exception:
+                degraded_sources.append("video_tasks")
+                gaps.append("SOURCE_UNAVAILABLE:video_tasks")
+
+        selected: list[ObservabilityEvent] = []
+        for event, scope in candidates:
+            if filters.event_id and event.event_id != filters.event_id:
                 continue
-            if filters.event_id and row["event_id"] != filters.event_id:
+            if filters.job_id and filters.job_id not in {event.job_id, event.run_id}:
                 continue
-            if filters.job_id and filters.job_id not in {
-                row["run_id"],
-                payload.get("job_id"),
+            if filters.project_id and scope.get("project_id") != filters.project_id:
+                continue
+            if filters.entity_id and scope.get("entity_id") != filters.entity_id:
+                continue
+            if filters.asset_id and scope.get("asset_id") != filters.asset_id:
+                continue
+            if filters.canvas_id and scope.get("canvas_id") != filters.canvas_id:
+                continue
+            if filters.stable_id and filters.stable_id not in {
+                event.event_id,
+                event.job_id,
+                event.run_id,
+                scope.get("project_id"),
+                scope.get("entity_id"),
+                scope.get("asset_id"),
+                scope.get("canvas_id"),
             }:
                 continue
-            timestamp = payload.get("occurred_at") or payload.get("timestamp")
-            event = ObservabilityEvent(
-                event_id=str(row["event_id"]),
-                event_name=str(payload.get("event_type") or "runtime.event"),
-                level="error"
-                if "fail" in str(payload.get("event_type") or "").lower()
-                else "info",
-                status="failed"
-                if "fail" in str(payload.get("event_type") or "").lower()
-                else "running",
-                source="agent_runtime",
-                message_safe=str(payload.get("summary") or "运行事件")[:512],
-                timestamp=str(timestamp or ""),
-                job_id=str(payload.get("job_id") or row["run_id"]),
-                run_id=str(row["run_id"]),
-            )
-            if timestamp and (start_ms is not None or end_ms is not None):
+            if filters.status and event.status != filters.status.strip().lower():
+                continue
+            if filters.level and event.level != filters.level.strip().lower():
+                continue
+            if event.timestamp and (start_ms is not None or end_ms is not None):
                 try:
                     event_ms = int(
                         datetime.fromisoformat(
-                            str(timestamp).replace("Z", "+00:00")
+                            str(event.timestamp).replace("Z", "+00:00")
                         ).timestamp()
                         * 1000
                     )
@@ -646,12 +793,12 @@ class ObservabilityService:
                     or (end_ms is not None and event_ms > end_ms)
                 ):
                     continue
-            if filters.level and event.level != filters.level:
-                continue
             selected.append(event)
+
+        selected.sort(key=lambda item: (str(item.timestamp or ""), str(item.event_id)), reverse=True)
         page, has_more, next_cursor = self._paginate(selected, filters)
         return ObservabilityListResponse(
-            data_status=DataStatus.DEGRADED if gaps else DataStatus.OK,
+            data_status=DataStatus.DEGRADED if gaps or degraded_sources else DataStatus.OK,
             items=page,
             total=len(selected),
             limit=filters.limit,
@@ -660,6 +807,7 @@ class ObservabilityService:
             start_ms=start_ms,
             end_ms=end_ms,
             data_gaps=gaps,
+            degraded_sources=degraded_sources,
             applied_filters=filters,
         )
 
@@ -731,13 +879,14 @@ class ObservabilityService:
         scope_gaps = self._id_scope_gaps(
             filters, subject="god-canvas 任务", allow_job_id=True
         )
+        dimension_gaps: list[str] = []
         for attribute, label in (("source", "source"), ("level", "level")):
             if getattr(filters, attribute):
-                scope_gaps.append(
+                dimension_gaps.append(
                     f"god-canvas 任务投影不记录 {label} 维度，按 {label} 过滤无法求值；"
                     "返回空结果而非忽略该过滤条件"
                 )
-        if scope_gaps:
+        if dimension_gaps:
             return ObservabilityListResponse(
                 data_status=DataStatus.DEGRADED,
                 items=[],
@@ -747,7 +896,7 @@ class ObservabilityService:
                 next_cursor=None,
                 start_ms=filters.start_ms,
                 end_ms=filters.end_ms,
-                data_gaps=scope_gaps,
+                data_gaps=dimension_gaps,
                 applied_filters=filters,
             )
 
@@ -755,8 +904,11 @@ class ObservabilityService:
             value is not None for value in (filters.start_ms, filters.end_ms)
         ) or bool(filters.range and filters.range.strip() != "all")
 
-        jobs, reader_gap = self._job_snapshot(auth_context)
-        tasks = [self._project_task(job) for job in jobs]
+        tasks: list[ObservabilityTask] = []
+        reader_gap: str | None = None
+        if not scope_gaps:
+            jobs, reader_gap = self._job_snapshot(auth_context)
+            tasks.extend(self._project_task(job) for job in jobs)
         source_limits: dict[str, int] = {"god_canvas": 200}
         source_counts: dict[str, int] = {"god_canvas": len(tasks)}
         degraded_sources: list[str] = []
@@ -795,6 +947,7 @@ class ObservabilityService:
             except Exception:
                 degraded_sources.append("video_tasks")
                 persistent_gaps.append("SOURCE_UNAVAILABLE:video_tasks")
+
         def _task_status_matches(filter_status: str | None, task_status: str) -> bool:
             if not filter_status:
                 return True
@@ -809,10 +962,26 @@ class ObservabilityService:
             for task in tasks
             if _task_status_matches(filters.status, task.status)
             and (not filters.job_id or task.job_id == filters.job_id)
+            and (not filters.project_id or task.project_id == filters.project_id)
+            and (not filters.entity_id or task.entity_id == filters.entity_id)
+            and (not filters.asset_id or task.asset_id == filters.asset_id)
+            and (not filters.canvas_id or task.canvas_id == filters.canvas_id)
+            and (
+                not filters.stable_id
+                or filters.stable_id
+                in {
+                    task.job_id,
+                    task.project_id,
+                    task.entity_id,
+                    task.asset_id,
+                    task.canvas_id,
+                }
+            )
         ]
         gaps: list[str] = []
         if reader_gap:
             gaps.append(reader_gap)
+        gaps.extend(scope_gaps)
         gaps.extend(persistent_gaps)
         if window_requested:
             gaps.append(
