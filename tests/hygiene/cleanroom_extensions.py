@@ -109,4 +109,5 @@ ALLOWED_BINARY_ALLOWLIST = {
     "web/vendor/fonts/SourceHanSansCN-Bold.otf",
     "web/vendor/fonts/SourceHanSansCN-Medium.otf",
     "web/vendor/fonts/SourceHanSansCN-Normal.otf",
+    "web/vendor/luts/default-preview.png",
 }

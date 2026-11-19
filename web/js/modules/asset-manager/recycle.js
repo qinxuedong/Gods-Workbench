@@ -64,6 +64,18 @@ import { GW_DEFERRED } from './state.js';
 
 let registryRecycleState = {open:false, assetId:'', busy:false, dontAsk:false, error:''};
 let registryRecyclerSetupAssetId = '';
+let recycleGeneration = 0;
+let recycleListGeneration = 0;
+let recycleMutationController;
+function invalidateRecycleOperations(){
+    recycleGeneration += 1;
+    recycleListGeneration += 1;
+    recycleMutationController?.abort();
+    closeRegistryRecyclerSetupDialog();
+    closeRegistryRecycleDialog(true);
+    setRegistryRecycleBinState({...registryRecycleBinState, open:false, restoringId:'', loading:false});
+    document.getElementById('registryRecycleBinOverlay')?.remove();
+}
 function registryRecyclerPath(item={}){
     const configured = String(storageSettingsState.dirs?.trash || '').trim().replace(/[\\/]+$/, '');
     if(configured) return `${configured}${configured.includes('\\') ? '\\' : '/'}god-recycler`;
@@ -150,11 +162,15 @@ function renderRegistryRecycleDialog(){
     refreshIcons();
 }
 async function openRegistryRecycleDialog(assetId){
+    const generation = ++recycleGeneration;
     const item = registryAssets.find(value => value.id === assetId) || (registryDetail?.id === assetId ? registryDetail : null);
     if(!item || item.is_remote || !registryCanRecycle(item)) return;
     try {
-        applyStorageSettingsData(await apiJsonResponse(assetManagerApi.getStorageSettings()));
+        const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
+        if(generation !== recycleGeneration) return;
+        applyStorageSettingsData(settings);
     } catch(error){
+        if(generation !== recycleGeneration) return;
         setStatus(`无法读取回收站目录设置：${error.message || '请求失败'}`);
         return;
     }
@@ -171,7 +187,11 @@ async function openRegistryRecycleDialog(assetId){
     renderRegistryRecycleDialog();
 }
 async function recycleRegistryAsset(assetId, silent=false){
-    if(!assetId) return;
+    if(!assetId || registryRecycleState.busy || registryRecycleBinState.restoringId) return;
+    const generation = ++recycleGeneration;
+    recycleMutationController?.abort();
+    const controller = new AbortController();
+    recycleMutationController = controller;
     registryRecycleState = {...registryRecycleState, open:!silent, assetId, busy:true, error:''};
     if(!silent) renderRegistryRecycleDialog();
     try {
@@ -179,16 +199,26 @@ async function recycleRegistryAsset(assetId, silent=false){
         const data = await apiJsonResponse(assetManagerApi.deleteRegistryAsset(
             assetId,
             requireExpectedVersion(registryStatus.revision, '资产注册表'),
-            {headers:{'X-GW-Recycle-Mode':recyclerMode}}
+            {signal:controller.signal, headers:{'X-GW-Recycle-Mode':recyclerMode}}
         ));
+        if(generation !== recycleGeneration) return;
         if(detailViewerState.open && detailViewerState.source === 'registry' && detailViewerState.id === assetId) closeDetailPreview(true);
         registrySelectedIds.delete(assetId);
         if(selectedRegistryAssetId === assetId){ setSelectedRegistryAssetId(''); setRegistryDetail(null); }
         closeRegistryRecycleDialog(true);
-        await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-        render();
-        setStatus(`已移入 god-recycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`);
+        const success = `已移入 god-recycler${Number(data.recycled?.removed_previews || 0) ? `，清理 ${Number(data.recycled.removed_previews)} 个缓存` : ''}`;
+        setStatus(success);
+        try {
+            await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData({strict:true, signal:controller.signal})]);
+            if(generation !== recycleGeneration) return;
+            render();
+            setStatus(success);
+        } catch(refreshError){
+            if(generation !== recycleGeneration) return;
+            setStatus(`${success}；列表刷新失败，请手动重试：${refreshError.message || '请求失败'}`);
+        }
     } catch(err){
+        if(generation !== recycleGeneration) return;
         registryRecycleState = {...registryRecycleState, open:!silent, busy:false, error:err.message || '移入回收站失败'};
         if(silent) setStatus(registryRecycleState.error); else renderRegistryRecycleDialog();
         throw err;
@@ -203,7 +233,8 @@ async function confirmRegistryRecycle(){
 }
 function closeRegistryRecycleBin(){
     if(registryRecycleBinState.restoringId) return;
-    setRegistryRecycleBinState({...registryRecycleBinState, open:false, error:''});
+    recycleListGeneration += 1;
+    setRegistryRecycleBinState({...registryRecycleBinState, open:false, loading:false, error:''});
     document.getElementById('registryRecycleBinOverlay')?.remove();
 }
 function renderRegistryRecycleBin(){
@@ -243,12 +274,24 @@ function renderRegistryRecycleBin(){
     refreshIcons();
 }
 async function loadRegistryRecycleBin(){
+    const generation = ++recycleListGeneration;
     setRegistryRecycleBinState({...registryRecycleBinState, loading:true, error:''});
     renderRegistryRecycleBin();
     try {
         const data = await apiJsonResponse(assetManagerApi.getRegistryRecycleBin());
-        setRegistryRecycleBinState({...registryRecycleBinState, loading:false, items:Array.isArray(data.items) ? data.items : []});
+        if(generation !== recycleListGeneration) return;
+        const items = (Array.isArray(data.items) ? data.items : []).filter(item => item.kind === 'asset').map(item => ({
+            ...item,
+            id:item.entry_id,
+            kind:item.payload?.kind,
+            name:item.payload?.name,
+            file_size:item.payload?.size_bytes,
+            original_relative_path:item.manifest?.original?.display_path,
+            available:Boolean(item.entry_id && !item.blocker),
+        }));
+        setRegistryRecycleBinState({...registryRecycleBinState, loading:false, items});
     } catch(err){
+        if(generation !== recycleListGeneration) return;
         setRegistryRecycleBinState({...registryRecycleBinState, loading:false, error:err.message || '回收站读取失败'});
     }
     renderRegistryRecycleBin();
@@ -258,26 +301,45 @@ async function openRegistryRecycleBin(){
     await loadRegistryRecycleBin();
 }
 async function restoreRegistryRecycleEntry(entryId){
-    if(!entryId || registryRecycleBinState.restoringId) return;
+    if(!entryId || registryRecycleBinState.restoringId || registryRecycleState.busy) return;
+    const generation = ++recycleGeneration;
+    recycleMutationController?.abort();
+    const controller = new AbortController();
+    recycleMutationController = controller;
     setRegistryRecycleBinState({...registryRecycleBinState, restoringId:entryId, error:''});
     renderRegistryRecycleBin();
     try {
-        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(entryId, requireExpectedVersion(registryStatus.revision, '资产注册表')));
-        setRegistryRecycleBinState({...registryRecycleBinState, restoringId:'', items:registryRecycleBinState.items.filter(item => item.id !== entryId)});
-        await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+        const data = await apiJsonResponse(assetManagerApi.restoreRegistryRecycleEntry(
+            entryId, requireExpectedVersion(registryStatus.revision, '资产注册表'), {signal:controller.signal},
+        ));
+        if(generation !== recycleGeneration) return;
+        // 丢弃主写完成前发出的列表请求，避免旧快照把已恢复条目加回来。
+        recycleListGeneration += 1;
+        setRegistryRecycleBinState({...registryRecycleBinState, restoringId:'', loading:false, error:'', items:registryRecycleBinState.items.filter(item => item.id !== entryId)});
+        renderRegistryRecycleBin();
+        const success = `已恢复 ${data.restored?.name || '素材'}`;
+        setStatus(success);
+        let refreshError = null;
+        try {
+            await Promise.all([refreshRegistryAssets(false), refreshRegistryFacetData({strict:true, signal:controller.signal})]);
+        } catch(error){ refreshError = error; }
+        if(generation !== recycleGeneration) return;
         // 【修复问题1】回收站恢复属于用户显式失效，保留会话级 bump（仅影响旧版 url 参数 URL）
         setThumbnailCacheVersion(Date.now());
         render();
         renderRegistryRecycleBin();
-        setStatus(`已恢复 ${data.restored?.name || '素材'}`);
+        setStatus(refreshError ? `${success}；列表刷新失败，请手动重试：${refreshError.message || '请求失败'}` : success);
     } catch(err){
-        setRegistryRecycleBinState({...registryRecycleBinState, restoringId:'', error:err.message || '素材恢复失败'});
+        if(generation !== recycleGeneration) return;
+        recycleListGeneration += 1;
+        setRegistryRecycleBinState({...registryRecycleBinState, restoringId:'', loading:false, error:err.message || '素材恢复失败'});
         renderRegistryRecycleBin();
     }
 }
 
 // 【QIN-591】域函数面注册：主文件 gwCall('recycle', fn) 经由此对象分派。
 GW_DEFERRED['recycle'] = {
+    invalidateRecycleOperations,
     closeRegistryRecycleBin,
     openRegistryRecycleBin,
     openRegistryRecycleDialog,

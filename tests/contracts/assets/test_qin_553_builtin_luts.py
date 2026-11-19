@@ -76,17 +76,11 @@ def test_builtin_lut_facets_count_and_rootless_visibility(client: TestClient):
     assert total == BUILTIN_LUT_COUNT
 
 
-def test_builtin_lut_cannot_be_recycled_or_archived(client: TestClient):
-    """内置条目不可移入回收站/归档，源文件由服务端守卫保护。"""
+def test_builtin_lut_can_be_recycled_and_restored_but_cannot_be_archived_or_renamed(client: TestClient):
+    """QIN-621：内置 LUT 可移入回收站并恢复，ensure 不自动补回；仍禁止归档与物理重命名。"""
     assert client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR).status_code == 200
     asset_id = "builtin_lut_neutral"
     version = _revision(client)
-    deleted = client.request(
-        "DELETE", f"{BASE}/assets/{asset_id}", headers=EDITOR,
-        json={"expected_version": version},
-    )
-    assert deleted.status_code == 403, deleted.text
-    assert deleted.json()["detail"]["code"] == "BUILTIN_ASSET_PROTECTED"
 
     archived = client.patch(f"{BASE}/assets/{asset_id}", headers=EDITOR,
                             json={"archived": True, "expected_version": version})
@@ -98,36 +92,57 @@ def test_builtin_lut_cannot_be_recycled_or_archived(client: TestClient):
                           json={"new_name": "hacked.cube", "expected_version": version})
     assert renamed.status_code == 403, renamed.text
     assert renamed.json()["detail"]["code"] == "BUILTIN_ASSET_PROTECTED"
-    # 注册表未被上述请求改动
     assert client.get(f"{BASE}/status", headers=AUTH).json()["revision"] == version
 
+    deleted = client.request(
+        "DELETE", f"{BASE}/assets/{asset_id}", headers=EDITOR,
+        json={"expected_version": version},
+    )
+    assert deleted.status_code == 200, deleted.text
+    entry_id = deleted.json()["recycle_entry_id"]
 
-def test_builtin_lut_can_be_hidden_and_revealed(client: TestClient):
-    """允许隐藏：隐藏后从列表/统计/预热剔除，恢复显示后重新计入。"""
-    assert client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR).status_code == 200
-    asset_id = "builtin_lut_warm"
-    hidden = client.patch(f"{BASE}/assets/{asset_id}", headers=EDITOR,
-                          json={"hidden": True,
-                                "expected_version": _revision(client)})
-    assert hidden.status_code == 200, hidden.text
-    assert hidden.json()["asset"]["hidden"] is True
-
+    # 删除后 ensure 不自动补回
+    ensure_after = client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR)
+    assert ensure_after.status_code == 200
+    assert asset_id in ensure_after.json().get("skipped_deleted", [])
     listing = client.get(f"{BASE}/assets", headers=AUTH, params={"kind": "lut"})
     assert asset_id not in [item["id"] for item in listing.json()["assets"]]
-    facets = client.get(f"{BASE}/facets", headers=AUTH).json()
-    assert {item["name"]: item["count"] for item in facets["categories"]}["lut"] == BUILTIN_LUT_COUNT - 1
 
-    ensure = client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR)
-    assert ensure.json()["hidden"] == [asset_id]
-    reveal = client.post(f"{BASE}/builtin-luts/ensure?reveal=true", headers=EDITOR)
-    assert reveal.status_code == 200, reveal.text
-    assert reveal.json()["revealed"] == [asset_id]
+    # 从回收站恢复后重新可见（回收站恢复需要治理权限）
+    restored = client.post(
+        f"{BASE}/recycle-bin/{entry_id}/restore",
+        headers={**EDITOR, "X-User-Role": "admin"},
+        json={"expected_version": _revision(client)},
+    )
+    assert restored.status_code == 200, restored.text
+    listing_after = client.get(f"{BASE}/assets", headers=AUTH, params={"kind": "lut"})
+    assert asset_id in [item["id"] for item in listing_after.json()["assets"]]
+
+
+def test_builtin_lut_legacy_hidden_migrated_to_visible(client: TestClient):
+    """QIN-621：已取消隐藏开关；历史 hidden=true 在 ensure 迁移时恢复可见，不误当删除。"""
+    from gw.asset_registry import repository as repo
+
+    assert client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR).status_code == 200
+    asset_id = "builtin_lut_warm"
+
+    def mark_legacy_hidden(raw):
+        raw["assets"][asset_id]["hidden"] = True
+        repo._bump(raw)
+        return True
+
+    repo.state().mutate(mark_legacy_hidden)
+
+    migrated = client.post(f"{BASE}/builtin-luts/ensure", headers=EDITOR)
+    assert migrated.status_code == 200, migrated.text
+    assert asset_id in migrated.json().get("migrated_visible", [])
+
     listing = client.get(f"{BASE}/assets", headers=AUTH, params={"kind": "lut"})
     assert asset_id in [item["id"] for item in listing.json()["assets"]]
 
 
-def test_hide_rejected_for_non_builtin_asset(client: TestClient):
-    """隐藏开关只属于内置条目：普通资产传 hidden 拒绝，既有语义不变。"""
+def test_hide_rejected_for_all_assets(client: TestClient):
+    """QIN-621：隐藏开关已取消，任何资产传 hidden 一律返回 400 INVALID_REQUEST。"""
     created = client.post(f"{BASE}/assets/import", headers=EDITOR,
                           json={"items": [{"name": "user.png", "kind": "image"}]})
     assert created.status_code == 200, created.text

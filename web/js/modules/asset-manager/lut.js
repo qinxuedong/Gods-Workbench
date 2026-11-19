@@ -25,10 +25,12 @@ import {
     LUT_THUMB_SAMPLE_HEIGHT,
     LUT_THUMB_SAMPLE_WIDTH,
     activeAssetLibrary,
+    activeTab,
     apiJsonResponse,
     assetBoardById,
     canvasAssetsData,
     customAssetLibraryBaseItems,
+    lutCustomPreviewUrl,
     detailMediaLutCache,
     detailMediaLutDraw,
     detailMediaLutListCache,
@@ -47,6 +49,7 @@ import {
     lutPreviewSourceUrl,
     normalizeRegistryAsset,
     refreshIcons,
+    refreshRegistryAssets,
     registryAspect,
     registryAssetCategory,
     registryAssets,
@@ -65,14 +68,17 @@ import {
     renderRegistryPagination,
     renderRegistrySelectionBar,
     renderRegistryToolbar,
+    render,
     root,
     selectedRegistryAssetId,
     setDetailMediaLutSplitDragEndedAt,
+    setLutImportBusy,
     setRegistryAssets,
     setRegistryDetail,
     setRegistryStatus,
     setSelectedRegistryAssetId,
     setStatus,
+    showAssetFailure,
     showAssetNotice,
 } from '../asset-manager.js';
 import assetManagerHttp from './http.js';
@@ -98,12 +104,84 @@ import {
 } from './settings.js';
 import { GW_DEFERRED } from './state.js';
 
+const LUT_DEFAULT_PREVIEW_URL = '/static/vendor/luts/default-preview.png';
 let registryLutThumbObserver = null;
 let registryLutThumbActive = 0;
+const lutDefaultPreviewImageCache = new Map();
+let lutImportSeq = 0;
+let lutImportAbortController = null;
+const lutAsyncState = {
+    importing: false,
+    message: '',
+    error: '',
+    refreshError: '',
+    token: 0,
+};
+
 function lutPreviewSampleFrame(width, height){
     const key = `${width}x${height}`;
     if(!lutPreviewSampleCache.has(key)) lutPreviewSampleCache.set(key, lutSampleImageData(width, height));
     return lutPreviewSampleCache.get(key);
+}
+function loadPreviewImageElement(url){
+    const key = String(url || LUT_DEFAULT_PREVIEW_URL);
+    if(lutDefaultPreviewImageCache.has(key)) return lutDefaultPreviewImageCache.get(key);
+    const task = new Promise((resolve, reject) => {
+        if(typeof Image !== 'function'){
+            reject(new Error('NO_IMAGE_DECODER'));
+            return;
+        }
+        const img = new Image();
+        img.decoding = 'async';
+        img.crossOrigin = 'anonymous';
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error('LUT_DEFAULT_PREVIEW_LOAD_FAILED'));
+        img.src = key;
+    });
+    lutDefaultPreviewImageCache.set(key, task);
+    task.catch(() => {
+        if(lutDefaultPreviewImageCache.get(key) === task) lutDefaultPreviewImageCache.delete(key);
+    });
+    return task;
+}
+function drawContainedImageData(img, width, height){
+    const w = Math.max(1, Math.round(Number(width) || LUT_THUMB_SAMPLE_WIDTH));
+    const h = Math.max(1, Math.round(Number(height) || LUT_THUMB_SAMPLE_HEIGHT));
+    if(typeof document === 'undefined') return null;
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext('2d', {willReadFrequently: true});
+    if(!ctx) return null;
+    const nw = Number(img?.naturalWidth || img?.width || w);
+    const nh = Number(img?.naturalHeight || img?.height || h);
+    const scale = Math.min(w / Math.max(1, nw), h / Math.max(1, nh));
+    const dw = Math.max(1, Math.round(nw * scale));
+    const dh = Math.max(1, Math.round(nh * scale));
+    const dx = Math.floor((w - dw) / 2);
+    const dy = Math.floor((h - dh) / 2);
+    ctx.fillStyle = '#0d0e11';
+    ctx.fillRect(0, 0, w, h);
+    ctx.drawImage(img, dx, dy, dw, dh);
+    return ctx.getImageData(0, 0, w, h);
+}
+async function loadLutDefaultPreviewFrame(width, height, customUrl=''){
+    const url = String(customUrl || '').trim() || LUT_DEFAULT_PREVIEW_URL;
+    const key = `img:${url}:${width}x${height}`;
+    if(lutPreviewSampleCache.has(key)) return lutPreviewSampleCache.get(key);
+    try {
+        const img = await loadPreviewImageElement(url);
+        const frame = drawContainedImageData(img, width, height);
+        if(frame){
+            lutPreviewSampleCache.set(key, frame);
+            return frame;
+        }
+    } catch(err) {
+        if(err?.message !== 'NO_IMAGE_DECODER' && customUrl){
+            return loadLutDefaultPreviewFrame(width, height, '');
+        }
+    }
+    return lutPreviewSampleFrame(width, height);
 }
 async function fetchLutPreviewText(url){
     let response;
@@ -145,10 +223,14 @@ function paintRegistryLutThumb(canvas){
     if(canvas.dataset.lutThumbState === 'pending' || canvas.dataset.lutThumbState === 'done') return null;
     canvas.dataset.lutThumbState = 'pending';
     const url = String(canvas.dataset.lutThumbUrl || '');
-    return loadLutPreview(url).then(lut => {
+    const customPreview = String(canvas.dataset.lutCustomPreviewUrl || '');
+    return Promise.all([
+        loadLutPreview(url),
+        loadLutDefaultPreviewFrame(LUT_THUMB_SAMPLE_WIDTH, LUT_THUMB_SAMPLE_HEIGHT, customPreview),
+    ]).then(([lut, sampleFrame]) => {
         if(!canvas.isConnected) return;
         const frame = composeLutPreview(
-            lutPreviewSampleFrame(LUT_THUMB_SAMPLE_WIDTH, LUT_THUMB_SAMPLE_HEIGHT),
+            sampleFrame,
             lut,
             {strength:1, mode:'applied'},
         );
@@ -210,6 +292,194 @@ function scheduleRegistryLutThumbs(){
 function lutLibraryAssets(){
     return (registryAssets || []).filter(item => registryAssetCategory(item) === 'lut');
 }
+function renderLutAsyncBanner(){
+    const parts = [];
+    if(lutAsyncState.importing){
+        parts.push(`<div class="registry-lut-async-banner is-pending" role="status" aria-live="polite"><i data-lucide="loader-circle"></i><span>${escapeHtml(lutAsyncState.message || '正在导入 LUT…')}</span></div>`);
+    } else if(lutAsyncState.error){
+        parts.push(`<div class="registry-lut-async-banner is-error" role="alert"><i data-lucide="triangle-alert"></i><span>${escapeHtml(lutAsyncState.error)}</span></div>`);
+    } else if(lutAsyncState.refreshError){
+        parts.push(`<div class="registry-lut-async-banner is-warning" role="alert"><i data-lucide="triangle-alert"></i><span>${escapeHtml(lutAsyncState.message ? `${lutAsyncState.message}；${lutAsyncState.refreshError}` : lutAsyncState.refreshError)}</span><button class="hw-btn" type="button" data-lut-async-retry>重试刷新</button></div>`);
+    } else if(lutAsyncState.message){
+        parts.push(`<div class="registry-lut-async-banner is-success" role="status" aria-live="polite"><i data-lucide="check-circle-2"></i><span>${escapeHtml(lutAsyncState.message)}</span></div>`);
+    }
+    return parts.join('');
+}
+function cancelLutAsyncOperations(){
+    lutImportSeq += 1;
+    if(lutImportAbortController){
+        lutImportAbortController.abort();
+        lutImportAbortController = null;
+    }
+    lutAsyncState.importing = false;
+    setLutImportBusy(false);
+}
+async function retryLutListRefresh(){
+    const token = ++lutImportSeq;
+    lutAsyncState.refreshError = '';
+    if(activeTab === 'lut') render();
+    try {
+        await refreshRegistryAssets(false);
+        if(token !== lutImportSeq || activeTab !== 'lut') return;
+        render();
+    } catch(err) {
+        if(token !== lutImportSeq || activeTab !== 'lut') return;
+        lutAsyncState.refreshError = err?.message || '列表刷新失败，请稍后重试';
+        render();
+    }
+}
+function promptLutNameConflict(filename){
+    return new Promise(resolve => {
+        if(typeof document === 'undefined' || !document.body){
+            resolve('cancel');
+            return;
+        }
+        const backdrop = document.createElement('div');
+        backdrop.className = 'asset-modal-backdrop is-open registry-lut-conflict-modal';
+        backdrop.innerHTML = `<div class="asset-modal" role="dialog" aria-modal="true" aria-labelledby="lutConflictTitle">
+            <header class="asset-modal-head"><h3 id="lutConflictTitle">LUT 同名冲突</h3><button class="hw-btn hw-btn-icon" type="button" data-lut-conflict-action="cancel" aria-label="关闭"><i data-lucide="x"></i></button></header>
+            <div class="asset-modal-body"><p>目录中已存在同名 LUT <strong>${escapeHtml(filename)}</strong>，请选择处理方式：</p></div>
+            <footer class="asset-modal-foot">
+                <button class="hw-btn" type="button" data-lut-conflict-action="cancel">取消</button>
+                <button class="hw-btn" type="button" data-lut-conflict-action="rename">自动重命名</button>
+                <button class="hw-btn hw-btn-gold" type="button" data-lut-conflict-action="overwrite">覆盖导入</button>
+            </footer>
+        </div>`;
+        const prevFocus = document.activeElement;
+        const finish = (choice) => {
+            document.removeEventListener('keydown', onKeyDown, true);
+            backdrop.remove();
+            if(prevFocus && typeof prevFocus.focus === 'function') prevFocus.focus();
+            resolve(choice);
+        };
+        const onKeyDown = (event) => {
+            if(event.key === 'Escape'){
+                event.preventDefault();
+                event.stopPropagation();
+                finish('cancel');
+            }
+        };
+        backdrop.addEventListener('click', event => {
+            const btn = event.target.closest?.('[data-lut-conflict-action]');
+            if(btn){
+                finish(btn.dataset.lutConflictAction || 'cancel');
+                return;
+            }
+            if(event.target === backdrop) finish('cancel');
+        });
+        document.addEventListener('keydown', onKeyDown, true);
+        document.body.appendChild(backdrop);
+        refreshIcons();
+        backdrop.querySelector('[data-lut-conflict-action="rename"]')?.focus?.();
+    });
+}
+async function uploadSingleLutFile(file, conflictResolution, clientRequestId, signal){
+    const form = new FormData();
+    form.append('file', file, file.name);
+    form.append('target', 'user-lut');
+    form.append('kind', 'lut');
+    form.append('conflict_resolution', conflictResolution || 'ask');
+    if(clientRequestId) form.append('client_request_id', clientRequestId);
+    const response = await fetch('/api/asset-registry/assets/import', {
+        method: 'POST',
+        body: form,
+        credentials: 'same-origin',
+        signal,
+    });
+    const text = await response.text();
+    let data = {};
+    try { data = text ? JSON.parse(text) : {}; } catch(_) { data = {}; }
+    if(!response.ok){
+        const detail = data?.detail && typeof data.detail === 'object' ? data.detail : data;
+        const err = new Error(detail?.message || `导入失败（HTTP ${response.status}）`);
+        err.status = response.status;
+        err.code = detail?.code || '';
+        err.filename = detail?.filename || file.name;
+        throw err;
+    }
+    return data;
+}
+async function importLutFiles(fileList){
+    const files = [...(fileList || [])].filter(Boolean);
+    if(!files.length) return;
+    const invalid = files.find(file => !String(file.name || '').toLowerCase().endsWith('.cube'));
+    if(invalid){
+        lutAsyncState.importing = false;
+        setLutImportBusy(false);
+        lutAsyncState.message = '';
+        lutAsyncState.refreshError = '';
+        lutAsyncState.error = `仅支持导入 .cube 格式 LUT，不支持：${invalid.name || '未知文件'}`;
+        setStatus(lutAsyncState.error);
+        if(activeTab === 'lut') render();
+        return;
+    }
+    const token = ++lutImportSeq;
+    if(lutImportAbortController) lutImportAbortController.abort();
+    const controller = new AbortController();
+    lutImportAbortController = controller;
+    lutAsyncState.importing = true;
+    setLutImportBusy(true);
+    lutAsyncState.token = token;
+    lutAsyncState.error = '';
+    lutAsyncState.refreshError = '';
+    lutAsyncState.message = `正在导入 ${files.length} 个 LUT…`;
+    if(activeTab === 'lut') render();
+
+    let importedCount = 0;
+    try {
+        for(const file of files){
+            if(token !== lutImportSeq || activeTab !== 'lut') return;
+            const nonce = crypto.getRandomValues(new Uint8Array(16));
+            const reqId = `lut_${Array.from(nonce, byte => byte.toString(16).padStart(2, '0')).join('')}`;
+            try {
+                await uploadSingleLutFile(file, 'ask', reqId, controller.signal);
+                importedCount += 1;
+            } catch(err) {
+                if(err?.name === 'AbortError' || token !== lutImportSeq || activeTab !== 'lut') return;
+                if(err?.status === 409 && err?.code === 'LUT_NAME_CONFLICT'){
+                    const choice = await promptLutNameConflict(err.filename || file.name);
+                    if(token !== lutImportSeq || activeTab !== 'lut') return;
+                    if(choice === 'cancel') continue;
+                    await uploadSingleLutFile(file, choice, `${reqId}_${choice}`, controller.signal);
+                    importedCount += 1;
+                } else {
+                    throw err;
+                }
+            }
+        }
+        if(token !== lutImportSeq || activeTab !== 'lut') return;
+        lutAsyncState.importing = false;
+        setLutImportBusy(false);
+        if(importedCount > 0){
+            detailMediaLutListCache.items = null;
+            lutAsyncState.message = `已导入 ${importedCount} 个 LUT`;
+            setStatus(lutAsyncState.message);
+            try {
+                await refreshRegistryAssets(false);
+            } catch(refreshErr) {
+                if(token !== lutImportSeq || activeTab !== 'lut') return;
+                lutAsyncState.refreshError = refreshErr?.message || '列表刷新失败，请点击重试';
+                render();
+                return;
+            }
+        } else {
+            lutAsyncState.message = '已取消导入';
+            setStatus(lutAsyncState.message);
+        }
+        if(token === lutImportSeq && activeTab === 'lut') render();
+    } catch(err) {
+        if(err?.name === 'AbortError' || token !== lutImportSeq || activeTab !== 'lut') return;
+        lutAsyncState.importing = false;
+        setLutImportBusy(false);
+        lutAsyncState.message = '';
+        lutAsyncState.error = err?.message || 'LUT 导入失败';
+        setStatus(lutAsyncState.error);
+        showAssetFailure('LUT 导入失败', err);
+        render();
+    } finally {
+        if(lutImportAbortController === controller) lutImportAbortController = null;
+    }
+}
 function renderLutManager(){
     // 与「提示词」「画布资产」同构：机架布局 + 右栏详情，只是取数钉在 kind=lut。
     const embeddedVault = document.documentElement.classList.contains('vault-shell-embedded');
@@ -220,11 +490,13 @@ function renderLutManager(){
         setRegistryDetail(null);
     }
     root.innerHTML = `${renderAssetTreePanel()}
-    <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" style="--registry-card-size:${registryCardSize}px">
-        ${embeddedVault ? '' : renderRegistryToolbar(null, 'LUT 库', `${items.length} 个色彩查找表（.cube）`)}
+    <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" data-lut-dropzone style="--registry-card-size:${registryCardSize}px">
+        <div class="registry-lut-drop-overlay" aria-hidden="true"><i data-lucide="upload"></i><span>松开鼠标导入 .cube LUT</span></div>
+        ${embeddedVault ? '' : renderRegistryToolbar(null, 'LUT 库', `${items.length} 个色彩查找表（.cube）`, {lutImport: true, lutImportBusy: lutAsyncState.importing})}
         ${renderRegistryFilterChips()}
+        ${renderLutAsyncBanner()}
         <div class="registry-fresh-notice" data-registry-fresh-notice></div>
-        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '暂无 LUT。把 .cube 文件放进素材目录后会自动出现在这里。')}${renderRegistryPagination()}</div>
+        <div class="content-scroll registry-assets-scroll" data-registry-zoom-area title="Shift+滚轮调整预览大小">${renderRegistryAssetSections(visible, null, '暂无 LUT。可点击右上角「导入 LUT」或直接拖入 .cube 文件。')}${renderRegistryPagination()}</div>
         <div class="registry-vault-footer" aria-label="资产库状态"><span>匹配 LUT <strong>${Number(items.length || 0).toLocaleString('zh-CN')}</strong></span><span>${registryLoading ? '正在读取' : registryPageHasMore ? `已加载 ${visible.length} 项` : `已加载全部 ${visible.length} 项`}</span><span>色彩查找表</span></div>
         ${renderRegistrySelectionBar(null)}
     </section>
@@ -1036,7 +1308,7 @@ function renderDetailLutWorkspace(source, item){
     const samples = Number(meta.sample_count) > 0 ? String(Number(meta.sample_count)) : '—';
     return `<div class="asset-detail-lut-workspace" data-detail-lut-workspace>
         ${renderDetailLutLibrary(item)}
-        <section class="asset-detail-lut-stage" data-detail-lut-stage data-lut-state="loading" data-compare="${escapeAttr(mode)}">
+        <section class="asset-detail-lut-stage" data-detail-lut-stage data-lut-custom-preview-url="${escapeAttr(lutCustomPreviewUrl(item))}" data-lut-state="loading" data-compare="${escapeAttr(mode)}">
             <header>
                 <div><i data-lucide="palette"></i><strong>LUT 效果预览</strong><span data-detail-lut-title title="${escapeAttr(item.name || 'LUT')}">${escapeHtml(meta.title || item.name || 'LUT')}</span></div>
                 <div class="asset-detail-lut-compare" role="group" aria-label="前后对比">
@@ -1137,28 +1409,33 @@ function paintDetailLutPreview(){
     if(!lut) return;
     const mode = detailLutCompareMode();
     const strength = detailLutStrengthPercent();
-    const frame = composeLutPreview(
-        lutPreviewSampleFrame(DETAIL_LUT_SAMPLE_WIDTH, DETAIL_LUT_SAMPLE_HEIGHT),
-        lut,
-        {mode, strength:strength / 100},
-    );
-    if(!paintLutFrame(canvas, frame)){
-        setDetailLutPreviewError('浏览器不支持 LUT 预览');
-        return;
-    }
-    stage.dataset.lutState = 'ready';
-    stage.dataset.compare = mode;
-    const error = stage.querySelector('[data-detail-lut-error]');
-    if(error){ error.hidden = true; error.textContent = ''; }
-    stage.querySelectorAll('[data-detail-lut-compare]').forEach(button => {
-        const active = button.dataset.detailLutCompare === mode;
-        button.classList.toggle('is-active', active);
-        button.setAttribute('aria-pressed', String(active));
+    const customPreview = String(stage.dataset.lutCustomPreviewUrl || '');
+    const paintToken = ++detailLutPreviewState.token;
+    void loadLutDefaultPreviewFrame(DETAIL_LUT_SAMPLE_WIDTH, DETAIL_LUT_SAMPLE_HEIGHT, customPreview).then(sampleFrame => {
+        if(paintToken !== detailLutPreviewState.token || !canvas.isConnected) return;
+        const frame = composeLutPreview(
+            sampleFrame,
+            lut,
+            {mode, strength:strength / 100},
+        );
+        if(!paintLutFrame(canvas, frame)){
+            setDetailLutPreviewError('浏览器不支持 LUT 预览');
+            return;
+        }
+        stage.dataset.lutState = 'ready';
+        stage.dataset.compare = mode;
+        const error = stage.querySelector('[data-detail-lut-error]');
+        if(error){ error.hidden = true; error.textContent = ''; }
+        stage.querySelectorAll('[data-detail-lut-compare]').forEach(button => {
+            const active = button.dataset.detailLutCompare === mode;
+            button.classList.toggle('is-active', active);
+            button.setAttribute('aria-pressed', String(active));
+        });
+        const strengthLabel = stage.querySelector('[data-detail-lut-strength-value]');
+        if(strengthLabel) strengthLabel.textContent = `${strength}%`;
+        const slider = stage.querySelector('[data-detail-lut-strength]');
+        if(slider && Number(slider.value) !== strength) slider.value = String(strength);
     });
-    const strengthLabel = stage.querySelector('[data-detail-lut-strength-value]');
-    if(strengthLabel) strengthLabel.textContent = `${strength}%`;
-    const slider = stage.querySelector('[data-detail-lut-strength]');
-    if(slider && Number(slider.value) !== strength) slider.value = String(strength);
 }
 function initializeDetailLutPreview(overlay, item){
     const stage = overlay?.querySelector?.('[data-detail-lut-stage]');
@@ -1220,9 +1497,13 @@ document.addEventListener('pointercancel', endDetailMediaLutSplitDrag);
 
 // 【QIN-591】域函数面注册：主文件 gwCall('lut', fn) 经由此对象分派。
 GW_DEFERRED['lut'] = {
+    cancelLutAsyncOperations,
     clearRegistryLutThumbObserver,
     closeDetailMediaLutMenu,
+    importLutFiles,
+    loadLutDefaultPreviewFrame,
     renderLutManager,
+    retryLutListRefresh,
     scheduleRegistryLutThumbs,
 };
 

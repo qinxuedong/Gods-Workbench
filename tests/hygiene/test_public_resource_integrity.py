@@ -58,6 +58,7 @@ VENDOR_HASHES = {
     "web/vendor/fonts/SourceHanSansCN-Normal.otf": "9fc9ad5b64f086a2b342087865623923c216e346f879142a84df37c7ffd323c5",
     "web/vendor/fonts/SourceHanSansCN-Medium.otf": "a94e558a2fe972bee4f46bce0843abff37063fd68c33f1e7d9058f6f09432b01",
     "web/vendor/fonts/SourceHanSansCN-Bold.otf": "62383707c086a32f3afd5e293f34c7eff64c7fea31f579fdc6cbe34d920519a6",
+    "web/vendor/luts/default-preview.png": "2e4ad0c0b92507e31e2dc5c494e1a3ba7055fd3bab36dbd914696968c0a9bc9e",
 }
 
 

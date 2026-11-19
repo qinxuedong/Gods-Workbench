@@ -43,6 +43,12 @@
 
 版本、name 表与许可证核验：内嵌 name ID 5 为 `Version 2.005;addfeatures 5.0.0b21`；字体 family/style 与字重见 `LICENSES.md` §4。官方 `LICENSE.txt` 包含 OFL-1.1 及 Reserved Font Name `Source`；完整 OFL 正文和 Adobe 版权行随 `LICENSES.md` 提供。此证据只关闭这三个字体的组件级字节/许可证来源核验，不代表根仓获得发布授权。
 
+## LUT 默认预览样片（QIN-621 / #752 授权）
+
+| 本地文件 | 用途/来源 | 尺寸与大小 | 本地 SHA-256 |
+| --- | --- | ---: | --- |
+| `luts/default-preview.png` | LUT 默认预览统一样片（项目自有授权图片，保持 3:4 原比例无裁剪优化副本） | `720×960` / `1,532,090 B` | `2E4AD0C0B92507E31E2DC5C494E1A3BA7055FD3BAB36DBD914696968C0A9BC9E` |
+
 ## 来源、转换与剩余门禁
 
 - **源哈希**表示所记固定上游原始字节；对于明确标注的 Tailwind 行，则表示自有源码 manifest，而非源 bundle 字节。**本地哈希**表示仓库当前文件。Lucide、Three.js 与三份字体仍为上游字节直接副本；Tailwind 为自有源码清单构建的派生 runtime，源 manifest SHA 与输出 SHA 分别记录，不称为 CDN 响应或 `identity-copy`。

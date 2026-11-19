@@ -474,7 +474,11 @@ async function activateAssetBoard(requestedId){
     const id = assetBoardById(requestedId) ? requestedId : 'registry';
     const board = assetBoardById(id);
     if(!board) return;
+    const previousTab = activeTab;
     setActiveTab(id);
+    if(previousTab === 'lut' && id !== 'lut'){
+        GW_DEFERRED?.lut?.cancelLutAsyncOperations?.();
+    }
     setRegistryRackSnapshot(null);
     setRegistryRequestSeq(registryRequestSeq + 1);
     setRegistryPageLoading(false);

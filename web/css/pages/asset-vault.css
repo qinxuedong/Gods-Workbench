@@ -1495,6 +1495,16 @@ html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoo
         grid-column: 1 !important;
         grid-row: 4 !important;
     }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut.asset-manager-root-rack {
+        grid-template-columns: minmax(0,1fr) !important;
+        grid-template-rows: auto auto minmax(360px,1fr) auto !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut > .registry-content {
+        grid-row: 3 !important;
+    }
+    html.vault-shell-embedded body.gw-signal.gw-page--asset-manager #assetManagerRoot.asset-manager-root-page-lut > .registry-detail-panel {
+        grid-row: 4;
+    }
 }
 @media (max-width: 820px) {
     /* 【QIN-602】≤820px 时 .content-toolbar 被 asset-manager.css 转成列方向（flex-direction:column），
@@ -1621,4 +1631,53 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
     display: block;
     overflow: hidden;
     pointer-events: none;
+}
+
+/* QIN-621：LUT 库导入按钮、拖入热区、异步状态条与同名冲突弹窗（dark/light 自适应） */
+.registry-lut-import-btn {
+    flex-shrink: 0;
+    white-space: nowrap;
+}
+[data-lut-dropzone] {
+    position: relative;
+}
+.registry-lut-drop-overlay {
+    display: none;
+    position: absolute;
+    inset: 8px;
+    z-index: 30;
+    border: 2px dashed var(--vault-accent);
+    border-radius: 12px;
+    background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
+    color: var(--text-primary, var(--sf-text));
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    font-weight: 600;
+    pointer-events: none;
+}
+[data-lut-dropzone].is-drag-over .registry-lut-drop-overlay {
+    display: flex;
+}
+.registry-lut-async-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin: 6px 12px 0;
+    padding: 8px 12px;
+    border-radius: 8px;
+    border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+    background: var(--panel-bg-elevated, rgba(255, 255, 255, 0.04));
+    color: var(--text-primary, inherit);
+}
+.registry-lut-async-banner.is-error {
+    border-color: var(--danger);
+    color: var(--danger);
+}
+.registry-lut-async-banner.is-warning {
+    border-color: var(--vault-accent);
+}
+.registry-lut-conflict-modal .asset-modal {
+    max-width: min(460px, calc(100vw - 32px));
 }

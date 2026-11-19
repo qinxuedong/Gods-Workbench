@@ -33,11 +33,13 @@ import base64
 import copy
 import hashlib
 import json
+import uuid
 import logging
 import math
 import os
 import re
 import threading
+import time
 from collections import Counter
 from datetime import datetime, timedelta, timezone
 import zipfile
@@ -93,6 +95,7 @@ def _blank() -> Dict[str, Any]:
 
 
 def state() -> storage.JsonState:
+    _recover_user_lut_import()
     return storage.JsonState(NS_REGISTRY, _blank)
 
 
@@ -256,6 +259,7 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
     ``storage.load`` 的调用次数即可精确代表注册表解析次数。
     """
     global _REGISTRY_SNAPSHOT_CACHE
+    _recover_user_lut_import()
     path, _ = _snapshot_paths()
     before = _registry_snapshot_signature(path)
     with _REGISTRY_SNAPSHOT_LOCK:
@@ -477,8 +481,9 @@ def _is_builtin_record(record: Dict[str, Any]) -> bool:
 
 
 def _hidden_builtin(record: Dict[str, Any]) -> bool:
-    """QIN-553：用户已隐藏的内置条目——从列表/统计/预热/收件箱全部读路径剔除。"""
-    return _is_builtin_record(record) and bool(record.get("hidden"))
+    """QIN-621：已取消内置 LUT 隐藏功能，所有未删内置条目一律可见。"""
+    del record
+    return False
 
 
 def _read_json_snapshot_no_lock(path: Path) -> Dict[str, Any]:
@@ -1108,17 +1113,14 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         _cas(raw, payload.get("expected_version"))
         builtin = _is_builtin_record(item)
         if "hidden" in payload and payload["hidden"] is not None:
-            if not builtin:
-                raise CleanroomException(400, "INVALID_REQUEST",
-                                         "仅内置资产支持隐藏开关")
-            item["hidden"] = bool(payload["hidden"])
+            raise CleanroomException(400, "INVALID_REQUEST", "隐藏功能已取消")
         if payload.get("name"):
             item["name"] = str(payload["name"]).strip()
         for key in ("kind", "display_path", "archived"):
             if key in payload and payload[key] is not None:
                 if builtin:
                     raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                             "内置资产不允许改类型、路径或归档，隐藏请用 hidden 开关")
+                                             "内置资产不允许改类型、路径或归档")
                 item[key] = payload[key]
         if "tags" in payload and isinstance(payload["tags"], list):
             item["tags"] = payload["tags"]
@@ -1198,7 +1200,7 @@ def archive_assets(asset_ids: List[str], expected_version: Optional[int]) -> Dic
             item = _require(raw, asset_id)
             if _is_builtin_record(item):
                 raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                         "内置资产不允许归档，请使用隐藏")
+                                         "内置资产不允许归档，如需移除请删除至回收站")
             item["archived"] = True
             item["archived_at"] = storage.now_iso()
             item["version"] = int(item.get("version", 1)) + 1
@@ -1226,16 +1228,18 @@ def delete_asset(asset_id: str, expected_version: Optional[int], context=None) -
     from gw.asset_library.service import default_asset_library_service
     snapshot = state().read()
     _require(snapshot, asset_id)
-    if _is_builtin_record(snapshot["assets"][asset_id]):
-        raise CleanroomException(403, "BUILTIN_ASSET_PROTECTED",
-                                 "内置资产不可移入回收站，可在卡片上选择隐藏")
     _cas(snapshot, expected_version, required=True)
     library_item = default_asset_library_service.remove_item_snapshot(asset_id)
     try:
         def mutate(raw: Dict[str, Any]) -> Any:
             item = _require(raw, asset_id)
             _cas(raw, expected_version, required=True)
+            is_builtin = _is_builtin_record(item)
             del raw["assets"][asset_id]
+            if is_builtin:
+                deleted_builtins = raw.setdefault("deleted_builtin_luts", [])
+                if asset_id not in deleted_builtins:
+                    deleted_builtins.append(asset_id)
             payload = dict(item)
             if library_item is not None:
                 payload["library_item"] = library_item
@@ -1292,7 +1296,14 @@ def restore_from_recycle(entry_id: str, context=None, expected_version: Optional
                 payload = dict(entry["payload"])
                 payload.pop("library_item", None)
                 payload.pop("full_sha256_cache", None)
+                if _is_builtin_record(payload):
+                    payload["hidden"] = False
                 raw["assets"][entry["asset_id"]] = payload
+                deleted_builtins = raw.get("deleted_builtin_luts")
+                if isinstance(deleted_builtins, list) and entry["asset_id"] in deleted_builtins:
+                    raw["deleted_builtin_luts"] = [
+                        aid for aid in deleted_builtins if aid != entry["asset_id"]
+                    ]
                 audit_sink.append_event(raw, "asset.recycle_restored", entry["asset_id"], context)
             del raw["recycle_bin"][entry_id]
             revision = _bump(raw)
@@ -1321,8 +1332,11 @@ def restore_asset(asset_id: str, context=None) -> Dict[str, Any]:
 
 
 def get_asset(asset_id: str) -> Dict[str, Any]:
+    from gw.asset_registry import builtin_luts
     raw = state().read()
     item = annotate_asset_provenance([_require(raw, asset_id)], raw=raw)[0]
+    if builtin_luts.is_managed_lut_display_path(item.get("display_path")):
+        item["can_recycle"] = True
     # 详情同时回填已关联素材，前端据此渲染关联列表与「解除关联」入口。
     return {**item, "related_assets": _related_assets_for(raw, item)}
 
@@ -1560,12 +1574,13 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         str(root.get("id") or ""): str(root.get("availability_reason") or "")
         for root in root_facets
     }
+    from gw.asset_registry import builtin_luts
     from gw.settings.service import default_storage_settings_service
     source_read_only = default_storage_settings_service.get_snapshot().local_library_read_only
     for item in items:
         source_id = str(item.get("storage_root_id") or "")
         asset_root_id = str(item.get("root_id") or "")
-        item["can_recycle"] = False
+        item["can_recycle"] = builtin_luts.is_managed_lut_display_path(item.get("display_path"))
         if not item.get("is_remote") and (source_id or asset_root_id):
             availability_id = source_id or asset_root_id
             item["can_recycle"] = not source_read_only.get(availability_id, False) and root_availability.get(availability_id) == "available"
@@ -1654,7 +1669,15 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     if cutoff:
         items = [a for a in items if str(a.get("created_at") or "") >= cutoff]
     if category:
-        items = [a for a in items if _asset_category(a) == category]
+        if "," in str(category):
+            categories = [part.strip().lower() for part in str(category).split(",") if part.strip()]
+            valid_categories = {*_ASSET_CATEGORY_EXTENSIONS, "other"}
+            if not categories or any(part not in valid_categories for part in categories):
+                raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "不支持的资产分类筛选")
+            category_set = set(categories)
+            items = [a for a in items if _asset_category(a) in category_set]
+        else:
+            items = [a for a in items if _asset_category(a) == category]
     if project_id:
         if project_id == "__all__":
             items = [a for a in items if a.get("project_ids") or a.get("project_id")]
@@ -4486,6 +4509,284 @@ def stored_upload_path(asset_id: str, filename: str) -> Path:
     target_dir = storage.data_root() / "registry_uploads"
     target_dir.mkdir(parents=True, exist_ok=True)
     return target_dir / ("%s_%s" % (asset_id, safe))
+
+
+def _safe_user_lut_disk_name(display_name: str, suffix_num: int = 0) -> str:
+    """生成仅含 ASCII 安全字符的 user-lut 落盘文件名，保留 .cube 扩展名。"""
+    stem = display_name[:-5] if display_name.lower().endswith(".cube") else display_name
+    clean_stem = "".join(
+        ch for ch in stem if ch.isascii() and (ch.isalnum() or ch in "-_")
+    ).strip("-_") or "lut"
+    if len(clean_stem) > 72:
+        clean_stem = clean_stem[:72]
+    if suffix_num > 0:
+        return f"{clean_stem}_{suffix_num}.cube"
+    return f"{clean_stem}.cube"
+
+
+def _durable_lut_write(path: Path, data: bytes) -> None:
+    with path.open("wb") as handle:
+        handle.write(data)
+        handle.flush()
+        os.fsync(handle.fileno())
+
+
+def _recover_user_lut_import() -> None:
+    from gw.asset_registry import builtin_luts
+
+    root = builtin_luts.user_lut_dir()
+    journal = root / ".lut-import.json"
+    if not journal.is_file():
+        return
+    with storage.namespace_lock(NS_REGISTRY):
+        if not journal.is_file():
+            return
+        intent = json.loads(journal.read_text(encoding="utf-8"))
+        disk_name = intent["target"]
+        if Path(disk_name).name != disk_name or not disk_name.endswith(".cube"):
+            raise ValueError("LUT 导入恢复记录的目标文件名无效")
+        backup = root / ".lut-import.backup"
+        stage = root / ".lut-import.tmp"
+        registry, ok = storage.load_with_status(NS_REGISTRY, None)
+        if not ok:
+            raise OSError("无法读取注册表以恢复 LUT 导入")
+        if (registry or {}).get("lut_import_commit") != intent["id"]:
+            target = root / disk_name
+            if intent["had_target"]:
+                previous = backup.read_bytes()
+                if not target.is_file() or target.read_bytes() != previous:
+                    _durable_lut_write(stage, previous)
+                    os.replace(stage, target)
+            else:
+                target.unlink(missing_ok=True)
+        journal.unlink()
+        stage.unlink(missing_ok=True)
+        backup.unlink(missing_ok=True)
+
+
+def import_user_lut_bytes(
+    filename: str,
+    data: bytes,
+    *,
+    conflict_resolution: str = "ask",
+    client_request_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    # 名称选择、文件发布与注册表提交共用注册表锁。
+    with storage.namespace_lock(NS_REGISTRY):
+        return _import_user_lut_bytes_locked(
+            filename, data, conflict_resolution=conflict_resolution,
+            client_request_id=client_request_id,
+        )
+
+
+def _import_user_lut_bytes_locked(
+    filename: str,
+    data: bytes,
+    *,
+    conflict_resolution: str = "ask",
+    client_request_id: Optional[str] = None,
+) -> Dict[str, Any]:
+    """把合法 .cube 上传并登记到系统默认 LUT 目录下的 user-lut 子目录。
+
+    支持：
+    - 路径穿越与严格 .cube 校验（复用 parse_lut_cube_bytes）；
+    - 同名冲突策略：ask/reject (409 LUT_NAME_CONFLICT)、rename、overwrite；
+    - client_request_id 幂等去重；
+    - 临时文件原子写入与失败回滚，避免半写入。
+    """
+    from gw.asset_registry import builtin_luts
+    from gw.asset_registry.lut_cube import LutCubeError, parse_lut_cube_bytes
+
+    raw_name = str(filename or "").strip()
+    if (
+        not raw_name
+        or "/" in raw_name
+        or "\\" in raw_name
+        or ".." in raw_name
+        or any(ord(ch) < 32 for ch in raw_name)
+    ):
+        raise CleanroomException(400, "INVALID_LUT_PATH", "LUT 文件名非法")
+    if not raw_name.lower().endswith(".cube"):
+        raise CleanroomException(400, "INVALID_LUT_FORMAT", "仅支持导入 .cube 格式 LUT")
+    if not data:
+        raise CleanroomException(400, "INVALID_REQUEST", "上传文件为空")
+    try:
+        lut_meta = parse_lut_cube_bytes(data)
+    except LutCubeError as exc:
+        status_code = 413 if exc.code == "LUT_CUBE_TOO_LARGE" else 400
+        raise CleanroomException(status_code, exc.code, str(exc)) from exc
+
+    resolution = str(conflict_resolution or "ask").strip().lower()
+    if resolution not in {"ask", "reject", "rename", "overwrite"}:
+        raise CleanroomException(400, "INVALID_REQUEST", "不支持的冲突处理策略")
+
+    lut_dir = builtin_luts.user_lut_dir()
+    lut_dir.mkdir(parents=True, exist_ok=True)
+
+    registry = state()
+    snapshot = registry.read()
+    token = str(client_request_id or "").strip()
+    fingerprint = hashlib.sha256(data).hexdigest()
+    if token:
+        existing_id = (snapshot.get("lut_import_tokens") or {}).get(token)
+        if existing_id:
+            saved = (snapshot.get("lut_import_fingerprints") or {}).get(token)
+            if saved != {"filename": raw_name, "sha256": fingerprint}:
+                raise CleanroomException(409, "LUT_REQUEST_ID_CONFLICT", "请求 ID 已用于不同的导入")
+            if existing_id not in (snapshot.get("assets") or {}):
+                raise CleanroomException(409, "LUT_REQUEST_ID_STALE", "原导入资产已不存在")
+            asset = get_asset(existing_id)
+            current_name = str(asset.get("display_path") or "").rsplit("/", 1)[-1]
+            current_path = lut_dir / current_name
+            if not current_path.is_file() or hashlib.sha256(current_path.read_bytes()).hexdigest() != fingerprint:
+                raise CleanroomException(409, "LUT_REQUEST_ID_STALE", "原导入文件已变更或不存在")
+            return {
+                "asset": asset,
+                "assets": [asset],
+                "asset_ids": [existing_id],
+                "deduplicated": True,
+                "revision": snapshot["revision"],
+                "data_status": DATA_STATUS_OK,
+                "data_gaps": [],
+            }
+
+    display_name = raw_name
+    stem = display_name[:-5]
+    active_user_luts = [
+        item for item in (snapshot.get("assets") or {}).values()
+        if isinstance(item, dict)
+        and builtin_luts.is_user_lut_display_path(item.get("display_path"))
+    ]
+    conflict_item = next(
+        (
+            item for item in active_user_luts
+            if str(item.get("name") or "").casefold() == display_name.casefold()
+        ),
+        None,
+    )
+    disk_name = _safe_user_lut_disk_name(display_name)
+    disk_conflict = (lut_dir / disk_name).exists() and conflict_item is None
+
+    if conflict_item is not None or disk_conflict:
+        if disk_conflict and resolution == "overwrite":
+            raise CleanroomException(409, "LUT_NAME_CONFLICT", "目标文件未登记，不能覆盖")
+        if resolution in {"ask", "reject"}:
+            raise CleanroomException(
+                409,
+                "LUT_NAME_CONFLICT",
+                f"已存在同名 LUT：{display_name}",
+                extra={
+                    "filename": display_name,
+                    "existing_asset_id": conflict_item.get("asset_id") if conflict_item else None,
+                },
+                expose_extra_fields={"filename", "existing_asset_id"},
+            )
+        if resolution == "rename":
+            existing_names = {str(item.get("name") or "").casefold() for item in active_user_luts}
+            idx = 1
+            while True:
+                candidate_name = f"{stem} ({idx}).cube"
+                candidate_disk = _safe_user_lut_disk_name(display_name, suffix_num=idx)
+                if candidate_name.casefold() not in existing_names and not (lut_dir / candidate_disk).exists():
+                    display_name = candidate_name
+                    disk_name = candidate_disk
+                    conflict_item = None
+                    break
+                idx += 1
+        elif resolution == "overwrite" and conflict_item is not None:
+            existing_display = str(conflict_item.get("display_path") or "")
+            if existing_display.startswith(f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/"):
+                disk_name = existing_display.rsplit("/", 1)[-1]
+
+    target = lut_dir / disk_name
+    tmp_path = lut_dir / ".lut-import.tmp"
+    backup = lut_dir / ".lut-import.backup"
+    journal = lut_dir / ".lut-import.json"
+    journal_stage = lut_dir / ".lut-import-journal.tmp"
+    transaction_id = uuid.uuid4().hex
+
+    now = storage.now_iso()
+    metadata_payload = {
+        "extension": "cube",
+        "user_lut": True,
+        "lut": {
+            "title": lut_meta.get("title"),
+            "lut_3d_size": lut_meta.get("lut_3d_size"),
+            "lut_1d_size": lut_meta.get("lut_1d_size"),
+            "sample_count": lut_meta.get("sample_count"),
+        },
+    }
+
+    def mutate(raw: Dict[str, Any]) -> Any:
+        assets = raw.setdefault("assets", {})
+        if resolution == "overwrite" and conflict_item is not None and conflict_item.get("asset_id") in assets:
+            aid = str(conflict_item["asset_id"])
+            item = assets[aid]
+            item["name"] = display_name
+            item["display_path"] = f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/{disk_name}"
+            item["size_bytes"] = len(data)
+            metadata = item.get("metadata") or {}
+            item["metadata"] = {
+                **metadata,
+                **metadata_payload,
+                "lut": {**(metadata.get("lut") or {}), **metadata_payload["lut"]},
+            }
+            item["version"] = int(item.get("version", 1)) + 1
+            item["updated_at"] = now
+        else:
+            aid = _seq(raw, "ast_", assets.keys())
+            assets[aid] = {
+                "id": aid,
+                "asset_id": aid,
+                "name": display_name,
+                "kind": "lut",
+                "archived": False,
+                "version": 1,
+                "created_at": now,
+                "updated_at": now,
+                "tags": [],
+                "relations": [],
+                "display_path": f"registry_uploads/{builtin_luts.USER_LUT_UPLOAD_SUBDIR}/{disk_name}",
+                "size_bytes": len(data),
+                "metadata": metadata_payload,
+            }
+        if token:
+            raw.setdefault("lut_import_tokens", {})[token] = aid
+            raw.setdefault("lut_import_fingerprints", {})[token] = {
+                "filename": raw_name, "sha256": fingerprint,
+            }
+        raw["lut_import_commit"] = transaction_id
+        revision = _bump(raw)
+        return {"asset_id": aid, "revision": revision, "deduplicated": False}
+
+    try:
+        had_target = target.exists()
+        if had_target:
+            _durable_lut_write(backup, target.read_bytes())
+        _durable_lut_write(tmp_path, data)
+        # 先持久化恢复记录，重启后根据注册表提交标记判断保留还是回滚。
+        intent = {"id": transaction_id, "target": disk_name, "had_target": had_target}
+        _durable_lut_write(journal_stage, json.dumps(intent).encode("utf-8"))
+        os.replace(journal_stage, journal)
+        os.replace(tmp_path, target)
+        tx = registry.mutate(mutate)
+    finally:
+        # 进程中断时 finally 不会执行，读取注册表时走同一恢复入口。
+        _recover_user_lut_import()
+        if not journal.exists():
+            for path in (tmp_path, backup, journal_stage):
+                path.unlink(missing_ok=True)
+
+    asset = get_asset(tx["asset_id"])
+    return {
+        "asset": asset,
+        "assets": [asset],
+        "asset_ids": [tx["asset_id"]],
+        "deduplicated": bool(tx.get("deduplicated")),
+        "revision": tx["revision"],
+        "data_status": DATA_STATUS_OK,
+        "data_gaps": [],
+    }
 
 
 def related_assets(asset_ids: List[str], kind: str, expected_version: Optional[int]) -> Dict[str, Any]:

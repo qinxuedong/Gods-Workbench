@@ -35,6 +35,7 @@ from gw.core.errors import CleanroomException
 BUILTIN_LUT_ASSET_ID_PREFIX = "builtin_lut_"
 BUILTIN_LUT_RELATIVE_DIR = Path("web") / "vendor" / "luts"
 BUILTIN_LUT_UPLOAD_SUBDIR = "builtin_luts"
+USER_LUT_UPLOAD_SUBDIR = "user-lut"
 BUILTIN_LUT_NOTES = (
     "程序生成的演示级基准 LUT（Apache-2.0, 2026 Gods-Workbench Authors）；"
     "来源与规格见 web/vendor/luts/README.md"
@@ -72,9 +73,22 @@ def materialized_builtin_lut_dir() -> Path:
     return storage.data_root() / "registry_uploads" / BUILTIN_LUT_UPLOAD_SUBDIR
 
 
+def user_lut_dir() -> Path:
+    return storage.data_root() / "registry_uploads" / USER_LUT_UPLOAD_SUBDIR
+
+
 def is_builtin_lut_display_path(display: Any) -> bool:
     normalized = str(display or "").replace("\\", "/")
     return normalized.startswith(f"registry_uploads/{BUILTIN_LUT_UPLOAD_SUBDIR}/")
+
+
+def is_user_lut_display_path(display: Any) -> bool:
+    normalized = str(display or "").replace("\\", "/")
+    return normalized.startswith(f"registry_uploads/{USER_LUT_UPLOAD_SUBDIR}/")
+
+
+def is_managed_lut_display_path(display: Any) -> bool:
+    return is_builtin_lut_display_path(display) or is_user_lut_display_path(display)
 
 
 def _materialize(spec: Dict[str, str]) -> Dict[str, Any]:
@@ -140,36 +154,64 @@ def _validate_existing(existing: Dict[str, Any], item: Dict[str, Any]) -> None:
 
 
 def ensure_builtin_luts(reveal: bool = False) -> Dict[str, Any]:
-    """幂等登记全部内置 LUT：补缺失条目与缺失副本，不动用户隐藏态。
+    """幂等登记内置 LUT：补缺失条目，迁移旧 hidden 态，不自动补回已删除条目。
 
-    - 首次调用逐条登记（``created`` 返回新增 id 列表）；
-    - 重复调用全部命中已登记分支：不新增、不推高注册表 revision；
-    - 已登记条目只校验身份一致（builtin 标记/kind/路径），保留
-      hidden、tags、version 等用户态；
-    - ``reveal=True`` 时把全部内置条目重新设为显示（「恢复显示内置 LUT」）。
+    - 已通过回收站删除（记录于 ``deleted_builtin_luts`` 或仍在 ``recycle_bin`` 中）
+      的内置 LUT 不会被重新登记或重新物化；
+    - 历史版本留下的 ``hidden=True`` 条目在迁移时统一置为 ``hidden=False``（可见），
+      绝不把旧隐藏当作删除；
+    - 重复调用全部命中已登记或已删除分支：不新增、不推高注册表 revision。
     """
     from gw.asset_registry import repository as repo
 
-    prepared = [_materialize(spec) for spec in BUILTIN_LUT_SPECS]
+    del reveal  # QIN-621：已取消隐藏/恢复显示功能，保留参数签名仅作调用兼容。
+    snapshot = repo.state().read()
+    deleted_ids = set(str(x) for x in (snapshot.get("deleted_builtin_luts") or []) if str(x))
+    recycled_ids = {
+        str(entry.get("asset_id") or "")
+        for entry in (snapshot.get("recycle_bin") or {}).values()
+        if isinstance(entry, dict) and entry.get("kind") == "asset"
+    }
+    suppressed_ids = deleted_ids | recycled_ids
+    existing_assets = snapshot.get("assets") or {}
+
+    prepared: List[Dict[str, Any]] = []
+    for spec in BUILTIN_LUT_SPECS:
+        asset_id = BUILTIN_LUT_ASSET_ID_PREFIX + spec["slug"]
+        if asset_id not in existing_assets and asset_id in suppressed_ids:
+            continue
+        prepared.append(_materialize(spec))
+
     created: List[str] = []
-    revealed: List[str] = []
-    hidden: List[str] = []
+    migrated_visible: List[str] = []
+    skipped_deleted: List[str] = []
 
     def mutate(raw: Dict[str, Any]) -> Any:
         assets = raw.setdefault("assets", {})
-        for item in prepared:
-            asset_id = item["asset_id"]
+        cur_deleted = set(str(x) for x in (raw.get("deleted_builtin_luts") or []) if str(x))
+        cur_recycled = {
+            str(entry.get("asset_id") or "")
+            for entry in (raw.get("recycle_bin") or {}).values()
+            if isinstance(entry, dict) and entry.get("kind") == "asset"
+        }
+        cur_suppressed = cur_deleted | cur_recycled
+        prepared_map = {item["asset_id"]: item for item in prepared}
+        for spec in BUILTIN_LUT_SPECS:
+            asset_id = BUILTIN_LUT_ASSET_ID_PREFIX + spec["slug"]
             existing = assets.get(asset_id)
             if existing is not None:
+                item = prepared_map.get(asset_id) or _materialize(spec)
                 _validate_existing(existing, item)
-                if reveal and existing.get("hidden"):
+                if existing.get("hidden"):
                     existing["hidden"] = False
                     existing["version"] = int(existing.get("version", 1)) + 1
                     existing["updated_at"] = storage.now_iso()
-                    revealed.append(asset_id)
-                elif existing.get("hidden"):
-                    hidden.append(asset_id)
+                    migrated_visible.append(asset_id)
                 continue
+            if asset_id in cur_suppressed:
+                skipped_deleted.append(asset_id)
+                continue
+            item = prepared_map.get(asset_id) or _materialize(spec)
             assets[asset_id] = {
                 "id": asset_id,
                 "asset_id": asset_id,
@@ -189,17 +231,22 @@ def ensure_builtin_luts(reveal: bool = False) -> Dict[str, Any]:
             }
             raw.setdefault("sequences", {})[asset_id] = True
             created.append(asset_id)
-        changed = bool(created) or bool(revealed)
+        changed = bool(created) or bool(migrated_visible)
         revision = repo._bump(raw) if changed else int(raw.get("revision", 1))
         return {"revision": revision}
 
     result = repo.state().mutate(mutate)
-    all_ids = [item["asset_id"] for item in prepared]
+    all_ids = [BUILTIN_LUT_ASSET_ID_PREFIX + spec["slug"] for spec in BUILTIN_LUT_SPECS]
     return {
         "created": created,
-        "existing": [asset_id for asset_id in all_ids if asset_id not in created],
-        "revealed": revealed,
-        "hidden": hidden,
+        "existing": [
+            asset_id for asset_id in all_ids
+            if asset_id not in created and asset_id not in skipped_deleted
+        ],
+        "skipped_deleted": skipped_deleted,
+        "migrated_visible": migrated_visible,
+        "revealed": [],
+        "hidden": [],
         "revision": result["revision"],
         "data_status": "ok",
         "data_gaps": [],
