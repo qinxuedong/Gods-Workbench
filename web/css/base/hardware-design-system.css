@@ -234,6 +234,19 @@
 .topbar-master-deck [data-gw-topbar-project-slot].is-narrow > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
   flex: 0 1 auto;
 }
+/* 工作流窄屏放不下仪表和两个项目箭头时，将项目栏移到独立一行。 */
+@media (max-width: 760px) {
+  .topbar-master-deck [data-gw-topbar-wrap-project] {
+    flex-wrap: wrap;
+  }
+  .topbar-master-deck [data-gw-topbar-wrap-project] > [data-gw-topbar-project-slot] {
+    order: 1;
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    gap: 8px;
+  }
+}
 /* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
    长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */
 .topbar-master-deck [data-gw-topbar-title] {

@@ -1114,6 +1114,13 @@
       header?.classList.remove('is-topbar-starved');
       slot.classList?.remove('is-centered', 'is-narrow', 'is-title-trailing');
       bar.classList?.remove('is-narrow');
+      if (slot.parentElement?.hasAttribute?.('data-gw-topbar-wrap-project')
+          && window.matchMedia?.('(max-width: 760px)').matches) {
+        topbarResetProjectLayout(slot, bar);
+        slot.style.width = '';
+        slot.style.maxWidth = '';
+        continue;
+      }
       // 先临时清零 slot 宽度，以无中条干扰的纯净左右簇边界测量真实净空。
       slot.style.maxWidth = '0px';
       slot.style.width = '0px';
