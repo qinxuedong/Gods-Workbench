@@ -231,6 +231,7 @@ function readDetailFontPanelPreference(){
 const savedRegistryViewSettings = readRegistryViewSettings();
 
 let activeTab = 'registry';
+let lastRenderedAssetTab = activeTab;
 let boardNavigationState = null;
 let assetRackCollapsed = readAssetRackCollapsed();
 const assetRackExpandedFolders = new Set(readAssetRackExpandedFolders());
@@ -4105,7 +4106,7 @@ function syncRegistrySelectionViews(keepDetailScroll=false){
 async function openRegistryAssetFromGlobalSearch(assetId, startTime = null){
     const id = touchbarStableId(assetId);
     if(!id) return;
-    setActiveTab('registry');
+    activeTab = 'registry';
     registryQuery = '';
     registryDetailPanelCollapsed = false;
     await refreshRegistryAssets(false);
@@ -4202,7 +4203,7 @@ function handleAssetTreeCrumbClick(key){
         registryProjectEntityFilter = null;
         registryNavFolder = {rootId:'', path:''};
         registryRootId = '';
-        setActiveTab('registry');
+        activeTab = 'registry';
         assetTreeSelectedKey = '';
         render();
         void refreshRegistryAssets(false).then(render, render);
@@ -4311,7 +4312,8 @@ async function refreshRegistryFacetData(options={}){
         return null;
     });
     if(!facets) return;
-    if(generation !== registryFacetRefreshGeneration || options.signal?.aborted) return;
+    if(generation !== registryFacetRefreshGeneration) return;
+    if(options.signal?.aborted) return;
     registryFacets = {
         kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
         categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -5405,6 +5407,11 @@ function renderActiveAssetView(){
     }
 }
 function render(){
+    if(lastRenderedAssetTab === 'lut' && activeTab !== 'lut'){
+        GW_DEFERRED.lut?.cancelLutAsyncOperations?.();
+        GW_DEFERRED.recycle?.invalidateRecycleOperations?.();
+    }
+    lastRenderedAssetTab = activeTab;
     if(embeddedSettingsPage){
         gwCall('settings', 'renderGlobalDirectorySettings');
         return;
@@ -7385,7 +7392,7 @@ function selectAssetTreeNode(key){
         const path = separator > 0 ? body.slice(separator + 2) : '';
         if(activeTab !== 'registry'){
             // 【QIN-595 审核官反馈第 1 项】若当前在非目标视图（如 LUT），点挂载子目录需切回资产总览并彻底重置其过滤定义
-            setActiveTab('registry');
+            activeTab = 'registry';
             registryRackSnapshot = null;
             // 【QIN-603 缺陷A】同上：经 organize 域网关派发，不再裸调域内私有函数。
             gwCall('organize', 'resetBoardSelections');
@@ -7790,7 +7797,7 @@ function systemBoardRackActive(){
 }
 async function refreshRegistryAssetsFromRack(){
     if(systemBoardRackActive()){
-        setActiveTab('registry');
+        activeTab = 'registry';
         renderBoardNavigation();
     }
     await refreshRegistryAssets();
@@ -8342,7 +8349,7 @@ async function handleClick(event){
             // 树选中态同步到「画布资产」节点下的「全部画布」分类子节点。
             registryStatCategory = '';
             assetTreeSelectedKey = 'system:canvas-assets:cat:all';
-            setActiveTab('canvas-assets');
+            activeTab = 'canvas-assets';
             activeCanvasAssetCategory = 'all';
             activeCanvasAssetCanvasId = '';
             selectedCanvasAssetId = '';
@@ -8354,7 +8361,7 @@ async function handleClick(event){
         applyRegistryFilterDefinition({category, groupSimilar:registryGroupSimilar});
         // 【QIN-569 AC3】统计卡是资产总览的组件：从其他视图（项目/剧本/提示词等）点击统计卡
         // 即切换回资产总览并应用该分类筛选，保证「切换回资产分类仍可正常筛选」。
-        setActiveTab('registry');
+        if(activeTab !== 'registry') activeTab = 'registry';
         // 【审核残留修复】统计卡筛选同样收口持久化（侧栏选中清空后旧 mine:* 键不应残留）。
         saveAssetTreeState();
         // 【QIN-553】首次打开 LUT 库统计视图时，幂等登记内置 LUT 包。
@@ -8828,7 +8835,7 @@ async function handleClick(event){
     }
     const tabBtn = target.closest?.('[data-tab]');
     if(tabBtn){
-        setActiveTab(tabBtn.dataset.tab || 'assets');
+        activeTab = tabBtn.dataset.tab || 'assets';
         selectedAssetIds.clear(); selectedWorkflowIds.clear(); selectedPromptIds.clear(); selectedLocalIds.clear(); selectedLocalUploadIds.clear(); selectedCanvasAssetIds.clear();
         if(activeTab === 'local' && !localAssetsLoaded){
             const loading = loadLocalAssets();
@@ -11459,14 +11466,14 @@ document.addEventListener('DOMContentLoaded', () => {
 function setDirectorySettingsSaving(v){ directorySettingsSaving = v; }
 function setClientUploadSourceDir(v){ clientUploadSourceDir = v; }
 function setClientSettingBusy(v){ clientSettingBusy = v; }
-function setActiveTab(v, {cancelLut=true}={}){
+function setActiveTab(v){
     if(activeTab !== v){
         if(activeTab === 'lut'){
-            if(cancelLut) GW_DEFERRED.lut?.cancelLutAsyncOperations?.();
             registryRequestSeq += 1;
             abortRegistryAssetRequests();
         }
         GW_DEFERRED.recycle?.invalidateRecycleOperations?.();
+        lastRenderedAssetTab = v;
         GW_DEFERRED.organize?.invalidateResourceFolderAction?.();
         if(boardMigrationState.running){
             cancelActiveBoardMigration();

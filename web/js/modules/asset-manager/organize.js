@@ -475,7 +475,7 @@ async function activateAssetBoard(requestedId){
     const board = assetBoardById(id);
     if(!board) return;
     const previousTab = activeTab;
-    setActiveTab(id, {cancelLut:false});
+    setActiveTab(id);
     if(previousTab === 'lut' && id !== 'lut'){
         GW_DEFERRED?.lut?.cancelLutAsyncOperations?.();
     }
