@@ -1646,10 +1646,10 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
     position: absolute;
     inset: 8px;
     z-index: 30;
-    border: 2px dashed var(--vault-accent, #dfc384);
+    border: 2px dashed var(--vault-accent);
     border-radius: 12px;
-    background: color-mix(in srgb, var(--panel-bg, #111318) 86%, transparent);
-    color: var(--text-primary, #eef0f4);
+    background: color-mix(in srgb, var(--panel-bg) 86%, transparent);
+    color: var(--text-primary, var(--sf-text));
     align-items: center;
     justify-content: center;
     gap: 10px;
@@ -1672,11 +1672,11 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
     color: var(--text-primary, inherit);
 }
 .registry-lut-async-banner.is-error {
-    border-color: var(--danger, #ef4444);
-    color: var(--danger, #f87171);
+    border-color: var(--danger);
+    color: var(--danger);
 }
 .registry-lut-async-banner.is-warning {
-    border-color: var(--vault-accent, #dfc384);
+    border-color: var(--vault-accent);
 }
 .registry-lut-conflict-modal .asset-modal {
     max-width: min(460px, calc(100vw - 32px));
