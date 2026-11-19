@@ -54,24 +54,210 @@
 /* ========================================================================= */
 /* GW-UI-SHELL-01: Workbench shell geometry. Keep nav controls stable while
    route content changes; page-specific markup may only change active state. */
-/* ===== QIN-612 全站顶栏操作/提示信息栏 =====
-   黑底圆角 + 金色脉冲点 + 页名 + 分隔线 + 状态文案；超长文字从右向左滚动，不用省略号。 */
+/* ===== QIN-612 / QIN-622 全站顶栏操作/提示信息栏 =====
+   黑底圆角 + 金色脉冲点 + 页名 + 分隔线 + 状态文案；超长文字从右向左滚动，不用省略号。
+   QIN-622：统一 42px 基准高度（剧集制片实测）、相对顶栏水平居中、空闲 15s 对称向中心收起。 */
+.topbar-master-deck {
+  --gw-topbar-msg-height: 42px;
+  --gw-topbar-text-fade-ms: 150ms;
+  --gw-topbar-box-scale-ms: 250ms;
+}
 .topbar-master-deck .gw-topbar-msg-slot {
   min-width: 0;
   flex: 0 1 auto;
   max-width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.topbar-master-deck .gw-topbar-msg-slot.is-centered {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 5;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+}
+/* 突然缩窄时先隐藏旧的居中结果，等待 resize 重新测量后恢复。 */
+@media (max-width: 900px) {
+  .topbar-master-deck .gw-topbar-msg-slot.is-centered { display: none !important; }
 }
 .topbar-master-deck .gw-topbar-msg-bar {
+  height: var(--gw-topbar-msg-height, 42px);
+  min-height: var(--gw-topbar-msg-height, 42px);
   min-width: var(--gw-topbar-min-width, 258px) !important; /* AC4：实测改前 assets 中条含箭头 257.578125px，向上取整不得改窄 */
   max-width: 100%;
   box-sizing: border-box;
   width: fit-content;
+  transform: scaleX(1);
+  transform-origin: center center;
+  /* transform 不放在常驻过渡里：展开结束若从 scaleX(1) 过渡到 none，
+     部分页面会停在 scaleX(0)，文字没有可见宽度。 */
+  transition:
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar > div {
+  transition: opacity var(--gw-topbar-text-fade-ms, 150ms) cubic-bezier(0.4, 0, 0.2, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-text-visible="0"] > div {
+  opacity: 0;
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="collapsing"] {
+  transform: scaleX(0);
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="collapsed"],
+.topbar-master-deck .gw-topbar-msg-bar.is-narrow[data-gw-topbar-collapse="collapsed"] {
+  min-width: 0 !important;
+  max-width: 0 !important;
+  width: 0 !important;
+  padding-left: 0 !important;
+  padding-right: 0 !important;
+  border-left-width: 0 !important;
+  border-right-width: 0 !important;
+  margin-left: 0 !important;
+  margin-right: 0 !important;
+  overflow: hidden !important;
+  visibility: hidden;
+  pointer-events: none;
+  transform: scaleX(0);
+  opacity: 0;
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="expanding"] {
+  transform: scaleX(1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="expanded"] {
+  transform: scaleX(1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+/* 项目页：消息栏按顶栏中心占独立列，宽度由测量写成不低于 258px 的轨道，
+   不再用 50% 中间列把栏压窄。标题和箭头只占用栏两侧的剩余轨道。 */
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered {
+  display: grid;
+  align-items: center;
+  overflow: hidden;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-project-context {
+  grid-column: 1;
+  grid-row: 1;
+  padding-right: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-msg-bar {
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: stretch;
+  width: 100%;
+  max-width: 100%;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > button {
+  grid-column: 3;
+  grid-row: 1;
+  justify-self: start;
+  padding-left: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > .gw-topbar-project-context {
+  display: contents;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing .gw-topbar-project-context > button {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  padding-right: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > .gw-topbar-msg-bar {
+  grid-column: 2;
+  grid-row: 1;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing [data-gw-topbar-project] {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > button {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: center;
+  padding-left: 0;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-bar-collapsed {
+  display: flex !important;
+  grid-template-columns: none !important;
+  left: 50% !important;
+  width: max-content !important;
+  max-width: var(--gw-topbar-sym, 100%) !important;
+  transform: translate(-50%, -50%) !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-bar-collapsed > .gw-topbar-project-context {
+  display: flex !important;
+  padding-right: 0;
+}
+.topbar-master-deck [data-gw-topbar-project-slot] > * {
+  margin-left: 0 !important;
+}
+.topbar-master-deck .gw-topbar-project-context {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  flex: 0 1 auto;
+  min-width: 0;
+  gap: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project][data-gw-topbar-title] {
+  min-width: 0;
+  flex: 0 1 auto !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-narrow > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
+  flex: 0 1 auto;
+}
+/* 窄屏为状态和项目控件留一整行，顶栏随内容增高，避免被导航遮挡。 */
+@media (max-width: 900px) {
+  .topbar-master-deck:has(> .gw-topbar-wrap-project) {
+    height: auto !important;
+  }
+  .topbar-master-deck > .gw-topbar-wrap-project.flex {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  .topbar-master-deck .gw-topbar-wrap-project > .gw-topbar-msg-slot {
+    order: 1;
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    min-height: var(--gw-topbar-msg-height);
+    gap: 8px;
+  }
 }
 /* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
    长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */
 .topbar-master-deck [data-gw-topbar-title] {
   min-width: 0 !important;
   flex: 0 1 auto !important;
+  flex-shrink: 10 !important;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -115,17 +301,28 @@
   min-width: 0;
 }
 @media (prefers-reduced-motion: reduce) {
-  .topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] { animation-duration: 30s; }
+  .topbar-master-deck .gw-topbar-msg-bar,
+  .topbar-master-deck .gw-topbar-msg-bar > div {
+    transition: none !important;
+    animation: none !important;
+  }
+  .topbar-master-deck [data-gw-topbar-status][data-gw-topbar-scrolling="1"] [data-gw-topbar-runner] { animation-duration: 30s; animation-iteration-count: 1; }
 }
 /* AC5/AC11：窄屏空隙不足 258px 时，中条退让到实测空隙内；页名与分隔线收起，
    保留脉冲点 + 状态文案滚动，避免挤压左右仪表或溢出 header 可视区。 */
 @media (max-width: 1320px) {
+  .topbar-master-deck.is-topbar-starved > div:nth-child(4) > div:last-child > div:nth-of-type(2),
+  .topbar-master-deck.is-topbar-starved .master-deck-upper > div:last-child > div:nth-of-type(2) {
+    display: none !important;
+  }
   .topbar-master-deck > .master-deck-upper.flex { gap: 4px !important; }
   .topbar-master-deck > .master-deck-upper.flex > .gw-topbar-msg-slot.is-narrow {
     flex: 0 0 auto !important;
+    overflow: hidden;
   }
   .topbar-master-deck .gw-topbar-msg-bar.is-narrow {
     min-width: 0 !important;
+    max-width: 100%;
     padding-left: 2px !important;
     padding-right: 2px !important;
     overflow: hidden;

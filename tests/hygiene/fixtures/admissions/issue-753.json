@@ -1,0 +1,20 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 753,
+  "authorization_basis": "GitHub Issue #753, 2026-11-18",
+  "files": [
+    "tests/frontend/qin-622-topbar-height-center-collapse.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-753.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-622-topbar-height-center-collapse.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #753, 2026-11-18",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-622：统一顶栏消息栏高度（42px 实测基准）并水平居中，空闲 15 秒后收起、新消息再展开；仅登记本票测试与分片，基础账本不动。"
+}

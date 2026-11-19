@@ -758,8 +758,14 @@
    * - 不落盘、不跨页、不改任何业务写协议。
    * ========================================================================================== */
   const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
+  const GW_TOPBAR_PROJECT_ARROW_PX = 40; // 切项目箭头列：32px 按钮 + 8px 间距
+  const GW_TOPBAR_PROJECT_TITLE_MIN_PX = 48; // 标题可辨下限；左侧放不下时改放到栏右侧剩余空间
   const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
   const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
+  const GW_TOPBAR_IDLE_COLLAPSE_MS = 15000; // QIN-622 AC3：空闲挂载/回空闲后 15s 自动收起
+  const GW_TOPBAR_TEXT_FADE_MS = 150;       // QIN-622：文字先隐/后显过渡时长
+  const GW_TOPBAR_BOX_SCALE_MS = 250;       // QIN-622：底框对称缩放/展开过渡时长
+  const GW_TOPBAR_BASE_HEIGHT_PX = 42;      // QIN-622 AC1：剧集制片页基准布局实测 DOM 高度 42px
   // QIN-612 AC6/AC8：全站统一的状态文案分类规则，供各业务调用方复用。
   // 转后台且不再由前台轮询收尾的提示维持 done（4s 后回空闲），避免永驻顶栏。
   const GW_TOPBAR_DETACHED_NOTICE_RE = /^(?:已转入后台|已开始缓存|AI 智能分类已启动)|可稍后刷新查看|可前往任务中心查看|请稍后再切换/;
@@ -793,8 +799,8 @@
 
   function createTopbarStatusEngine(host) {
     const timers = host.timers || {
-      setTimeout: (fn, ms) => setTimeout(fn, ms),
-      clearTimeout: id => clearTimeout(id)
+      setTimeout: (fn, ms) => (host.setTimeout || setTimeout)(fn, ms),
+      clearTimeout: id => (host.clearTimeout || clearTimeout)(id)
     };
     let generation = 0;          // 单调代际，新消息 +1
     let phase = 'idle';          // idle | progress | done
@@ -802,11 +808,84 @@
     let idleText = '准备就绪';
     let text = idleText;         // 空闲态默认即为 idleText，未 configure 也不空白（AC1）
     let idleTimer = null;
+    let collapseTimer = null;
+    let animTimer = null;
     let scrolling = false;
     let scrollEndAt = 0;
+    let collapseState = 'expanded'; // expanded | hiding-text | collapsing | collapsed | expanding
+    let textVisible = true;
 
+    function isReducedMotion() {
+      if (typeof host.prefersReducedMotion === 'function') return Boolean(host.prefersReducedMotion());
+      if (typeof host.prefersReducedMotion === 'boolean') return host.prefersReducedMotion;
+      if (typeof window !== 'undefined' && typeof window.matchMedia === 'function') {
+        return Boolean(window.matchMedia('(prefers-reduced-motion: reduce)')?.matches);
+      }
+      return false;
+    }
     function cancelIdleTimer() {
       if (idleTimer !== null) { timers.clearTimeout(idleTimer); idleTimer = null; }
+    }
+    function cancelCollapseTimers() {
+      if (collapseTimer !== null) { timers.clearTimeout(collapseTimer); collapseTimer = null; }
+      if (animTimer !== null) { timers.clearTimeout(animTimer); animTimer = null; }
+    }
+    function cancelAllTimers() {
+      cancelIdleTimer();
+      cancelCollapseTimers();
+    }
+    function scheduleIdleCollapse(token) {
+      cancelCollapseTimers();
+      if (phase !== 'idle') return;
+      collapseTimer = timers.setTimeout(() => {
+        collapseTimer = null;
+        if (token !== generation || phase !== 'idle') return;
+        if (isReducedMotion()) {
+          collapseState = 'collapsed';
+          textVisible = false;
+          host.render && host.render(snapshot());
+          return;
+        }
+        // AC3：先隐去文字，再让底框左右对称向中心缩放收起
+        collapseState = 'hiding-text';
+        textVisible = false;
+        host.render && host.render(snapshot());
+        animTimer = timers.setTimeout(() => {
+          animTimer = null;
+          if (token !== generation || phase !== 'idle') return;
+          collapseState = 'collapsing';
+          host.render && host.render(snapshot());
+          animTimer = timers.setTimeout(() => {
+            animTimer = null;
+            if (token !== generation || phase !== 'idle') return;
+            collapseState = 'collapsed';
+            host.render && host.render(snapshot());
+          }, GW_TOPBAR_BOX_SCALE_MS);
+        }, GW_TOPBAR_TEXT_FADE_MS);
+      }, GW_TOPBAR_IDLE_COLLAPSE_MS);
+    }
+    function ensureExpandedForMessage(token) {
+      if (isReducedMotion()) {
+        collapseState = 'expanded';
+        textVisible = true;
+        host.render && host.render(snapshot());
+        return;
+      }
+      if (collapseState === 'expanded' && textVisible) {
+        host.render && host.render(snapshot());
+        return;
+      }
+      // AC4：反向展开底框，再显示文字；旧计时已在入口取消，只认最新代际
+      collapseState = 'expanding';
+      textVisible = false;
+      host.render && host.render(snapshot());
+      animTimer = timers.setTimeout(() => {
+        animTimer = null;
+        if (token !== generation) return;
+        collapseState = 'expanded';
+        textVisible = true;
+        host.render && host.render(snapshot());
+      }, GW_TOPBAR_BOX_SCALE_MS);
     }
     function scheduleBackToIdle(token) {
       cancelIdleTimer();
@@ -826,19 +905,25 @@
       }, GW_TOPBAR_TTL);
     }
     function toIdle() {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       phase = 'idle';
       tone = 'info';
       text = idleText;
       scrolling = false;
       scrollEndAt = 0;
+      collapseState = 'expanded';
+      textVisible = true;
       host.render && host.render(snapshot());
+      scheduleIdleCollapse(generation);
     }
     function snapshot() {
       return {
         generation, phase, tone, text, idleText, scrolling,
-        scrollEndAt, ttl: GW_TOPBAR_TTL, minWidth: GW_TOPBAR_MIN_WIDTH
+        scrollEndAt, ttl: GW_TOPBAR_TTL, minWidth: GW_TOPBAR_MIN_WIDTH,
+        collapseState, textVisible, reducedMotion: isReducedMotion(),
+        idleCollapseMs: GW_TOPBAR_IDLE_COLLAPSE_MS,
+        baseHeightPx: GW_TOPBAR_BASE_HEIGHT_PX
       };
     }
     function configure(options = {}) {
@@ -848,7 +933,7 @@
       return snapshot();
     }
     function announce(message, options = {}) {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       const nextTone = options.tone === 'danger' ? 'danger' : 'info';
       const nextPhase = options.phase === 'progress' ? 'progress' : 'done';
@@ -858,8 +943,8 @@
       scrolling = Boolean(options.scrolling);
       scrollEndAt = scrolling ? Number(options.scrollEndAt || 0) : 0;
       const token = generation;
-      host.render && host.render(snapshot());
-      // 进行中提示挂到结束，不自动回空闲；完成/普通提示 ~4s 后回空闲（滚动则等滚完）。
+      ensureExpandedForMessage(token);
+      // 进行中提示挂到结束，不自动回空闲也不触发 15s 收起；完成/普通提示 ~4s 后回空闲（滚动则等滚完）。
       if (phase === 'done') scheduleBackToIdle(token);
       return token;
     }
@@ -874,15 +959,20 @@
       scrollEndAt = scrolling ? (host.now ? host.now() : Date.now()) + Math.max(0, Number(durationMs) || 0) : 0;
     }
     function clear() {
-      cancelIdleTimer();
+      cancelAllTimers();
       generation += 1;
       phase = 'idle';
       tone = 'info';
       text = idleText;
       scrolling = false;
       scrollEndAt = 0;
+      collapseState = 'expanded';
+      textVisible = true;
       host.render && host.render(snapshot());
+      scheduleIdleCollapse(generation);
     }
+    // 初始挂载即处于空闲态，启动 15s 空闲收起计时
+    scheduleIdleCollapse(generation);
     return Object.freeze({configure, announce, settle, clear, notifyScrolling, snapshot});
   }
 
@@ -919,18 +1009,96 @@
     // 不能拿不可见的右簇左缘当上限，否则中条跟着跑出 header（AC11）。
     const safeLeft = headerRect ? headerRect.left + 1 : 0;
     const safeRight = headerRect ? headerRect.right - 1 : (window.innerWidth || 0);
+    const edgePad = 4;
     const gapLeft = Math.max(left ? left.right : safeLeft, safeLeft);
-    // slot 与左簇之间还有 flex gap/margin；不扣掉它，写回 max-width 后仍会越界几个像素。
     const leftInset = slotRect ? Math.max(0, Math.floor(slotRect.left - gapLeft)) : 0;
-    const slotLeft = gapLeft + leftInset;
-    // 右簇若已放不下「最短中条 + 两侧间隙」，就让它沿 header 滚动区退到视口外，
-    // 中条改用 header 可视右缘为上限；否则仍以右簇左缘为上限，不压右侧仪表。
+    const slotLeft = gapLeft + edgePad;
+    // 仅当右簇已超出 header 可视右缘（同排已放不下右簇）或不在同排时，才回退使用 header 可视右缘；
+    // 只要右簇完整落在可视同排内，必须以真实 right.left 为上限，防止中条未触发 is-narrow 而压住左右仪表。
     const rightWidth = right ? right.width : 0;
-    const rightFits = rightWidth > 0 && rightWidth <= safeRight - slotLeft - 4 - GW_TOPBAR_MIN_WIDTH - 4;
-    const rightGap = rightFits ? leftInset : 4;
-    const gapRight = rightFits ? Math.min(right.left, safeRight) : safeRight;
-    const available = Math.max(0, Math.floor(gapRight - slotLeft - rightGap));
-    return {available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight, headerRect, leftInset, rightFits};
+    const rightSameRow = Boolean(
+      right && (!left || (right.top < left.bottom && right.bottom > left.top))
+    );
+    // 右簇只要左缘还在顶栏内，就必须用它当上限。右缘溢出不能当成右簇已离开，
+    // 否则会退回 safeRight，把 258px 消息栏盖到仍可见的左右簇上（900px 工作流/资产页）。
+    const rightStartsInside = Boolean(
+      rightWidth > 0 && rightSameRow && right.left < safeRight - 4
+    );
+    const rightFits = rightStartsInside;
+    const gapRight = rightStartsInside ? Math.min(right.left, safeRight) : safeRight;
+    const available = Math.max(0, Math.floor(gapRight - slotLeft - edgePad));
+    // QIN-622 AC2：以整个顶栏中心为轴，计算不碰左右簇的对称可用宽度。
+    const headerWidth = headerRect ? headerRect.width : (window.innerWidth || 0);
+    const headerCenter = headerRect ? (headerRect.left + headerRect.width / 2) : (headerWidth / 2);
+    const symLeftEdge = left ? (left.right + 8) : (safeLeft + 8);
+    const symRightEdge = rightStartsInside ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
+    const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
+    const centered = headerWidth > 900 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
+    const clusterRightLimit = rightStartsInside ? (right.left - 8) : (safeRight - 4);
+    return {
+      available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight,
+      headerRect, leftInset, rightFits, symAvailable, centered,
+      headerCenter, symLeftEdge, clusterRightLimit
+    };
+  }
+  // 项目页居中：消息栏以顶栏中心为轴，宽度不低于 258px，且不超过对称净空。
+  // 槽横跨左右簇之间的整段空隙，标题放在放得下的一侧，避免为给标题让路把栏压到 50%。
+  function topbarProjectGeometry(measure, contentWidth = 0) {
+    const slotLeft = Number(measure.symLeftEdge) || 0;
+    const slotRight = Number(measure.clusterRightLimit) || slotLeft;
+    const slotWidth = Math.max(0, slotRight - slotLeft);
+    const symAvailable = Math.max(0, Number(measure.symAvailable) || 0);
+    const center = Number(measure.headerCenter) || 0;
+    const barWidth = Math.min(symAvailable, Math.max(GW_TOPBAR_MIN_WIDTH, Number(contentWidth) || 0));
+    const barLeft = center - barWidth / 2;
+    const barRight = barLeft + barWidth;
+    const leftCol = barLeft - slotLeft;
+    const rightCol = slotRight - barRight;
+    const leftTitleRoom = leftCol - GW_TOPBAR_PROJECT_ARROW_PX;
+    const rightTitleRoom = rightCol - GW_TOPBAR_PROJECT_ARROW_PX;
+    const titleOnRight = leftTitleRoom < GW_TOPBAR_PROJECT_TITLE_MIN_PX && rightTitleRoom >= leftTitleRoom;
+    const titleWidth = Math.max(0, titleOnRight ? rightTitleRoom : leftTitleRoom);
+    const columns = titleOnRight
+      ? `${leftCol}px ${barWidth}px ${Math.max(0, rightCol - GW_TOPBAR_PROJECT_ARROW_PX)}px ${GW_TOPBAR_PROJECT_ARROW_PX}px`
+      : `${leftCol}px ${barWidth}px ${rightCol}px`;
+    const arrow = GW_TOPBAR_PROJECT_ARROW_PX;
+    const boxes = {
+      bar: {left: barLeft, right: barRight},
+      prev: titleOnRight
+        ? {left: Math.max(slotLeft, barLeft - arrow), right: barLeft}
+        : {left: slotLeft, right: Math.min(barLeft, slotLeft + arrow)},
+      title: titleOnRight
+        ? {left: barRight, right: Math.max(barRight, slotRight - arrow)}
+        : {left: Math.min(barLeft, slotLeft + arrow), right: barLeft},
+      next: titleOnRight
+        ? {left: Math.min(slotRight, slotRight - arrow), right: slotRight}
+        : {left: barRight, right: Math.min(slotRight, barRight + arrow)}
+    };
+    return {
+      slotLeft, slotRight, slotWidth, barWidth, barLeft, barRight, leftCol, rightCol,
+      titleOnRight, titleWidth, columns, boxes
+    };
+  }
+  function topbarProjectContentWidth(bar, node) {
+    const box = bar?.getBoundingClientRect?.().width || 0;
+    const runner = node?.querySelector?.('[data-gw-topbar-runner]');
+    const text = runner?.scrollWidth || node?.scrollWidth || 0;
+    return Math.max(box, text + 36);
+  }
+  function topbarIsProjectSlot(slot) {
+    return Boolean(slot && typeof slot.hasAttribute === 'function' && slot.hasAttribute('data-gw-topbar-project-slot'));
+  }
+  function topbarResetProjectLayout(slot, bar) {
+    slot.classList?.remove('is-title-trailing');
+    slot.style.left = '';
+    slot.style.top = '';
+    slot.style.transform = '';
+    slot.style.gridTemplateColumns = '';
+    slot.style.removeProperty?.('--gw-topbar-sym');
+    if (!bar) return;
+    bar.style.width = '';
+    bar.style.minWidth = '';
+    bar.style.maxWidth = '';
   }
   // 把可用空隙写成 slot 的 max-width：父链 min-width:max-content 会让 100% 失效，
   // 必须有基于左右簇实测间隙的硬上限，超长时状态节点才会 overflow 并触发滚动。
@@ -940,27 +1108,70 @@
       const slot = node.closest?.('.gw-topbar-msg-slot') || node.parentElement?.parentElement;
       const bar = node.closest?.('.gw-topbar-msg-bar') || node.parentElement;
       if (!slot || !bar) continue;
-      // 极窄屏下左簇若把空隙吃光（agents 页多一枚状态徽章时只剩 11px），
-      // 先让非仪表徽章退位再量一次，确保状态文案始终有可视宽；CPU/RAM 仪表不动。
+      // 极窄屏下左簇或右簇装饰区把空隙吃光时，先让可退位项退位再量一次，
+      // 确保状态文案始终有可视宽且不压住左右仪表；CPU/RAM 仪表不动。
       const header = bar.closest?.('.topbar-master-deck');
       header?.classList.remove('is-topbar-starved');
+      slot.classList?.remove('is-centered', 'is-narrow', 'is-title-trailing');
+      bar.classList?.remove('is-narrow');
+      if (slot.parentElement?.classList?.contains('gw-topbar-wrap-project')
+          && window.matchMedia?.('(max-width: 900px)').matches) {
+        topbarResetProjectLayout(slot, bar);
+        slot.style.width = '';
+        slot.style.maxWidth = '';
+        continue;
+      }
+      // 先临时清零 slot 宽度，以无中条干扰的纯净左右簇边界测量真实净空。
+      slot.style.maxWidth = '0px';
+      slot.style.width = '0px';
       let measure = topbarMeasureWidths(bar);
       if (measure.available < GW_TOPBAR_MIN_STATUS_WIDTH && header) {
         header.classList.add('is-topbar-starved');
         measure = topbarMeasureWidths(bar);
       }
-      const {available, wide} = measure;
-      // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
-      // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
-      // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
-      slot.style.maxWidth = `${available}px`;
-      slot.style.width = `${available}px`;
-      slot.classList.toggle('is-narrow', !wide);
-      bar.classList.toggle('is-narrow', !wide);
+      topbarResetProjectLayout(slot, bar);
+      if (measure.centered && topbarIsProjectSlot(slot)) {
+        const geo = topbarProjectGeometry(measure, topbarProjectContentWidth(bar, node));
+        const anchor = slot.parentElement?.getBoundingClientRect?.();
+        const anchorLeft = anchor && Number.isFinite(anchor.left) ? anchor.left : (measure.headerRect?.left || 0);
+        slot.classList?.add('is-centered');
+        slot.classList?.toggle('is-title-trailing', geo.titleOnRight);
+        slot.style.left = `${geo.slotLeft - anchorLeft}px`;
+        slot.style.top = '50%';
+        slot.style.transform = 'translateY(-50%)';
+        slot.style.width = `${geo.slotWidth}px`;
+        slot.style.maxWidth = `${geo.slotWidth}px`;
+        slot.style.gridTemplateColumns = geo.columns;
+        slot.style.setProperty?.('--gw-topbar-sym', `${measure.symAvailable}px`);
+        bar.style.width = `${geo.barWidth}px`;
+        bar.style.minWidth = `${geo.barWidth}px`;
+        bar.style.maxWidth = `${geo.barWidth}px`;
+        slot.classList.remove('is-narrow');
+        bar.classList.remove('is-narrow');
+      } else if (measure.centered) {
+        slot.classList?.add('is-centered');
+        slot.style.maxWidth = `${measure.symAvailable}px`;
+        slot.style.width = 'fit-content';
+        slot.classList.remove('is-narrow');
+        bar.classList.remove('is-narrow');
+      } else {
+        const {available, wide} = measure;
+        // slot 是 flex item：父链 min-width:max-content + 兄弟 shrink-0 会把它压到几个像素，
+        // 而 bar 的最小宽又让它溢出 slot（复核实测 900/assets slot 7px / bar 258px）。
+        // 因此无论宽窄都显式定宽，bar 用 fit-content 在 slot 内随文伸缩。
+        slot.style.maxWidth = `${available}px`;
+        slot.style.width = `${available}px`;
+        slot.classList.toggle('is-narrow', !wide);
+        bar.classList.toggle('is-narrow', !wide);
+      }
       // 页名 shrink-0 曾把状态节点挤到 0 宽，长文案既不可见也不滚动；
-      // 空间不足时先收起页名与分隔线，把余量全部留给状态文案。
+      // 仅在状态文案确实被挤压溢出或已进入窄屏退让时才收起页名，避免宽屏短文案误藏页名/项目名。
       bar.classList.remove('is-compact');
-      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+      const statusRunner = node.querySelector?.('[data-gw-topbar-runner]');
+      const statusOverflow = (statusRunner ? statusRunner.scrollWidth : node.scrollWidth) > (node.clientWidth || 0) + 1;
+      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH && (bar.classList.contains('is-narrow') || statusOverflow)) {
+        bar.classList.add('is-compact');
+      }
     }
   }
   function topbarRender(state) {
@@ -985,7 +1196,20 @@
       const bar = node.closest?.('.gw-topbar-msg-bar');
       if (bar) {
         bar.classList.remove('is-compact');
-        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+        const runnerOverflow = (runner?.scrollWidth || node.scrollWidth || 0) > (node.clientWidth || 0) + 1;
+        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH && (bar.classList.contains('is-narrow') || runnerOverflow)) {
+          bar.classList.add('is-compact');
+        }
+        if (bar.dataset) {
+          bar.dataset.gwTopbarCollapse = state.collapseState || 'expanded';
+          bar.dataset.gwTopbarTextVisible = state.textVisible === false ? '0' : '1';
+        }
+        if (typeof bar.setAttribute === 'function' && typeof bar.removeAttribute === 'function') {
+          if (state.collapseState === 'collapsed') bar.setAttribute('aria-hidden', 'true');
+          else bar.removeAttribute('aria-hidden');
+        }
+        const slot = bar.closest?.('.gw-topbar-msg-slot') || bar.parentElement;
+        slot?.classList?.toggle('is-bar-collapsed', state.collapseState === 'collapsed');
       }
       node.classList.toggle('is-danger', state.tone === 'danger');
       node.setAttribute('aria-busy', state.phase === 'progress' ? 'true' : 'false');
@@ -998,7 +1222,7 @@
       if (overflow && !node.dataset.gwTopbarNoScroll) {
         const distance = contentWidth - viewportWidth;
         // 速度约 60px/s，留 0.6s 首尾停顿；duration 单位秒。
-        const duration = Math.max(4, Math.round((distance / 60 + 1.2) * 10) / 10);
+        const duration = state.reducedMotion ? 30 : Math.max(4, Math.round((distance / 60 + 1.2) * 10) / 10);
         node.dataset.gwTopbarScrolling = '1';
         node.style.setProperty('--gw-topbar-scroll-distance', `${distance}px`);
         node.style.setProperty('--gw-topbar-scroll-duration', `${duration}s`);
@@ -1034,11 +1258,19 @@
     bind: bindTopbarStatus,
     classify: classifyTopbarStatus,
     measureWidths: topbarMeasureWidths,
+    projectGeometry: topbarProjectGeometry,
     announce(message, options) { return topbarEngine ? topbarEngine.announce(message, options) : null; },
     settle(token, message, options) { return topbarEngine ? topbarEngine.settle(token, message, options) : false; },
     clear() { return topbarEngine ? topbarEngine.clear() : undefined; },
     snapshot() { return topbarEngine ? topbarEngine.snapshot() : null; },
-    CONSTANTS: Object.freeze({MIN_WIDTH: GW_TOPBAR_MIN_WIDTH, TTL: GW_TOPBAR_TTL})
+    CONSTANTS: Object.freeze({
+      MIN_WIDTH: GW_TOPBAR_MIN_WIDTH,
+      TTL: GW_TOPBAR_TTL,
+      IDLE_COLLAPSE_MS: GW_TOPBAR_IDLE_COLLAPSE_MS,
+      TEXT_FADE_MS: GW_TOPBAR_TEXT_FADE_MS,
+      BOX_SCALE_MS: GW_TOPBAR_BOX_SCALE_MS,
+      BASE_HEIGHT_PX: GW_TOPBAR_BASE_HEIGHT_PX
+    })
   });
 
   function init() {
