@@ -129,6 +129,7 @@ tests/frontend/qin-612-topbar-message-bar.test.mjs
 tests/frontend/qin-613-theme-preference-fix.test.mjs
 tests/frontend/qin-615-asset-sidebar-light-contrast.test.mjs
 tests/frontend/qin-619-dedup-full-sha.test.mjs
+tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

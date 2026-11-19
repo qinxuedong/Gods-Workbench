@@ -192,6 +192,10 @@ window.WorkbenchCollab = (() => {
     const button = el('collabRefresh');
     button.disabled = true;
     try {
+      const centerFrame = el('collabCenterFrame');
+      if (centerFrame?.contentWindow) {
+        centerFrame.contentWindow.postMessage({type: 'gw-collab-center-refresh', version: 1}, location.origin);
+      }
       await Promise.all(['members', 'teams', 'audit', 'approvals'].map(key => loadPage(key)));
       if (lifecycle !== ownerLifecycle || ownerLifecycle.signal.aborted) return;
       await loadMessageContext(ownerLifecycle);
