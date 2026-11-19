@@ -81,7 +81,7 @@
 }
 /* 突然缩窄时先隐藏旧的居中结果，等待 resize 重新测量后恢复。 */
 @media (max-width: 900px) {
-  .topbar-master-deck .gw-topbar-msg-slot.is-centered { visibility: hidden; }
+  .topbar-master-deck .gw-topbar-msg-slot.is-centered { display: none !important; }
 }
 .topbar-master-deck .gw-topbar-msg-bar {
   height: var(--gw-topbar-msg-height, 42px);
