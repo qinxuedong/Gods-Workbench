@@ -1029,7 +1029,7 @@
     const symLeftEdge = left ? (left.right + 8) : (safeLeft + 8);
     const symRightEdge = rightInViewport ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
     const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
-    const centered = headerWidth > 760 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
+    const centered = headerWidth > 900 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
     return {
       available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight,
       headerRect, leftInset, rightFits, symAvailable, centered
@@ -1060,7 +1060,8 @@
       if (measure.centered) {
         slot.classList?.add('is-centered');
         slot.style.maxWidth = `${measure.symAvailable}px`;
-        slot.style.width = 'fit-content';
+        slot.style.width = slot.hasAttribute?.('data-gw-topbar-project-slot')
+          ? `${measure.symAvailable}px` : 'fit-content';
         slot.classList.remove('is-narrow');
         bar.classList.remove('is-narrow');
       } else {

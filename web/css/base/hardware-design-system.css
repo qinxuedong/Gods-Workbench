@@ -80,7 +80,7 @@
   margin-right: 0 !important;
 }
 /* 突然缩窄时先隐藏旧的居中结果，等待 resize 重新测量后恢复。 */
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .topbar-master-deck .gw-topbar-msg-slot.is-centered { visibility: hidden; }
 }
 .topbar-master-deck .gw-topbar-msg-bar {
@@ -129,6 +129,40 @@
   opacity: 1;
   visibility: visible;
   pointer-events: auto;
+}
+/* 等宽侧列使项目标题不会推偏消息栏。 */
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 50%) minmax(0, 1fr);
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-msg-bar {
+  justify-self: center;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
+  min-width: min(var(--gw-topbar-min-width, 258px), 100%) !important;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > button {
+  justify-self: start;
+}
+.topbar-master-deck [data-gw-topbar-project-slot] > * {
+  margin-left: 0 !important;
+}
+.topbar-master-deck .gw-topbar-project-context {
+  display: flex;
+  align-items: center;
+  justify-content: end;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+.topbar-master-deck [data-gw-topbar-project][data-gw-topbar-title] {
+  min-width: 0;
+  flex: 0 1 auto !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-narrow > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
+  flex: 0 1 auto;
 }
 /* 页名允许收缩：原 markup 的 shrink-0 会在空间不足时把状态节点挤到 0 宽，
    长文案既看不见也滚不动（审核复核 18 个样例）。状态节点自身不用省略号。 */

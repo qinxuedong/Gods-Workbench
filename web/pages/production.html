@@ -87,9 +87,11 @@
         </div>
       </div>
 
-      <div class="flex items-center space-x-2 gw-topbar-msg-slot min-w-0">
-        <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchProduction.prevProject()" title="切换至上一个项目" aria-label="切换至上一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
-        <span class="gw-type-body-sm font-mono font-bold text-[#eddab3] shrink-0" id="currentProjectDisplayTitle" data-gw-topbar-title>《神谕之地》· 剧集制片工坊</span>
+      <div class="flex items-center space-x-2 gw-topbar-msg-slot min-w-0" data-gw-topbar-project-slot>
+        <div class="gw-topbar-project-context">
+          <button type="button" class="transition cursor-pointer btn-hw-round shrink-0" onclick="WorkbenchProduction.prevProject()" title="切换至上一个项目" aria-label="切换至上一个项目"><span class="btn-hw-round-inner"><i data-lucide="chevron-left" class="w-3.5 h-3.5" aria-hidden="true"></i></span></button>
+          <span class="gw-type-body-sm font-mono font-bold text-[#eddab3] shrink-0" id="currentProjectDisplayTitle" data-gw-topbar-title data-gw-topbar-project>《神谕之地》· 剧集制片工坊</span>
+        </div>
         <div class="flex items-center space-x-1.5 bg-[#07080b] px-3 py-1 rounded-lg border border-white/10 shadow-inner gw-topbar-msg-bar">
           <div class="flex items-center space-x-2 px-1.5 min-w-0 flex-1">
             <span class="w-1.5 h-1.5 rounded-full bg-[#dfc384] shadow-[0_0_6px_#dfc384] animate-pulse shrink-0"></span>
