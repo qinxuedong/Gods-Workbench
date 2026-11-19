@@ -1129,7 +1129,7 @@
       if (overflow && !node.dataset.gwTopbarNoScroll) {
         const distance = contentWidth - viewportWidth;
         // 速度约 60px/s，留 0.6s 首尾停顿；duration 单位秒。
-        const duration = Math.max(4, Math.round((distance / 60 + 1.2) * 10) / 10);
+        const duration = state.reducedMotion ? 30 : Math.max(4, Math.round((distance / 60 + 1.2) * 10) / 10);
         node.dataset.gwTopbarScrolling = '1';
         node.style.setProperty('--gw-topbar-scroll-distance', `${distance}px`);
         node.style.setProperty('--gw-topbar-scroll-duration', `${duration}s`);
