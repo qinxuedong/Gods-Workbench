@@ -119,6 +119,7 @@
   let queuedReload = false;
   let requestGeneration = 0;
   let activeAbortController = null;
+  let activePageAbortController = null;
 
   const tr = key => window.StudioI18n?.t?.(key) || key;
   const trf = (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), tr(key));
@@ -566,6 +567,9 @@
         value.forEach(item => { if (item !== undefined && item !== null && String(item)) query.append(key, String(item)); });
       } else if (value !== undefined && value !== null && String(value)) query.set(key, String(value));
     });
+    if (EMBEDDED && (scope === 'events' || scope === 'event-deep-link') && !query.get('source')) {
+      query.set('source', 'agent_runtime');
+    }
     return query;
   }
 
@@ -1232,6 +1236,7 @@
     if (!EMBEDDED && !acquireDataRequest('refresh')) return;
     const gen = ++requestGeneration;
     if (activeAbortController) activeAbortController.abort();
+    if (activePageAbortController) { activePageAbortController.abort(); activePageAbortController = null; }
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     activeAbortController = controller;
     const reqOpts = controller ? {signal: controller.signal} : undefined;
@@ -1370,24 +1375,66 @@
   }
 
   async function loadMoreEvents() {
-    if (!state.nextCursor || state.loading || !acquireDataRequest('events-page')) return; state.loading = true; render();
-    try { const query = setQueryWindow(observationQuery({limit: 50, cursor: state.nextCursor}, 'events'), state.eventWindow); const data = await api(`${ENDPOINTS.events}?${query}`); state.events = state.events.concat(firstArray(data, ['events', 'items', 'data']).map(eventRecord)); state.eventWindow = responseWindow(data) || state.eventWindow; state.nextCursor = cleanId(data.next_cursor || data.cursor?.next || data.meta?.next_cursor); state.hasMore = Boolean(data.has_more || state.nextCursor); }
-    catch (error) { if (isPermissionError(error)) state.permissionDenied = true; showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.eventsUnavailable')), 'error'); }
-    finally { const shouldReload = finishDataRequest('events-page'); state.loading = false; render(); runQueuedReload(shouldReload); }
+    if (!state.nextCursor || state.loading || (!EMBEDDED && !acquireDataRequest('events-page'))) return;
+    const gen = requestGeneration;
+    if (activePageAbortController) activePageAbortController.abort();
+    const pageController = typeof AbortController === 'function' ? new AbortController() : null;
+    activePageAbortController = pageController;
+    const reqOpts = pageController ? {signal: pageController.signal} : undefined;
+    state.loading = true; render();
+    try {
+      const query = setQueryWindow(observationQuery({limit: 50, cursor: state.nextCursor}, 'events'), state.eventWindow);
+      const data = await api(`${ENDPOINTS.events}?${query}`, reqOpts);
+      if (gen !== requestGeneration || pageController?.signal?.aborted) return;
+      state.events = state.events.concat(firstArray(data, ['events', 'items', 'data']).map(eventRecord));
+      state.eventWindow = responseWindow(data) || state.eventWindow;
+      state.nextCursor = cleanId(data.next_cursor || data.cursor?.next || data.meta?.next_cursor);
+      state.hasMore = Boolean(data.has_more || state.nextCursor);
+    } catch (error) {
+      if (gen !== requestGeneration || pageController?.signal?.aborted || error?.name === 'AbortError') return;
+      if (isPermissionError(error)) state.permissionDenied = true;
+      showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.eventsUnavailable')), 'error');
+    } finally {
+      const shouldReload = EMBEDDED ? false : finishDataRequest('events-page');
+      if (activePageAbortController === pageController) activePageAbortController = null;
+      if (gen === requestGeneration) {
+        state.loading = false;
+        render();
+      }
+      runQueuedReload(shouldReload);
+    }
   }
 
   async function loadMoreTasks() {
-    if (!state.taskNextCursor || state.loading || !acquireDataRequest('tasks-page')) return; state.loading = true; render();
+    if (!state.taskNextCursor || state.loading || (!EMBEDDED && !acquireDataRequest('tasks-page'))) return;
+    const gen = requestGeneration;
+    if (activePageAbortController) activePageAbortController.abort();
+    const pageController = typeof AbortController === 'function' ? new AbortController() : null;
+    activePageAbortController = pageController;
+    const reqOpts = pageController ? {signal: pageController.signal} : undefined;
+    state.loading = true; render();
     try {
       const query = setQueryWindow(observationQuery({limit: 50, cursor: state.taskNextCursor}, 'tasks'), state.taskWindow);
-      const data = await api(`${ENDPOINTS.tasks}?${query}`);
+      const data = await api(`${ENDPOINTS.tasks}?${query}`, reqOpts);
+      if (gen !== requestGeneration || pageController?.signal?.aborted) return;
       state.tasks = state.tasks.concat(firstArray(data, ['items', 'tasks']).map(persistentTask).filter(item => item.id));
       state.taskWindow = responseWindow(data) || state.taskWindow;
       noteDataStatus(data, tr('taskCenter.tasksUnavailable'));
       state.taskNextCursor = cleanId(data.next_cursor || data.cursor?.next || data.meta?.next_cursor);
       state.taskHasMore = Boolean(data.has_more || state.taskNextCursor);
-    } catch (error) { if (isPermissionError(error)) state.permissionDenied = true; showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.tasksUnavailable')), 'error'); }
-    finally { const shouldReload = finishDataRequest('tasks-page'); state.loading = false; render(); runQueuedReload(shouldReload); }
+    } catch (error) {
+      if (gen !== requestGeneration || pageController?.signal?.aborted || error?.name === 'AbortError') return;
+      if (isPermissionError(error)) state.permissionDenied = true;
+      showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.tasksUnavailable')), 'error');
+    } finally {
+      const shouldReload = EMBEDDED ? false : finishDataRequest('tasks-page');
+      if (activePageAbortController === pageController) activePageAbortController = null;
+      if (gen === requestGeneration) {
+        state.loading = false;
+        render();
+      }
+      runQueuedReload(shouldReload);
+    }
   }
 
   function focusEvent(eventId) { const node = document.querySelector(`[data-open-event="${CSS.escape(String(eventId))}"]`); if (node) { node.scrollIntoView({block: 'center'}); node.focus(); } }
@@ -1511,6 +1558,7 @@
     stopAutoRefresh();
     ++requestGeneration;
     if (activeAbortController) { activeAbortController.abort(); activeAbortController = null; }
+    if (activePageAbortController) { activePageAbortController.abort(); activePageAbortController = null; }
   });
   window.addEventListener('hashchange', () => {
     const hash = location.hash.slice(1);

@@ -544,3 +544,279 @@ test("AC2 必改3: HTTP 200 + SOURCE_UNAVAILABLE 降级空结果不得画成暂�
   broken.viewNav.dispatchEvent({ type: "keydown", key: "ArrowRight" });
   assert.equal(broken.tabLogs.getAttribute("aria-selected"), "true");
 });
+
+test("AC1 R2阻断1: 默认筛选下日志翻页保持 source=agent_runtime，绝不发出空 source 串入认证审计", async () => {
+  const eventSources = [];
+  const { nodes } = bootTaskCenter(async (url) => {
+    const parsed = new URL(url, "http://127.0.0.1:2077");
+    if (parsed.pathname === "/api/observability/events") {
+      eventSources.push(parsed.searchParams.get("source"));
+      const cursor = parsed.searchParams.get("cursor");
+      if (!cursor) {
+        return {
+          data_status: "ok",
+          items: [
+            {
+              event_id: "ev-page-1",
+              event_name: "job.running",
+              level: "info",
+              status: "running",
+              source: "asset_registry",
+              message_safe: "第一页运行事件",
+              timestamp: "2026-11-18T12:00:00Z",
+            },
+          ],
+          has_more: true,
+          next_cursor: "obs1:50",
+        };
+      }
+      return {
+        data_status: "ok",
+        items: [
+          {
+            event_id: "ev-page-2",
+            event_name: "job.completed",
+            level: "info",
+            status: "succeeded",
+            source: "asset_registry",
+            message_safe: "第二页运行事件",
+            timestamp: "2026-11-18T11:59:00Z",
+          },
+        ],
+        has_more: false,
+        next_cursor: null,
+      };
+    }
+    return { data_status: "ok", items: [] };
+  });
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(nodes["#logRows"].innerHTML, /第一页运行事件/);
+  assert.equal(nodes["#loadMoreEvents"].disabled, false);
+
+  nodes["#loadMoreEvents"].dispatchEvent({ type: "click" });
+  await new Promise((r) => setTimeout(r, 20));
+
+  assert.deepEqual(eventSources, ["agent_runtime", "agent_runtime"]);
+  assert.match(nodes["#logRows"].innerHTML, /第一页运行事件/);
+  assert.match(nodes["#logRows"].innerHTML, /第二页运行事件/);
+});
+
+test("AC6 R2阻断2: 任务与日志翻页被新筛选取代后，迟到成功或迟到错误均不得污染新列表与状态", async () => {
+  const pendingPages = [];
+  const { nodes } = bootTaskCenter((url, options = {}) => {
+    const parsed = new URL(url, "http://127.0.0.1:2077");
+    const cursor = parsed.searchParams.get("cursor");
+    const range = parsed.searchParams.get("range");
+    if (cursor) {
+      return new Promise((resolve, reject) => {
+        pendingPages.push({ path: parsed.pathname, signal: options.signal, resolve, reject });
+      });
+    }
+    if (parsed.pathname === "/api/observability/tasks") {
+      if (range === "24h") {
+        return Promise.resolve({
+          data_status: "ok",
+          items: [{ job_id: "new-filter-job", status: "succeeded", source: "asset_registry" }],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      return Promise.resolve({
+        data_status: "ok",
+        items: [{ job_id: "page1-job", status: "running", source: "asset_registry" }],
+        has_more: true,
+        next_cursor: "obs1:50",
+      });
+    }
+    if (parsed.pathname === "/api/observability/events") {
+      if (range === "24h") {
+        return Promise.resolve({
+          data_status: "ok",
+          items: [
+            {
+              event_id: "new-filter-ev",
+              event_name: "job.completed",
+              level: "info",
+              status: "succeeded",
+              source: "asset_registry",
+              message_safe: "new-filter-event",
+              timestamp: "2026-11-18T12:05:00Z",
+            },
+          ],
+          has_more: false,
+          next_cursor: null,
+        });
+      }
+      return Promise.resolve({
+        data_status: "ok",
+        items: [
+          {
+            event_id: "page1-ev",
+            event_name: "job.running",
+            level: "info",
+            status: "running",
+            source: "asset_registry",
+            message_safe: "page1-event",
+            timestamp: "2026-11-18T12:00:00Z",
+          },
+        ],
+        has_more: true,
+        next_cursor: "obs1:50",
+      });
+    }
+    return Promise.resolve({ data_status: "ok", items: [] });
+  });
+
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(nodes["#taskRows"].innerHTML, /page1-job/);
+
+  // 1) 挂起任务翻页，再切至 24h，随后放行旧任务翻页 resolve stale-page-job
+  nodes["#loadMoreTasks"].dispatchEvent({ type: "click" });
+  await new Promise((r) => setTimeout(r, 5));
+  assert.equal(pendingPages.length, 1);
+  const staleTaskPage = pendingPages[0];
+  assert.equal(staleTaskPage.signal.aborted, false);
+
+  nodes["#observationRange"].value = "24h";
+  nodes["#observationRange"].dispatchEvent({ type: "change" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(staleTaskPage.signal.aborted, true);
+  assert.match(nodes["#taskRows"].innerHTML, /new-filter-job/);
+
+  staleTaskPage.resolve({
+    data_status: "ok",
+    items: [{ job_id: "stale-page-job", status: "failed", source: "asset_registry" }],
+    has_more: false,
+    next_cursor: null,
+  });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(nodes["#taskRows"].innerHTML, /new-filter-job/);
+  assert.doesNotMatch(nodes["#taskRows"].innerHTML, /stale-page-job/);
+
+  // 2) 切回 15m 拿到有下一页的日志，挂起日志翻页后切至 24h，放行旧日志页 reject 不得污染 toast/列表
+  nodes["#observationRange"].value = "15m";
+  nodes["#observationRange"].dispatchEvent({ type: "change" });
+  await new Promise((r) => setTimeout(r, 20));
+
+  nodes["#loadMoreEvents"].dispatchEvent({ type: "click" });
+  await new Promise((r) => setTimeout(r, 5));
+  const staleEventPage = pendingPages[1];
+  assert.ok(staleEventPage);
+  assert.equal(staleEventPage.signal.aborted, false);
+
+  nodes["#observationRange"].value = "24h";
+  nodes["#observationRange"].dispatchEvent({ type: "change" });
+  await new Promise((r) => setTimeout(r, 20));
+  assert.equal(staleEventPage.signal.aborted, true);
+  assert.match(nodes["#logRows"].innerHTML, /new-filter-event/);
+
+  nodes["#taskToast"].textContent = "";
+  staleEventPage.reject(new Error("迟到的旧页错误"));
+  await new Promise((r) => setTimeout(r, 20));
+  assert.match(nodes["#logRows"].innerHTML, /new-filter-event/);
+  assert.doesNotMatch(nodes["#logRows"].innerHTML, /stale-page-event/);
+  assert.equal(nodes["#taskToast"].textContent, "");
+});
+
+test("AC6 1500ms 与 5000ms 等值虚拟时钟控制: 返回前不提前就绪，5000ms 定时轮询不中断慢请求", async (t) => {
+  t.mock.timers.enable({ apis: ["setTimeout", "setInterval"] });
+  let delayMs = 1500;
+  let calls = 0;
+  const dom = buildEmbeddedDom();
+  const winListeners = new Map();
+  const windowObj = {
+    self: {},
+    top: {},
+    parent: { postMessage() {} },
+    location: {
+      origin: "http://127.0.0.1:2077",
+      href: "http://127.0.0.1:2077/static/embeds/task-center.html?embedded=1&view=tasks",
+      search: "?embedded=1&view=tasks",
+      hash: "",
+    },
+    addEventListener(type, fn) {
+      if (!winListeners.has(type)) winListeners.set(type, []);
+      winListeners.get(type).push(fn);
+    },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+  };
+  const sandbox = {
+    window: windowObj,
+    self: windowObj.self,
+    top: windowObj.top,
+    document: dom.document,
+    location: windowObj.location,
+    history: { replaceState() {} },
+    localStorage: { getItem: () => null },
+    URL,
+    URLSearchParams,
+    AbortController,
+    CSS: { escape: (v) => String(v) },
+    setTimeout,
+    clearTimeout,
+    setInterval,
+    clearInterval,
+    Workspace: {
+      api(url, options = {}) {
+        calls += 1;
+        const myDelay = delayMs;
+        return new Promise((resolve, reject) => {
+          const timer = setTimeout(() => {
+            if (options.signal?.aborted) {
+              const err = new Error("Aborted");
+              err.name = "AbortError";
+              reject(err);
+              return;
+            }
+            if (url.startsWith("/api/observability/tasks")) {
+              resolve({
+                data_status: "ok",
+                items: [{ job_id: `job-delay-${myDelay}`, status: "running", source: "asset_registry" }],
+              });
+            } else {
+              resolve({ data_status: "ok", items: [] });
+            }
+          }, myDelay);
+          options.signal?.addEventListener?.("abort", () => clearTimeout(timer));
+        });
+      },
+      escapeHtml: (v) => String(v ?? ""),
+      dateTime: (v) => String(v || "—"),
+      timeValue: (v) => String(v || "—"),
+      navigate() {},
+      reportTouchbarCapabilities() {},
+    },
+  };
+  vm.runInNewContext(taskCenterJs, sandbox);
+
+  // 1) 1500ms 慢请求：1499ms 时未完成，不得提前标空态或就绪
+  t.mock.timers.tick(1499);
+  await Promise.resolve();
+  assert.doesNotMatch(dom.nodes["#taskRows"].innerHTML, /job-delay-1500|emptyTasks|暂无任务/);
+  assert.match(dom.nodes["#refreshState"].textContent, /载入|刷新|refreshing|loading/);
+
+  t.mock.timers.tick(1);
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.match(dom.nodes["#taskRows"].innerHTML, /job-delay-1500/);
+
+  // 2) 5000ms 慢请求：切筛选发起 5000ms 请求，推进 4999ms 期间即使命中 5000ms 定时轮询也不得中止
+  delayMs = 5000;
+  const callsBefore = calls;
+  dom.nodes["#observationRange"].value = "24h";
+  dom.nodes["#observationRange"].dispatchEvent({ type: "change" });
+  await Promise.resolve();
+  assert.equal(calls, callsBefore + 2);
+
+  t.mock.timers.tick(4999);
+  for (let i = 0; i < 4; i++) await Promise.resolve();
+  assert.equal(calls, callsBefore + 2, "5000ms 慢请求在途期间定时轮询不得中断并重发");
+  assert.match(dom.nodes["#refreshState"].textContent, /载入|刷新|refreshing|loading/);
+
+  t.mock.timers.tick(1);
+  for (let i = 0; i < 6; i++) await Promise.resolve();
+  assert.match(dom.nodes["#taskRows"].innerHTML, /job-delay-5000/);
+});
