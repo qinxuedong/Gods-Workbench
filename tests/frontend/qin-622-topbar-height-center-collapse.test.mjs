@@ -268,9 +268,23 @@ test('AC2 相对整个顶栏水平居中：不对称左右仪表下宽屏居中�
     assert.equal(shortStatusDom.bar.classList.contains('is-compact'), false,
         '宽屏短文案未溢出时不得误触发 is-compact 隐藏页名/当前项目名');
 
-    // 模拟 724px 窄屏（右簇已超出 header 可视右缘）：自动退出绝对居中并回退 safeRight
-    const narrowDom = buildTopbarDom({headerWidth: 724, leftRight: 513, rightLeft: 517});
-    narrowDom.upper.children[2].getBoundingClientRect = () => ({left: 517, right: 765, width: 248, top: 4, bottom: 52, height: 48});
+    // 右簇左缘仍在顶栏内、右缘已溢出：必须用右簇左缘，不得退回 safeRight 把 258px 栏盖上去。
+    const partialDom = buildTopbarDom({headerWidth: 900, leftRight: 525.59, rightLeft: 533.59});
+    partialDom.upper.children[2].getBoundingClientRect = () => ({left: 533.59, right: 1100, width: 566.41, top: 4, bottom: 52, height: 48});
+    globalThis.document = partialDom.doc;
+    globalThis.innerWidth = 900;
+    bus.bind(partialDom.doc);
+    const partialMeasure = bus.measureWidths(partialDom.bar, partialDom.doc);
+    assert.equal(partialMeasure.rightFits, true, '右簇左缘在顶栏内时不得把它当成已经离开');
+    assert.equal(partialMeasure.wide, false, '真实空隙只有几个像素时不得判定为宽屏');
+    assert.ok(partialMeasure.available < 40, `可用宽度应停在右簇左缘之前（实得 ${partialMeasure.available}）`);
+    assert.equal(partialDom.bar.classList.contains('is-narrow'), true,
+        '900px 工作流/资产页这种右簇溢出时必须启用 is-narrow');
+    assert.notEqual(partialDom.bar.style.minWidth, '258px');
+
+    // 右簇整体移出顶栏右缘时，才回退 safeRight，避免消息栏跟着跑出 header。
+    const narrowDom = buildTopbarDom({headerWidth: 724, leftRight: 513, rightLeft: 800});
+    narrowDom.upper.children[2].getBoundingClientRect = () => ({left: 800, right: 1048, width: 248, top: 4, bottom: 52, height: 48});
     globalThis.document = narrowDom.doc;
     globalThis.innerWidth = 724;
     bus.bind(narrowDom.doc);
@@ -279,7 +293,7 @@ test('AC2 相对整个顶栏水平居中：不对称左右仪表下宽屏居中�
     assert.equal(narrowDom.bar.classList.contains('is-narrow'), true,
         '724px 窄屏应启用 is-narrow 退让态');
     assert.ok(bus.measureWidths(narrowDom.bar, narrowDom.doc).available >= 180,
-        '724px 右簇已移出可视右缘时应回退 safeRight，保证消息栏有足够可视宽');
+        '724px 右簇已整体移出可视右缘时应回退 safeRight，保证消息栏有足够可视宽');
 });
 
 function boxesOverlap(a, b) {
@@ -539,5 +553,7 @@ test('AC8/AC9/AC11 收起无幽灵热区、prefers-reduced-motion 直接切态�
     const css = read('web/css/base/hardware-design-system.css');
     assert.match(css, /\.gw-topbar-msg-bar\[data-gw-topbar-collapse="collapsed"\][\s\S]{0,600}?pointer-events:\s*none/);
     assert.match(css, /\.gw-topbar-msg-bar\[data-gw-topbar-collapse="collapsed"\][\s\S]{0,600}?visibility:\s*hidden/);
+    assert.match(css, /\.gw-topbar-msg-bar\[data-gw-topbar-collapse="expanded"\][\s\S]{0,240}?transform:\s*scaleX\(1\)/,
+        '展开终态必须显式 scaleX(1)，不能把 transform 过渡到 none');
     assert.doesNotMatch(read('web/pages/settings.html'), /减少动态效果/, '不得恢复已删除的减少动态效果开关');
 });

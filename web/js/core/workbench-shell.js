@@ -1019,20 +1019,22 @@
     const rightSameRow = Boolean(
       right && (!left || (right.top < left.bottom && right.bottom > left.top))
     );
-    const rightInViewport = Boolean(
-      rightWidth > 0 && rightSameRow && right.left < safeRight - 4 && right.right <= safeRight + 4
+    // 右簇只要左缘还在顶栏内，就必须用它当上限。右缘溢出不能当成右簇已离开，
+    // 否则会退回 safeRight，把 258px 消息栏盖到仍可见的左右簇上（900px 工作流/资产页）。
+    const rightStartsInside = Boolean(
+      rightWidth > 0 && rightSameRow && right.left < safeRight - 4
     );
-    const rightFits = rightInViewport;
-    const gapRight = rightInViewport ? Math.min(right.left, safeRight) : safeRight;
+    const rightFits = rightStartsInside;
+    const gapRight = rightStartsInside ? Math.min(right.left, safeRight) : safeRight;
     const available = Math.max(0, Math.floor(gapRight - slotLeft - edgePad));
     // QIN-622 AC2：以整个顶栏中心为轴，计算不碰左右簇的对称可用宽度。
     const headerWidth = headerRect ? headerRect.width : (window.innerWidth || 0);
     const headerCenter = headerRect ? (headerRect.left + headerRect.width / 2) : (headerWidth / 2);
     const symLeftEdge = left ? (left.right + 8) : (safeLeft + 8);
-    const symRightEdge = rightInViewport ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
+    const symRightEdge = rightStartsInside ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
     const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
     const centered = headerWidth > 900 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
-    const clusterRightLimit = rightInViewport ? (right.left - 8) : (safeRight - 4);
+    const clusterRightLimit = rightStartsInside ? (right.left - 8) : (safeRight - 4);
     return {
       available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight,
       headerRect, leftInset, rightFits, symAvailable, centered,

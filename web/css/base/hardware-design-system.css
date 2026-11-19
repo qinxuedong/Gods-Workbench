@@ -90,9 +90,11 @@
   max-width: 100%;
   box-sizing: border-box;
   width: fit-content;
+  transform: scaleX(1);
   transform-origin: center center;
+  /* transform 不放在常驻过渡里：展开结束若从 scaleX(1) 过渡到 none，
+     部分页面会停在 scaleX(0)，文字没有可见宽度。 */
   transition:
-    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
     opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
     max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
 }
@@ -106,6 +108,10 @@
   transform: scaleX(0);
   opacity: 0;
   pointer-events: none;
+  transition:
+    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
 }
 .topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="collapsed"],
 .topbar-master-deck .gw-topbar-msg-bar.is-narrow[data-gw-topbar-collapse="collapsed"] {
@@ -125,6 +131,16 @@
   opacity: 0;
 }
 .topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="expanding"] {
+  transform: scaleX(1);
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  transition:
+    transform var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1),
+    opacity var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.4, 0, 0.2, 1),
+    max-width var(--gw-topbar-box-scale-ms, 250ms) cubic-bezier(0.16, 1, 0.3, 1);
+}
+.topbar-master-deck .gw-topbar-msg-bar[data-gw-topbar-collapse="expanded"] {
   transform: scaleX(1);
   opacity: 1;
   visibility: visible;
