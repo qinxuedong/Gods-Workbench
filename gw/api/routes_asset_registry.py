@@ -1008,7 +1008,7 @@ async def import_registry_assets(
         raw_filename = str(getattr(upload, "filename", "") or form.get("name") or "").strip()
         target_scope = str(form.get("target") or "").strip().lower()
         requested_kind = str(form.get("kind") or "").strip().lower()
-        if target_scope == "user-lut" or requested_kind == "lut" or _kind_from_name(raw_filename) == "lut":
+        if target_scope == "user-lut" or requested_kind == "lut":
             return repo.import_user_lut_bytes(
                 raw_filename or str(form.get("name") or ""),
                 data,

@@ -1666,12 +1666,15 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
     if cutoff:
         items = [a for a in items if str(a.get("created_at") or "") >= cutoff]
     if category:
-        categories = [part.strip().lower() for part in str(category).split(",") if part.strip()]
-        valid_categories = {*_ASSET_CATEGORY_EXTENSIONS, "other"}
-        if not categories or any(part not in valid_categories for part in categories):
-            raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "不支持的资产分类筛选")
-        category_set = set(categories)
-        items = [a for a in items if _asset_category(a) in category_set]
+        if "," in str(category):
+            categories = [part.strip().lower() for part in str(category).split(",") if part.strip()]
+            valid_categories = {*_ASSET_CATEGORY_EXTENSIONS, "other"}
+            if not categories or any(part not in valid_categories for part in categories):
+                raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE", "不支持的资产分类筛选")
+            category_set = set(categories)
+            items = [a for a in items if _asset_category(a) in category_set]
+        else:
+            items = [a for a in items if _asset_category(a) == category]
     if project_id:
         if project_id == "__all__":
             items = [a for a in items if a.get("project_ids") or a.get("project_id")]

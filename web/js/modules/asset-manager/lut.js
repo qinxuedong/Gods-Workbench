@@ -490,7 +490,7 @@ function renderLutManager(){
     root.innerHTML = `${renderAssetTreePanel()}
     <section class="asset-panel asset-content registry-content registry-layout-${registryLayout} registry-aspect-${registryAspect} ${registrySimple ? 'registry-simple' : ''} ${registrySelectedIds.size ? 'manage-on' : ''}" data-lut-dropzone style="--registry-card-size:${registryCardSize}px">
         <div class="registry-lut-drop-overlay" aria-hidden="true"><i data-lucide="upload"></i><span>松开鼠标导入 .cube LUT</span></div>
-        ${renderRegistryToolbar(null, 'LUT 库', `${items.length} 个色彩查找表（.cube）`, {lutImport: true, lutImportBusy: lutAsyncState.importing, hideHeading: embeddedVault})}
+        ${embeddedVault ? '' : renderRegistryToolbar(null, 'LUT 库', `${items.length} 个色彩查找表（.cube）`, {lutImport: true, lutImportBusy: lutAsyncState.importing})}
         ${renderRegistryFilterChips()}
         ${renderLutAsyncBanner()}
         <div class="registry-fresh-notice" data-registry-fresh-notice></div>

@@ -1643,7 +1643,6 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
     align-items: center;
     justify-content: center;
     gap: 10px;
-    font-size: 14px;
     font-weight: 600;
     pointer-events: none;
 }
@@ -1661,7 +1660,6 @@ body.gw-signal.gw-page--asset-manager .asset-detail-media-canvas-toolbar :is(but
     border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
     background: var(--panel-bg-elevated, rgba(255, 255, 255, 0.04));
     color: var(--text-primary, inherit);
-    font-size: 13px;
 }
 .registry-lut-async-banner.is-error {
     border-color: var(--danger, #ef4444);
