@@ -235,7 +235,7 @@
   flex: 0 1 auto;
 }
 /* 窄屏为状态和项目控件留一整行，顶栏随内容增高，避免被导航遮挡。 */
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .topbar-master-deck:has(> .gw-topbar-wrap-project) {
     height: auto !important;
   }
