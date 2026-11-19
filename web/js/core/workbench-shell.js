@@ -1114,7 +1114,7 @@
       header?.classList.remove('is-topbar-starved');
       slot.classList?.remove('is-centered', 'is-narrow', 'is-title-trailing');
       bar.classList?.remove('is-narrow');
-      if (slot.parentElement?.hasAttribute?.('data-gw-topbar-wrap-project')
+      if (slot.parentElement?.classList?.contains('gw-topbar-wrap-project')
           && window.matchMedia?.('(max-width: 760px)').matches) {
         topbarResetProjectLayout(slot, bar);
         slot.style.width = '';

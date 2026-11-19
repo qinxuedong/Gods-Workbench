@@ -236,10 +236,10 @@
 }
 /* 工作流窄屏放不下仪表和两个项目箭头时，将项目栏移到独立一行。 */
 @media (max-width: 760px) {
-  .topbar-master-deck [data-gw-topbar-wrap-project] {
+  .topbar-master-deck .gw-topbar-wrap-project {
     flex-wrap: wrap;
   }
-  .topbar-master-deck [data-gw-topbar-wrap-project] > [data-gw-topbar-project-slot] {
+  .topbar-master-deck .gw-topbar-wrap-project > [data-gw-topbar-project-slot] {
     order: 1;
     flex: 0 0 100% !important;
     width: 100% !important;
