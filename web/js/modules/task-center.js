@@ -1395,7 +1395,7 @@
       if (isPermissionError(error)) state.permissionDenied = true;
       showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.eventsUnavailable')), 'error');
     } finally {
-      const shouldReload = EMBEDDED ? false : finishDataRequest('events-page');
+      const shouldReload = !EMBEDDED && gen === requestGeneration ? finishDataRequest('events-page') : false;
       if (activePageAbortController === pageController) activePageAbortController = null;
       if (gen === requestGeneration) {
         state.loading = false;
@@ -1427,7 +1427,7 @@
       if (isPermissionError(error)) state.permissionDenied = true;
       showToast(isPermissionError(error) ? tr('taskCenter.permissionDenied') : (error.message || tr('taskCenter.tasksUnavailable')), 'error');
     } finally {
-      const shouldReload = EMBEDDED ? false : finishDataRequest('tasks-page');
+      const shouldReload = !EMBEDDED && gen === requestGeneration ? finishDataRequest('tasks-page') : false;
       if (activePageAbortController === pageController) activePageAbortController = null;
       if (gen === requestGeneration) {
         state.loading = false;
@@ -1559,7 +1559,10 @@
     ++requestGeneration;
     if (activeAbortController) { activeAbortController.abort(); activeAbortController = null; }
     if (activePageAbortController) { activePageAbortController.abort(); activePageAbortController = null; }
-    if (EMBEDDED) state.loading = false;
+    if (EMBEDDED || dataRequestOwner === 'tasks-page' || dataRequestOwner === 'events-page') {
+      state.loading = false;
+      if (!EMBEDDED) { dataRequestOwner = ''; queuedReload = false; }
+    }
   });
   window.addEventListener('hashchange', () => {
     const hash = location.hash.slice(1);

@@ -264,7 +264,7 @@ function buildEmbeddedDom() {
   return { document, main, viewNav, toolbar, tabTasks, tabLogs, tasksBadge, logsBadge, nodes };
 }
 
-function bootTaskCenter(apiImpl, workspaceOverrides = {}) {
+function bootTaskCenter(apiImpl, workspaceOverrides = {}, standalone = false) {
   const dom = buildEmbeddedDom();
   const winListeners = new Map();
   const intervalCallbacks = [];
@@ -296,6 +296,12 @@ function bootTaskCenter(apiImpl, workspaceOverrides = {}) {
       intervalCallbacks.forEach((entry) => entry.fn());
     },
   };
+
+  if (standalone) {
+    windowObj.top = windowObj.self;
+    windowObj.location.search = "?view=tasks";
+    windowObj.location.href = "http://127.0.0.1:2077/static/pages/task-center.html?view=tasks";
+  }
 
   const sandbox = {
     window: windowObj,
@@ -764,6 +770,59 @@ test("AC6 R3: 往返缓存恢复时作废在途分页并重新加载，迟到结
       assert.equal(pageCalls, 2);
       assert.match(nodes[kind === "tasks" ? "#taskRows" : "#logRows"].innerHTML, /fresh-page/);
     }
+  }
+});
+
+test("AC6 R4: 独立页面恢复分页并隔离旧分页收尾", async () => {
+  for (const kind of ["tasks", "events"]) {
+    let pending;
+    let currentPage;
+    let firstPages = 0;
+    let pageCalls = 0;
+    const urls = [];
+    const { nodes, windowObj } = bootTaskCenter((url, options = {}) => {
+      urls.push(url);
+      const parsed = new URL(url, "http://localhost");
+      const isTask = parsed.pathname === "/api/observability/tasks";
+      const isEvent = parsed.pathname === "/api/observability/events";
+      const cursor = parsed.searchParams.get("cursor");
+      if (isEvent && !cursor) firstPages++;
+      if (cursor && ((kind === "tasks" && isTask) || (kind === "events" && isEvent))) {
+        pageCalls++;
+        return new Promise((resolve, reject) => {
+          const request = { resolve, reject, signal: options.signal };
+          if (pageCalls === 1) pending = request; else currentPage = request;
+        });
+      }
+      if (isTask && !parsed.searchParams.get("status") && !parsed.searchParams.has("stall_classification")) return Promise.resolve({ items: [{ job_id: "current-job", status: "running" }], next_cursor: "next", has_more: true });
+      if (isEvent) return Promise.resolve({ items: [{ event_id: "current-event", message_safe: "current-event" }], next_cursor: "next", has_more: true });
+      return Promise.resolve({ items: [] });
+    }, {}, true);
+    const tick = () => new Promise((resolve) => setTimeout(resolve, 20));
+    await tick();
+    const button = nodes[kind === "tasks" ? "#loadMoreTasks" : "#loadMoreEvents"];
+    button.dispatchEvent({ type: "click" });
+    await tick();
+    assert.ok(pending, `kind=${kind} firstPages=${firstPages} urls=${urls.join(" | ")}`);
+    windowObj.dispatchWindowEvent("pagehide", { persisted: true });
+    assert.equal(pending.signal.aborted, true);
+    windowObj.dispatchWindowEvent("pageshow", { persisted: true });
+    await tick();
+    assert.equal(firstPages, 2);
+    assert.equal(button.disabled, false);
+    button.dispatchEvent({ type: "click" });
+    await tick();
+    assert.ok(currentPage);
+    pending.resolve({ items: [{ job_id: "stale-job", event_id: "stale-event", message_safe: "stale-event" }] });
+    await tick();
+    assert.equal(button.disabled, true);
+    windowObj.triggerAutoRefresh();
+    await tick();
+    assert.equal(firstPages, 2);
+    currentPage.resolve(kind === "tasks" ? { items: [{ job_id: "fresh-job", status: "running" }] } : { items: [{ event_id: "fresh-event", message_safe: "fresh-event" }] });
+    await tick();
+    assert.doesNotMatch(nodes["#taskRows"].innerHTML + nodes["#logRows"].innerHTML, /stale-/);
+    assert.match(nodes[kind === "tasks" ? "#taskRows" : "#logRows"].innerHTML, /fresh-/);
   }
 });
 
