@@ -130,19 +130,72 @@
   visibility: visible;
   pointer-events: auto;
 }
-/* 等宽侧列使项目标题不会推偏消息栏。 */
+/* 项目页：消息栏按顶栏中心占独立列，宽度由测量写成不低于 258px 的轨道，
+   不再用 50% 中间列把栏压窄。标题和箭头只占用栏两侧的剩余轨道。 */
 .topbar-master-deck [data-gw-topbar-project-slot].is-centered {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 50%) minmax(0, 1fr);
+  align-items: center;
+  overflow: hidden;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-project-context {
+  grid-column: 1;
+  grid-row: 1;
+  padding-right: 8px;
 }
 .topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-msg-bar {
-  justify-self: center;
-}
-.topbar-master-deck [data-gw-topbar-project-slot].is-centered > .gw-topbar-msg-bar:not([data-gw-topbar-collapse="collapsed"]) {
-  min-width: min(var(--gw-topbar-min-width, 258px), 100%) !important;
+  grid-column: 2;
+  grid-row: 1;
+  justify-self: stretch;
+  width: 100%;
+  max-width: 100%;
 }
 .topbar-master-deck [data-gw-topbar-project-slot].is-centered > button {
+  grid-column: 3;
+  grid-row: 1;
   justify-self: start;
+  padding-left: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > .gw-topbar-project-context {
+  display: contents;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing .gw-topbar-project-context > button {
+  grid-column: 1;
+  grid-row: 1;
+  justify-self: end;
+  align-self: center;
+  padding-right: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > .gw-topbar-msg-bar {
+  grid-column: 2;
+  grid-row: 1;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing [data-gw-topbar-project] {
+  grid-column: 3;
+  grid-row: 1;
+  align-self: center;
+  padding-left: 8px;
+  padding-right: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-title-trailing > button {
+  grid-column: 4;
+  grid-row: 1;
+  justify-self: center;
+  padding-left: 0;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-bar-collapsed {
+  display: flex !important;
+  grid-template-columns: none !important;
+  left: 50% !important;
+  width: max-content !important;
+  max-width: var(--gw-topbar-sym, 100%) !important;
+  transform: translate(-50%, -50%) !important;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+.topbar-master-deck [data-gw-topbar-project-slot].is-centered.is-bar-collapsed > .gw-topbar-project-context {
+  display: flex !important;
+  padding-right: 0;
 }
 .topbar-master-deck [data-gw-topbar-project-slot] > * {
   margin-left: 0 !important;
@@ -153,6 +206,7 @@
   justify-content: end;
   flex: 0 1 auto;
   min-width: 0;
+  gap: 8px;
 }
 .topbar-master-deck [data-gw-topbar-project][data-gw-topbar-title] {
   min-width: 0;

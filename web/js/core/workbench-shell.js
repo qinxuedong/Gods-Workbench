@@ -758,6 +758,8 @@
    * - 不落盘、不跨页、不改任何业务写协议。
    * ========================================================================================== */
   const GW_TOPBAR_MIN_WIDTH = 258; // QIN-612 AC4：改前 assets 中条（含左右箭头）实测 257.578125px，向上取整，不得改窄
+  const GW_TOPBAR_PROJECT_ARROW_PX = 40; // 切项目箭头列：32px 按钮 + 8px 间距
+  const GW_TOPBAR_PROJECT_TITLE_MIN_PX = 48; // 标题可辨下限；左侧放不下时改放到栏右侧剩余空间
   const GW_TOPBAR_MIN_STATUS_WIDTH = 96; // 状态文案最小可视宽：低于此值先收起页名，禁止把文案挤成 0 宽
   const GW_TOPBAR_TTL = 4000;      // 完成/普通提示约 4s 回空闲
   const GW_TOPBAR_IDLE_COLLAPSE_MS = 15000; // QIN-622 AC3：空闲挂载/回空闲后 15s 自动收起
@@ -1030,10 +1032,71 @@
     const symRightEdge = rightInViewport ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
     const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
     const centered = headerWidth > 900 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
+    const clusterRightLimit = rightInViewport ? (right.left - 8) : (safeRight - 4);
     return {
       available, wide: available >= GW_TOPBAR_MIN_WIDTH, rect, gapLeft, gapRight,
-      headerRect, leftInset, rightFits, symAvailable, centered
+      headerRect, leftInset, rightFits, symAvailable, centered,
+      headerCenter, symLeftEdge, clusterRightLimit
     };
+  }
+  // 项目页居中：消息栏以顶栏中心为轴，宽度不低于 258px，且不超过对称净空。
+  // 槽横跨左右簇之间的整段空隙，标题放在放得下的一侧，避免为给标题让路把栏压到 50%。
+  function topbarProjectGeometry(measure, contentWidth = 0) {
+    const slotLeft = Number(measure.symLeftEdge) || 0;
+    const slotRight = Number(measure.clusterRightLimit) || slotLeft;
+    const slotWidth = Math.max(0, slotRight - slotLeft);
+    const symAvailable = Math.max(0, Number(measure.symAvailable) || 0);
+    const center = Number(measure.headerCenter) || 0;
+    const barWidth = Math.min(symAvailable, Math.max(GW_TOPBAR_MIN_WIDTH, Number(contentWidth) || 0));
+    const barLeft = center - barWidth / 2;
+    const barRight = barLeft + barWidth;
+    const leftCol = barLeft - slotLeft;
+    const rightCol = slotRight - barRight;
+    const leftTitleRoom = leftCol - GW_TOPBAR_PROJECT_ARROW_PX;
+    const rightTitleRoom = rightCol - GW_TOPBAR_PROJECT_ARROW_PX;
+    const titleOnRight = leftTitleRoom < GW_TOPBAR_PROJECT_TITLE_MIN_PX && rightTitleRoom >= leftTitleRoom;
+    const titleWidth = Math.max(0, titleOnRight ? rightTitleRoom : leftTitleRoom);
+    const columns = titleOnRight
+      ? `${leftCol}px ${barWidth}px ${Math.max(0, rightCol - GW_TOPBAR_PROJECT_ARROW_PX)}px ${GW_TOPBAR_PROJECT_ARROW_PX}px`
+      : `${leftCol}px ${barWidth}px ${rightCol}px`;
+    const arrow = GW_TOPBAR_PROJECT_ARROW_PX;
+    const boxes = {
+      bar: {left: barLeft, right: barRight},
+      prev: titleOnRight
+        ? {left: Math.max(slotLeft, barLeft - arrow), right: barLeft}
+        : {left: slotLeft, right: Math.min(barLeft, slotLeft + arrow)},
+      title: titleOnRight
+        ? {left: barRight, right: Math.max(barRight, slotRight - arrow)}
+        : {left: Math.min(barLeft, slotLeft + arrow), right: barLeft},
+      next: titleOnRight
+        ? {left: Math.min(slotRight, slotRight - arrow), right: slotRight}
+        : {left: barRight, right: Math.min(slotRight, barRight + arrow)}
+    };
+    return {
+      slotLeft, slotRight, slotWidth, barWidth, barLeft, barRight, leftCol, rightCol,
+      titleOnRight, titleWidth, columns, boxes
+    };
+  }
+  function topbarProjectContentWidth(bar, node) {
+    const box = bar?.getBoundingClientRect?.().width || 0;
+    const runner = node?.querySelector?.('[data-gw-topbar-runner]');
+    const text = runner?.scrollWidth || node?.scrollWidth || 0;
+    return Math.max(box, text + 36);
+  }
+  function topbarIsProjectSlot(slot) {
+    return Boolean(slot && typeof slot.hasAttribute === 'function' && slot.hasAttribute('data-gw-topbar-project-slot'));
+  }
+  function topbarResetProjectLayout(slot, bar) {
+    slot.classList?.remove('is-title-trailing');
+    slot.style.left = '';
+    slot.style.top = '';
+    slot.style.transform = '';
+    slot.style.gridTemplateColumns = '';
+    slot.style.removeProperty?.('--gw-topbar-sym');
+    if (!bar) return;
+    bar.style.width = '';
+    bar.style.minWidth = '';
+    bar.style.maxWidth = '';
   }
   // 把可用空隙写成 slot 的 max-width：父链 min-width:max-content 会让 100% 失效，
   // 必须有基于左右簇实测间隙的硬上限，超长时状态节点才会 overflow 并触发滚动。
@@ -1047,7 +1110,7 @@
       // 确保状态文案始终有可视宽且不压住左右仪表；CPU/RAM 仪表不动。
       const header = bar.closest?.('.topbar-master-deck');
       header?.classList.remove('is-topbar-starved');
-      slot.classList?.remove('is-centered', 'is-narrow');
+      slot.classList?.remove('is-centered', 'is-narrow', 'is-title-trailing');
       bar.classList?.remove('is-narrow');
       // 先临时清零 slot 宽度，以无中条干扰的纯净左右簇边界测量真实净空。
       slot.style.maxWidth = '0px';
@@ -1057,11 +1120,29 @@
         header.classList.add('is-topbar-starved');
         measure = topbarMeasureWidths(bar);
       }
-      if (measure.centered) {
+      topbarResetProjectLayout(slot, bar);
+      if (measure.centered && topbarIsProjectSlot(slot)) {
+        const geo = topbarProjectGeometry(measure, topbarProjectContentWidth(bar, node));
+        const anchor = slot.parentElement?.getBoundingClientRect?.();
+        const anchorLeft = anchor && Number.isFinite(anchor.left) ? anchor.left : (measure.headerRect?.left || 0);
+        slot.classList?.add('is-centered');
+        slot.classList?.toggle('is-title-trailing', geo.titleOnRight);
+        slot.style.left = `${geo.slotLeft - anchorLeft}px`;
+        slot.style.top = '50%';
+        slot.style.transform = 'translateY(-50%)';
+        slot.style.width = `${geo.slotWidth}px`;
+        slot.style.maxWidth = `${geo.slotWidth}px`;
+        slot.style.gridTemplateColumns = geo.columns;
+        slot.style.setProperty?.('--gw-topbar-sym', `${measure.symAvailable}px`);
+        bar.style.width = `${geo.barWidth}px`;
+        bar.style.minWidth = `${geo.barWidth}px`;
+        bar.style.maxWidth = `${geo.barWidth}px`;
+        slot.classList.remove('is-narrow');
+        bar.classList.remove('is-narrow');
+      } else if (measure.centered) {
         slot.classList?.add('is-centered');
         slot.style.maxWidth = `${measure.symAvailable}px`;
-        slot.style.width = slot.hasAttribute?.('data-gw-topbar-project-slot')
-          ? `${measure.symAvailable}px` : 'fit-content';
+        slot.style.width = 'fit-content';
         slot.classList.remove('is-narrow');
         bar.classList.remove('is-narrow');
       } else {
@@ -1118,6 +1199,8 @@
           if (state.collapseState === 'collapsed') bar.setAttribute('aria-hidden', 'true');
           else bar.removeAttribute('aria-hidden');
         }
+        const slot = bar.closest?.('.gw-topbar-msg-slot') || bar.parentElement;
+        slot?.classList?.toggle('is-bar-collapsed', state.collapseState === 'collapsed');
       }
       node.classList.toggle('is-danger', state.tone === 'danger');
       node.setAttribute('aria-busy', state.phase === 'progress' ? 'true' : 'false');
@@ -1166,6 +1249,7 @@
     bind: bindTopbarStatus,
     classify: classifyTopbarStatus,
     measureWidths: topbarMeasureWidths,
+    projectGeometry: topbarProjectGeometry,
     announce(message, options) { return topbarEngine ? topbarEngine.announce(message, options) : null; },
     settle(token, message, options) { return topbarEngine ? topbarEngine.settle(token, message, options) : false; },
     clear() { return topbarEngine ? topbarEngine.clear() : undefined; },

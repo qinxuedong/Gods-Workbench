@@ -144,6 +144,7 @@ function makeMockElement({className = '', rect = null, clientWidth = 180, scroll
         },
         setAttribute(k, v) { attrMap.set(k, String(v)); },
         getAttribute(k) { return attrMap.has(k) ? attrMap.get(k) : null; },
+        hasAttribute(k) { return attrMap.has(k); },
         removeAttribute(k) { attrMap.delete(k); },
         getBoundingClientRect: () => rect || {left: 0, right: 0, width: 0, top: 0, bottom: 0, height: 42},
         closest(sel) {
@@ -161,12 +162,15 @@ function makeMockElement({className = '', rect = null, clientWidth = 180, scroll
     };
 }
 
-function buildTopbarDom({headerWidth = 1440, leftRight = 420, rightLeft = 1040} = {}) {
+function buildTopbarDom({headerWidth = 1440, leftRight = 420, rightLeft = 1040, project = false, barWidth = 312} = {}) {
     const header = makeMockElement({
         className: 'topbar-master-deck',
         rect: {left: 0, right: headerWidth, width: headerWidth, top: 0, bottom: 116, height: 116},
     });
-    const upper = makeMockElement({className: 'master-deck-upper flex'});
+    const upper = makeMockElement({
+        className: 'master-deck-upper flex',
+        rect: {left: 0, right: headerWidth, width: headerWidth, top: 0, bottom: 52, height: 52},
+    });
     upper.parentElement = header;
     const leftCluster = makeMockElement({
         className: 'master-deck-upper-left',
@@ -176,11 +180,12 @@ function buildTopbarDom({headerWidth = 1440, leftRight = 420, rightLeft = 1040} 
     const slot = makeMockElement({
         className: 'gw-topbar-msg-slot',
         rect: {left: leftRight + 8, right: leftRight + 320, width: 312, top: 6, bottom: 48, height: 42},
+        attrs: project ? {'data-gw-topbar-project-slot': ''} : {},
     });
     slot.parentElement = upper;
     const bar = makeMockElement({
         className: 'gw-topbar-msg-bar',
-        rect: {left: leftRight + 8, right: leftRight + 320, width: 312, top: 6, bottom: 48, height: 42},
+        rect: {left: leftRight + 8, right: leftRight + barWidth, width: barWidth, top: 6, bottom: 48, height: 42},
     });
     bar.parentElement = slot;
     const runner = makeMockElement({clientWidth: 80, scrollWidth: 80});
@@ -275,6 +280,80 @@ test('AC2 相对整个顶栏水平居中：不对称左右仪表下宽屏居中�
         '724px 窄屏应启用 is-narrow 退让态');
     assert.ok(bus.measureWidths(narrowDom.bar, narrowDom.doc).available >= 180,
         '724px 右簇已移出可视右缘时应回退 safeRight，保证消息栏有足够可视宽');
+});
+
+function boxesOverlap(a, b) {
+    return a.left < b.right - 0.5 && b.left < a.right - 0.5;
+}
+
+function assertProjectBarGeometry(geo, {center, clusterLeft, clusterRight, page}) {
+    assert.ok(geo.barWidth >= 258, `${page} 宽屏消息栏不得低于 258px，实得 ${geo.barWidth}`);
+    assert.ok(Math.abs(geo.barLeft + geo.barWidth / 2 - center) < 0.6,
+        `${page} 消息栏中心应落在顶栏中心 ${center}`);
+    assert.ok(geo.barLeft >= clusterLeft + 8 - 0.6 && geo.barRight <= clusterRight - 8 + 0.6,
+        `${page} 消息栏不得进入左右簇`);
+    assert.ok(geo.titleWidth >= 48, `${page} 项目标题可辨宽度不足，实得 ${geo.titleWidth}`);
+    const {bar, title, prev, next} = geo.boxes;
+    for (const [name, box] of [['title', title], ['prev', prev], ['next', next]]) {
+        assert.equal(boxesOverlap(bar, box), false, `${page} 消息栏与${name}重叠`);
+        assert.ok(box.right - box.left > 0.5, `${page} ${name} 宽度应大于 0`);
+        assert.ok(box.left >= geo.slotLeft - 0.6 && box.right <= geo.slotRight + 0.6,
+            `${page} ${name} 不得越出左右簇之间的空隙`);
+    }
+    assert.equal(boxesOverlap(title, prev), false, `${page} 标题与左箭头重叠`);
+    assert.equal(boxesOverlap(title, next), false, `${page} 标题与右箭头重叠`);
+    assert.equal(geo.columns.includes('50%'), false, `${page} 不得再把消息栏列锁成 50%`);
+}
+
+test('AC10/AC12 三页宽屏消息栏保持 258px，标题与箭头不重叠', async () => {
+    const css = read('web/css/base/hardware-design-system.css');
+    assert.equal(css.includes('minmax(0, 50%)'), false, '居中网格不得再把中间列限制为 50%');
+    assert.equal(css.includes('min(var(--gw-topbar-min-width, 258px), 100%)'), false,
+        '项目栏最小宽度不得再被 100% 轨道截断');
+    for (const page of SWITCH_PAGES) {
+        const html = read(`web/pages/${page}.html`);
+        assert.match(html, /data-gw-topbar-project-slot/, `${page} 必须走项目槽布局`);
+        const barAt = html.indexOf('gw-topbar-msg-bar');
+        const titleAt = html.indexOf('data-gw-topbar-project');
+        assert.ok(titleAt >= 0 && titleAt < barAt, `${page} 项目标题必须位于可收起消息栏之外`);
+    }
+
+    const bus = await loadShellBus();
+    // R4 复测几何：1440px 三页左簇右缘 525.23、右簇左缘 1055.64、顶栏中心 720，对称净空约 373px。
+    const narrowSide = buildTopbarDom({
+        headerWidth: 1440, leftRight: 525.23, rightLeft: 1055.64, project: true, barWidth: 120,
+    });
+    globalThis.document = narrowSide.doc;
+    globalThis.innerWidth = 1440;
+    const tight = bus.measureWidths(narrowSide.bar, narrowSide.doc);
+    assert.ok(tight.symAvailable >= 258 && tight.symAvailable < 400, `对称净空应落在复测区间，实得 ${tight.symAvailable}`);
+    const tightGeo = bus.projectGeometry(tight, 120);
+    for (const page of SWITCH_PAGES) {
+        assertProjectBarGeometry(tightGeo, {center: 720, clusterLeft: 525.23, clusterRight: 1055.64, page});
+    }
+    assert.equal(tightGeo.titleOnRight, true, '左侧剩余不足以放下标题时，标题应改到消息栏右侧');
+    bus.bind(narrowSide.doc);
+    assert.equal(narrowSide.slot.classList.contains('is-centered'), true);
+    assert.equal(narrowSide.slot.classList.contains('is-title-trailing'), true);
+    assert.equal(narrowSide.bar.style.minWidth, `${tightGeo.barWidth}px`);
+    assert.equal(narrowSide.slot.style.gridTemplateColumns, tightGeo.columns);
+    assert.ok(Number.parseFloat(narrowSide.bar.style.minWidth) >= 258);
+
+    // 1920px 两侧都宽：标题留在左侧，消息栏仍然不低于 258px 且相对顶栏居中。
+    const wideSide = buildTopbarDom({
+        headerWidth: 1920, leftRight: 537.7, rightLeft: 1381.64, project: true, barWidth: 180,
+    });
+    globalThis.document = wideSide.doc;
+    globalThis.innerWidth = 1920;
+    const wide = bus.measureWidths(wideSide.bar, wideSide.doc);
+    const wideGeo = bus.projectGeometry(wide, 180);
+    for (const page of SWITCH_PAGES) {
+        assertProjectBarGeometry(wideGeo, {center: 960, clusterLeft: 537.7, clusterRight: 1381.64, page});
+    }
+    assert.equal(wideGeo.titleOnRight, false, '两侧空间足够时标题保持在消息栏左侧');
+    bus.bind(wideSide.doc);
+    assert.equal(wideSide.slot.classList.contains('is-title-trailing'), false);
+    assert.ok(Number.parseFloat(wideSide.bar.style.minWidth) >= 258);
 });
 
 test('AC3/AC5 空闲 15 秒收起边界（14000ms 展开 / 16000ms, 30000ms 收起）且进行中不收起', async () => {
