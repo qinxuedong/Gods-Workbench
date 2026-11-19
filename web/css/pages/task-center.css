@@ -38,6 +38,10 @@ html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews 
 html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item[aria-selected="true"] {
   color: #eddab3 !important;
 }
+/* 浅色主题的共享文字规则不能覆盖深色分段按钮的文字。 */
+html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .btn-segmented-item > span:not(.tab-count-badge) {
+  color: inherit !important;
+}
 html.task-center-embedded body.gw-signal.gw-page--task-center #observationViews .tab-count-badge {
   display: inline-flex;
   align-items: center;
