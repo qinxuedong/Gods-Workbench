@@ -239,13 +239,42 @@ test('AC2 相对整个顶栏水平居中：不对称左右仪表下宽屏居中�
     assert.equal(wideMeasure.centered, true);
     assert.ok(wideMeasure.symAvailable >= 258, '对称可用宽应不小于最短宽度 258px');
 
-    // 模拟 724px 窄屏：对称空隙不足，自动退出绝对居中以免压住左右仪表
-    const narrowDom = buildTopbarDom({headerWidth: 724, leftRight: 300, rightLeft: 460});
+    // 模拟 900px 同排右簇仍在 header 可视区内（leftRight=525, rightLeft=628, rightRight=876 <= 900）：
+    // 真实可用空隙仅 ~95px < 258，必须判定 wide=false 并启用 is-narrow，绝不得把 gapRight 放大为 safeRight 导致压住左右仪表。
+    const midDom = buildTopbarDom({headerWidth: 900, leftRight: 525, rightLeft: 628});
+    globalThis.document = midDom.doc;
+    globalThis.innerWidth = 900;
+    bus.bind(midDom.doc);
+    const midMeasure = bus.measureWidths(midDom.bar, midDom.doc);
+    assert.equal(midMeasure.centered, false, '900px 对称空隙不足时不得强行居中');
+    assert.equal(midMeasure.wide, false, '900px 右簇同排可见且真实空隙 < 258px 时必须判定为非宽屏');
+    assert.ok(midMeasure.available <= 105 && midMeasure.available >= 80,
+        `900px 可用宽度应基于真实 right.left 计得（实得 ${midMeasure.available}）`);
+    assert.equal(midDom.bar.classList.contains('is-narrow'), true,
+        '900px 可用宽度 < 258px 时必须为 bar 添加 is-narrow，防止 min-width: 258px 遮挡左右仪表');
+
+    // 宽屏短文案未溢出时不误触发 is-compact，确保当前项目名与页名可见
+    const shortStatusDom = buildTopbarDom({headerWidth: 1440, leftRight: 525, rightLeft: 1056});
+    shortStatusDom.statusNode.clientWidth = 48;
+    shortStatusDom.statusNode._runner.scrollWidth = 48;
+    globalThis.document = shortStatusDom.doc;
+    globalThis.innerWidth = 1440;
+    bus.bind(shortStatusDom.doc);
+    assert.equal(shortStatusDom.bar.classList.contains('is-compact'), false,
+        '宽屏短文案未溢出时不得误触发 is-compact 隐藏页名/当前项目名');
+
+    // 模拟 724px 窄屏（右簇已超出 header 可视右缘）：自动退出绝对居中并回退 safeRight
+    const narrowDom = buildTopbarDom({headerWidth: 724, leftRight: 513, rightLeft: 517});
+    narrowDom.upper.children[2].getBoundingClientRect = () => ({left: 517, right: 765, width: 248, top: 4, bottom: 52, height: 48});
     globalThis.document = narrowDom.doc;
     globalThis.innerWidth = 724;
     bus.bind(narrowDom.doc);
     assert.equal(narrowDom.slot.classList.contains('is-centered'), false,
         '724px 窄屏不得强行居中导致与左右仪表重叠');
+    assert.equal(narrowDom.bar.classList.contains('is-narrow'), true,
+        '724px 窄屏应启用 is-narrow 退让态');
+    assert.ok(bus.measureWidths(narrowDom.bar, narrowDom.doc).available >= 180,
+        '724px 右簇已移出可视右缘时应回退 safeRight，保证消息栏有足够可视宽');
 });
 
 test('AC3/AC5 空闲 15 秒收起边界（14000ms 展开 / 16000ms, 30000ms 收起）且进行中不收起', async () => {

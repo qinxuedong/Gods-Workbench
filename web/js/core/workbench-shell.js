@@ -1007,22 +1007,27 @@
     // 不能拿不可见的右簇左缘当上限，否则中条跟着跑出 header（AC11）。
     const safeLeft = headerRect ? headerRect.left + 1 : 0;
     const safeRight = headerRect ? headerRect.right - 1 : (window.innerWidth || 0);
+    const edgePad = 4;
     const gapLeft = Math.max(left ? left.right : safeLeft, safeLeft);
-    // slot 与左簇之间还有 flex gap/margin；不扣掉它，写回 max-width 后仍会越界几个像素。
     const leftInset = slotRect ? Math.max(0, Math.floor(slotRect.left - gapLeft)) : 0;
-    const slotLeft = gapLeft + leftInset;
-    // 右簇若已放不下「最短中条 + 两侧间隙」，就让它沿 header 滚动区退到视口外，
-    // 中条改用 header 可视右缘为上限；否则仍以右簇左缘为上限，不压右侧仪表。
+    const slotLeft = gapLeft + edgePad;
+    // 仅当右簇已超出 header 可视右缘（同排已放不下右簇）或不在同排时，才回退使用 header 可视右缘；
+    // 只要右簇完整落在可视同排内，必须以真实 right.left 为上限，防止中条未触发 is-narrow 而压住左右仪表。
     const rightWidth = right ? right.width : 0;
-    const rightFits = rightWidth > 0 && rightWidth <= safeRight - slotLeft - 4 - GW_TOPBAR_MIN_WIDTH - 4;
-    const rightGap = rightFits ? leftInset : 4;
-    const gapRight = rightFits ? Math.min(right.left, safeRight) : safeRight;
-    const available = Math.max(0, Math.floor(gapRight - slotLeft - rightGap));
+    const rightSameRow = Boolean(
+      right && (!left || (right.top < left.bottom && right.bottom > left.top))
+    );
+    const rightInViewport = Boolean(
+      rightWidth > 0 && rightSameRow && right.left < safeRight - 4 && right.right <= safeRight + 4
+    );
+    const rightFits = rightInViewport;
+    const gapRight = rightInViewport ? Math.min(right.left, safeRight) : safeRight;
+    const available = Math.max(0, Math.floor(gapRight - slotLeft - edgePad));
     // QIN-622 AC2：以整个顶栏中心为轴，计算不碰左右簇的对称可用宽度。
     const headerWidth = headerRect ? headerRect.width : (window.innerWidth || 0);
     const headerCenter = headerRect ? (headerRect.left + headerRect.width / 2) : (headerWidth / 2);
     const symLeftEdge = left ? (left.right + 8) : (safeLeft + 8);
-    const symRightEdge = (right && right.width > 0) ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
+    const symRightEdge = rightInViewport ? Math.min(right.left - 8, safeRight - 4) : (safeRight - 4);
     const symAvailable = Math.max(0, Math.floor(Math.min(headerCenter - symLeftEdge, symRightEdge - headerCenter) * 2));
     const centered = headerWidth > 760 && symAvailable >= GW_TOPBAR_MIN_WIDTH;
     return {
@@ -1038,11 +1043,15 @@
       const slot = node.closest?.('.gw-topbar-msg-slot') || node.parentElement?.parentElement;
       const bar = node.closest?.('.gw-topbar-msg-bar') || node.parentElement;
       if (!slot || !bar) continue;
-      // 极窄屏下左簇若把空隙吃光（agents 页多一枚状态徽章时只剩 11px），
-      // 先让非仪表徽章退位再量一次，确保状态文案始终有可视宽；CPU/RAM 仪表不动。
+      // 极窄屏下左簇或右簇装饰区把空隙吃光时，先让可退位项退位再量一次，
+      // 确保状态文案始终有可视宽且不压住左右仪表；CPU/RAM 仪表不动。
       const header = bar.closest?.('.topbar-master-deck');
       header?.classList.remove('is-topbar-starved');
-      slot.classList?.remove('is-centered');
+      slot.classList?.remove('is-centered', 'is-narrow');
+      bar.classList?.remove('is-narrow');
+      // 先临时清零 slot 宽度，以无中条干扰的纯净左右簇边界测量真实净空。
+      slot.style.maxWidth = '0px';
+      slot.style.width = '0px';
       let measure = topbarMeasureWidths(bar);
       if (measure.available < GW_TOPBAR_MIN_STATUS_WIDTH && header) {
         header.classList.add('is-topbar-starved');
@@ -1065,9 +1074,13 @@
         bar.classList.toggle('is-narrow', !wide);
       }
       // 页名 shrink-0 曾把状态节点挤到 0 宽，长文案既不可见也不滚动；
-      // 空间不足时先收起页名与分隔线，把余量全部留给状态文案。
+      // 仅在状态文案确实被挤压溢出或已进入窄屏退让时才收起页名，避免宽屏短文案误藏页名/项目名。
       bar.classList.remove('is-compact');
-      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+      const statusRunner = node.querySelector?.('[data-gw-topbar-runner]');
+      const statusOverflow = (statusRunner ? statusRunner.scrollWidth : node.scrollWidth) > (node.clientWidth || 0) + 1;
+      if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH && (bar.classList.contains('is-narrow') || statusOverflow)) {
+        bar.classList.add('is-compact');
+      }
     }
   }
   function topbarRender(state) {
@@ -1092,7 +1105,10 @@
       const bar = node.closest?.('.gw-topbar-msg-bar');
       if (bar) {
         bar.classList.remove('is-compact');
-        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH) bar.classList.add('is-compact');
+        const runnerOverflow = (runner?.scrollWidth || node.scrollWidth || 0) > (node.clientWidth || 0) + 1;
+        if (node.clientWidth < GW_TOPBAR_MIN_STATUS_WIDTH && (bar.classList.contains('is-narrow') || runnerOverflow)) {
+          bar.classList.add('is-compact');
+        }
         if (bar.dataset) {
           bar.dataset.gwTopbarCollapse = state.collapseState || 'expanded';
           bar.dataset.gwTopbarTextVisible = state.textVisible === false ? '0' : '1';
