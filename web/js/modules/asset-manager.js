@@ -40,6 +40,7 @@ import {
 
 // 【QIN-591】延后域注册表（state.js 只承载 GW_DEFERRED，不承载业务状态）
 import { GW_DEFERRED } from './asset-manager/state.js';
+import './asset-manager/transfer.js';
 
 
 let mediaPreviewPlayerLoading = null;
@@ -6453,11 +6454,15 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>治理建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';
     if(embeddedVault && activeTab === 'scripts') options.hideHeading = true;
     const hideHeading = Boolean(options.hideHeading || (embeddedVault && ['prompts', 'canvas-assets', 'workflows'].includes(activeTab)));
+    const transferControl = !board && ['assets', 'registry'].includes(activeTab)
+        ? '<button class="hw-btn" type="button" data-transfer-open aria-haspopup="dialog" aria-label="传输到工作区" title="把本机选择的文件显式传输到当前工作区"><i data-lucide="cloud-upload"></i><span>传输到工作区</span></button>'
+        : '';
     return `<div class="content-toolbar registry-toolbar">
         ${options.hideHeading ? '' : (hideHeading ? '' : `<div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`)}
         <div class="registry-toolbar-controls">
             ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="目录层级" aria-label="目录层级"><i data-lucide="folder-tree"></i></button>' : ''}
             ${governanceTrigger}${coverflowControl}
+            ${transferControl}
             <button class="hw-btn registry-refresh" type="button" data-refresh-assets title="刷新资产" aria-label="刷新资产"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
             <div class="registry-layout-switch btn-segmented-deck" role="group" aria-label="显示方式"><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-label="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-label="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
@@ -11476,6 +11481,11 @@ window.addEventListener('message', event => {
 });
 document.addEventListener('click', () => {
     if(registrySessionReady) setTimeout(saveRegistryBrowseSession, 250);
+});
+document.addEventListener('gw-transfer-completed', () => {
+    void refreshRegistryAssets(false)
+        .then(() => render())
+        .catch(error => setStatus(`传输已完成，但资产列表刷新失败：${error?.message || '请手动刷新'}`));
 });
 if(!embeddedSettingsPage){
     renderBoardNavigation();

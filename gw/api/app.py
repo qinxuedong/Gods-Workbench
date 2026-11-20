@@ -53,6 +53,7 @@ from gw.api.routes_prompt_library import router as prompt_library_router
 from gw.api.routes_prompt_library_b8 import router as prompt_library_b8_router
 from gw.api.routes_public_b9 import router as public_b9_router
 from gw.api.routes_settings import router as settings_router
+from gw.api.routes_transfer import router as transfer_router
 from gw.core import local_accounts
 from gw.core import session as session_store
 from gw.core.auth import validate_auth_mode_host
@@ -446,6 +447,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
     app.include_router(asset_registry_router)
     app.include_router(asset_collect_router)
     app.include_router(asset_unassigned_router)
+    app.include_router(transfer_router)
     app.include_router(jobs_router)
     app.include_router(observability_router)
     app.include_router(prompt_library_router)
