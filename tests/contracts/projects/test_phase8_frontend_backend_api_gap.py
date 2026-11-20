@@ -398,6 +398,12 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/workspaces/mappings",
         "/api/workspaces/switch",
         "/api/workspaces/verify",
+        # 2026-11-20 QIN-627：设置页数据位置卡片与迁移预检/取消/回退真实引用。
+        "/api/data-location",
+        "/api/data-location/check",
+        "/api/data-location/migrations",
+        "/api/data-location/migrations/{p}/cancel",
+        "/api/data-location/rollback",
     ]
 )
 
