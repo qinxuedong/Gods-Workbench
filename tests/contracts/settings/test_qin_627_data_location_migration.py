@@ -485,6 +485,56 @@ def _recovery_manifest(migration_id: str, files: dict[str, bytes]) -> dict:
     }
 
 
+def _receipt_entry(root: Path, relative: str, kind: str) -> dict:
+    info = (root / relative).lstat()
+    entry = {
+        "kind": kind,
+        "path": relative,
+        "dev": int(info.st_dev),
+        "ino": int(info.st_ino),
+        "ctime_ns": int(info.st_ctime_ns),
+    }
+    if kind == "file":
+        entry["mtime_ns"] = int(info.st_mtime_ns)
+        entry["size"] = int(info.st_size)
+    return entry
+
+
+def _write_promotion_receipt(
+    root: Path,
+    migration_id: str,
+    files: list[str],
+    *,
+    extra_entries: list[dict] | None = None,
+) -> Path:
+    parents: set[str] = set()
+    for relative in files:
+        parts = relative.split("/")
+        for index in range(1, len(parts)):
+            parents.add("/".join(parts[:index]))
+    entries = [_receipt_entry(root, relative, "dir") for relative in sorted(parents)]
+    entries.extend(_receipt_entry(root, relative, "file") for relative in sorted(files))
+    if extra_entries:
+        entries.extend(extra_entries)
+    path = root / service._receipt_name(migration_id)
+    lines = [
+        json.dumps(
+            {
+                "format": service.PROMOTION_RECEIPT_FORMAT,
+                "migration_id": migration_id,
+                "created_at": service._now(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+    ]
+    lines.extend(
+        json.dumps(entry, ensure_ascii=False, sort_keys=True) for entry in entries
+    )
+    path.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    return path
+
+
 def _write_promoting_journal(target: Path, migration_id: str) -> None:
     service._write_journal(
         {
@@ -562,6 +612,7 @@ def test_recovery_removes_only_owned_files_and_preserves_target_user_file(prod_h
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(target / "manifest.json", manifest)
     service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     user_file = target / "user-file.txt"
     user_file.write_text("user-owned", encoding="utf-8")
     _write_promoting_journal(target, migration_id)
@@ -595,6 +646,7 @@ def test_recovery_preserves_unrelated_file_inside_promoted_directory(prod_home, 
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(target / "manifest.json", manifest)
     service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     nested_user_file = target / "data" / "notes.txt"
     nested_user_file.write_text("do not delete", encoding="utf-8")
     _write_promoting_journal(target, migration_id)
@@ -623,11 +675,13 @@ def test_recovery_preserves_modified_manifest_path_when_hash_does_not_match(prod
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(target / "manifest.json", manifest)
     service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     _write_promoting_journal(target, migration_id)
 
     result = service.recover_on_startup()
 
-    assert result["action"] == "removed_owned_preserved_unrelated"
+    assert result["action"] == "preserved_unverified"
+    assert result["reason"] == "no_verified_target_items"
     assert (target / "data" / "projects.json").read_text(encoding="utf-8") == '{"projects": ["user-edit"]}'
     assert not (target / "auth").exists()
     assert not stage.exists()
@@ -647,6 +701,7 @@ def test_recovery_uses_stage_manifest_when_target_manifest_is_missing(prod_home,
     _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     user_file = target / "user-file.txt"
     user_file.write_text("user-owned", encoding="utf-8")
     _write_promoting_journal(target, migration_id)
@@ -674,6 +729,7 @@ def test_recovery_cleans_partial_promote_and_removes_empty_target(prod_home, tmp
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(target / "manifest.json", manifest)
     service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     _write_promoting_journal(target, migration_id)
 
     result = service.recover_on_startup()
@@ -737,10 +793,11 @@ def test_promoted_target_scan_rejects_concurrent_new_file(prod_home, tmp_path):
     _write_recovery_files(target, files)
     manifest = _recovery_manifest(migration_id, files)
     service._atomic_write_json(target / "manifest.json", manifest)
+    receipt = _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     (target / "user-file.txt").write_text("concurrent", encoding="utf-8")
 
     with pytest.raises(CleanroomException) as exc:
-        service._verify_promoted_target(target, stage, manifest)
+        service._verify_promoted_target(target, stage, manifest, receipt.name)
 
     assert exc.value.code == "SWITCH_FAILED"
     assert (target / "user-file.txt").read_text(encoding="utf-8") == "concurrent"
@@ -768,6 +825,131 @@ def test_concurrent_target_file_aborts_switch_and_is_preserved(
     assert not (target / "data" / "projects.json").exists()
     assert not (target / "manifest.json").exists()
     assert service.pointer_state()["revision"] == 1
+    assert get_write_window().state == STATE_OPEN
+
+
+def test_recovery_preserves_identical_file_without_creation_record(prod_home, tmp_path):
+    """文件已创建但收据未记录的中断窗口：同名同内容也必须保留。"""
+    migration_id = "promo-unrecorded-identical"
+    target = tmp_path / "target-unrecorded"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    payload = b'{"record": "user-created"}'
+    _write_recovery_files(target, {"data/record.json": payload})
+    manifest = _recovery_manifest(migration_id, {"data/record.json": payload})
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    receipt_path = target / service._receipt_name(migration_id)
+    receipt_path.write_text(
+        json.dumps(
+            {
+                "format": service.PROMOTION_RECEIPT_FORMAT,
+                "migration_id": migration_id,
+                "created_at": service._now(),
+            },
+            ensure_ascii=False,
+            sort_keys=True,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "preserved_unverified"
+    assert result["reason"] == "no_recorded_target_items"
+    assert (target / "data" / "record.json").read_bytes() == payload
+    assert not (target / "manifest.json").exists()
+    assert not receipt_path.exists()
+    journal = service.read_journal()
+    assert journal["status"] == "failed"
+    assert journal["error_code"] == "RECOVERY_OWNERSHIP_UNKNOWN"
+
+    second = service.recover_on_startup()
+    assert second["action"] == "none"
+    assert (target / "data" / "record.json").read_bytes() == payload
+
+
+def test_recovery_preserves_same_bytes_after_file_identity_changed(prod_home, tmp_path):
+    """内容相同但文件身份已变：收据无法证明归属，必须保留。"""
+    migration_id = "promo-identity-changed"
+    target = tmp_path / "target-identity"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    payload = b'{"projects": []}'
+    _write_recovery_files(target, {"data/projects.json": payload})
+    manifest = _recovery_manifest(migration_id, {"data/projects.json": payload})
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
+    replacement = target / "data" / "projects.json.new"
+    replacement.write_bytes(payload)
+    os.replace(replacement, target / "data" / "projects.json")
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "preserved_unverified"
+    assert result["reason"] == "no_verified_target_items"
+    assert (target / "data" / "projects.json").read_bytes() == payload
+    assert not stage.exists()
+
+
+def test_promote_refuses_directory_file_conflict_without_overwrite(prod_home, tmp_path):
+    """目标同名位置是用户目录时，切换失败且目录内容原样保留。"""
+    migration_id = "promo-dir-conflict"
+    target = tmp_path / "target-dir-conflict"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    (stage / "data").mkdir(parents=True)
+    payload = b'{"projects": []}'
+    (stage / "data" / "projects.json").write_bytes(payload)
+    manifest = _recovery_manifest(migration_id, {"data/projects.json": payload})
+    (target / "data").mkdir()
+    conflict = target / "data" / "projects.json"
+    conflict.mkdir()
+    (conflict / "user.txt").write_text("keep", encoding="utf-8")
+
+    with pytest.raises(CleanroomException) as exc:
+        service._promote(stage, target, manifest)
+
+    assert exc.value.code == "SWITCH_FAILED"
+    assert conflict.is_dir()
+    assert (conflict / "user.txt").read_text(encoding="utf-8") == "keep"
+
+
+def test_same_path_same_content_concurrent_file_survives_failed_switch(
+    prod_home, tmp_path, monkeypatch
+):
+    """复审场景：用户先建同名同内容文件，迁移失败后恢复不得删除。"""
+    _seed(prod_home["runtime_root"])
+    source = prod_home["runtime_root"] / "data" / "projects.json"
+    target = tmp_path / "target-same-content"
+    original_promote = service._promote
+
+    def promote_with_identical_user_file(stage, destination, manifest):
+        user_data = destination / "data"
+        user_data.mkdir(parents=True)
+        (user_data / "projects.json").write_bytes(source.read_bytes())
+        return original_promote(stage, destination, manifest)
+
+    monkeypatch.setattr(service, "_promote", promote_with_identical_user_file)
+    record = _start(target)
+    finished = _wait_status(record["migration_id"])
+
+    assert finished["status"] == "failed"
+    assert finished["error_code"] == "SWITCH_FAILED"
+    assert "保留" in finished["message"]
+    assert (target / "data" / "projects.json").read_bytes() == source.read_bytes()
+    assert not (target / "auth").exists()
+    assert not (target / "manifest.json").exists()
+    assert not list(target.glob(service.RECEIPT_PREFIX + "*.jsonl"))
+    assert service.pointer_state()["revision"] == 1
+    assert service.current_location() == prod_home["runtime_root"]
+    assert source.is_file()
     assert get_write_window().state == STATE_OPEN
 
 

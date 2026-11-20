@@ -60,6 +60,9 @@ from gw.core.write_window import (
 POINTER_SCHEMA_VERSION = DATA_LOCATION_SCHEMA_VERSION
 JOURNAL_SCHEMA_VERSION = 1
 MIGRATION_FORMAT = "gods-workbench-data-location-v1"
+PROMOTION_RECEIPT_FORMAT = "gods-workbench-promote-receipt-v1"
+RECEIPT_PREFIX = ".gw-promote-"
+RECEIPT_SUFFIX = ".jsonl"
 MANIFEST_NAME = "manifest.json"
 STAGE_PREFIX = ".gw-stage-"
 CATEGORY_USER_DATA = "user_data"
@@ -544,6 +547,94 @@ def _is_link(path: Path) -> bool:
     )
 
 
+def _receipt_name(migration_id: str) -> str:
+    return f"{RECEIPT_PREFIX}{migration_id}{RECEIPT_SUFFIX}"
+
+
+class _PromotionReceipt:
+    """记录目标项创建后的文件身份；记录缺失时恢复必须保留该目标项。"""
+
+    def __init__(self, target: Path, migration_id: str) -> None:
+        self.migration_id = migration_id
+        self.path = target / _receipt_name(migration_id)
+        self._handle = None
+        try:
+            descriptor = os.open(
+                self.path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+            )
+        except FileExistsError:
+            raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目") from None
+        except OSError:
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移归属记录无法写入") from None
+        self._handle = os.fdopen(descriptor, "w", encoding="utf-8", newline="\n")
+        try:
+            self._append(
+                {
+                    "format": PROMOTION_RECEIPT_FORMAT,
+                    "migration_id": migration_id,
+                    "created_at": _now(),
+                }
+            )
+            os.fsync(self._handle.fileno())
+        except Exception:
+            self.abandon()
+            raise
+
+    def _append(self, payload: dict[str, Any]) -> None:
+        if self._handle is None:
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移归属记录已关闭")
+        self._handle.write(
+            json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            + "\n"
+        )
+        self._handle.flush()
+
+    def _record(self, kind: str, relative: str, path: Path) -> None:
+        try:
+            info = path.lstat()
+        except OSError:
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移归属记录无法读取目标项") from None
+        if stat.S_ISLNK(info.st_mode) or bool(
+            getattr(info, "st_file_attributes", 0) & _REPARSE_POINT
+        ):
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移归属记录拒绝链接")
+        payload = {
+            "kind": kind,
+            "path": relative,
+            "dev": int(info.st_dev),
+            "ino": int(info.st_ino),
+            "ctime_ns": int(info.st_ctime_ns),
+        }
+        if kind == "file":
+            payload["mtime_ns"] = int(info.st_mtime_ns)
+            payload["size"] = int(info.st_size)
+        self._append(payload)
+
+    def directory(self, relative: str, path: Path) -> None:
+        self._record("dir", relative, path)
+
+    def file(self, relative: str, path: Path) -> None:
+        self._record("file", relative, path)
+
+    def close(self) -> None:
+        if self._handle is None:
+            return
+        try:
+            self._handle.flush()
+            os.fsync(self._handle.fileno())
+        finally:
+            self._handle.close()
+            self._handle = None
+
+    def abandon(self) -> None:
+        if self._handle is None:
+            return
+        try:
+            self._handle.close()
+        finally:
+            self._handle = None
+
+
 def _copy_file_exclusive(
     source: Path, destination: Path, entry: dict[str, Any]
 ) -> None:
@@ -588,7 +679,11 @@ def _copy_file_exclusive(
 
 
 def _move_file_exclusive(
-    source: Path, destination: Path, entry: dict[str, Any]
+    source: Path,
+    destination: Path,
+    entry: dict[str, Any],
+    receipt: _PromotionReceipt,
+    relative: str,
 ) -> None:
     """原子建立目标目录项且绝不覆盖既有文件；跨文件系统时退回独占复制。"""
     try:
@@ -601,12 +696,14 @@ def _move_file_exclusive(
         source.unlink()
     except OSError:
         raise CleanroomException(409, "SWITCH_FAILED", "切换后无法清理 stage 文件") from None
+    receipt.file(relative, destination)
 
 
 def _promote_tree(
     source: Path,
     destination: Path,
     expected: dict[str, dict[str, Any]],
+    receipt: _PromotionReceipt,
     prefix: str = "",
 ) -> None:
     """逐文件建立目标树；目标目录或文件已存在即失败，不覆盖并发内容。"""
@@ -622,57 +719,82 @@ def _promote_tree(
         if _is_link(child):
             raise CleanroomException(409, "SWITCH_FAILED", "迁移产物包含链接")
         if child.is_dir():
-            _promote_tree(child, target_child, expected, relative)
+            _promote_tree(child, target_child, expected, receipt, relative)
         elif child.is_file():
             entry = expected.get(relative)
             if entry is None:
                 raise CleanroomException(409, "SWITCH_FAILED", "stage 出现清单外文件")
-            _move_file_exclusive(child, target_child, entry)
+            _move_file_exclusive(child, target_child, entry, receipt, relative)
         else:
             raise CleanroomException(409, "SWITCH_FAILED", "stage 包含特殊文件")
+    receipt.directory(prefix, destination)
     try:
         source.rmdir()
     except OSError:
         raise CleanroomException(409, "SWITCH_FAILED", "stage 目录无法清理") from None
 
 
-def _promote(stage: Path, target: Path, manifest: dict[str, Any]) -> None:
-    """先把归属清单落到目标根，再逐项切换；清单本身不覆盖任何既有文件。"""
+def _promote(stage: Path, target: Path, manifest: dict[str, Any]) -> Path:
+    """先把归属清单与创建收据落到目标根，再逐项切换。"""
     target.mkdir(parents=True, exist_ok=True)
     _write_json_exclusive(target / MANIFEST_NAME, manifest)
+    receipt = _PromotionReceipt(target, manifest["migration_id"])
     expected = {entry["path"]: entry for entry in manifest["files"]}
-    for child in sorted(stage.iterdir(), key=lambda item: item.name):
-        if child.name == MANIFEST_NAME:
-            continue
-        destination = target / child.name
-        if _is_link(child):
-            raise CleanroomException(409, "SWITCH_FAILED", "迁移产物包含链接")
-        if child.is_dir():
-            _promote_tree(child, destination, expected, child.name)
-        elif child.is_file():
-            entry = expected.get(child.name)
-            if entry is None:
-                raise CleanroomException(409, "SWITCH_FAILED", "stage 出现清单外文件")
-            _move_file_exclusive(child, destination, entry)
-        else:
-            raise CleanroomException(409, "SWITCH_FAILED", "stage 包含特殊文件")
     try:
-        stage.rmdir()
-    except OSError:
-        # stage 里仍有归属清单；成功提交后由收尾步骤删除。
-        pass
+        for child in sorted(stage.iterdir(), key=lambda item: item.name):
+            if child.name == MANIFEST_NAME:
+                continue
+            destination = target / child.name
+            if _is_link(child):
+                raise CleanroomException(409, "SWITCH_FAILED", "迁移产物包含链接")
+            if child.is_dir():
+                _promote_tree(child, destination, expected, receipt, child.name)
+            elif child.is_file():
+                entry = expected.get(child.name)
+                if entry is None:
+                    raise CleanroomException(409, "SWITCH_FAILED", "stage 出现清单外文件")
+                _move_file_exclusive(child, destination, entry, receipt, child.name)
+            else:
+                raise CleanroomException(409, "SWITCH_FAILED", "stage 包含特殊文件")
+        try:
+            stage.rmdir()
+        except OSError:
+            # stage 里仍有归属清单；成功提交后由收尾步骤删除。
+            pass
+        receipt.close()
+    except Exception:
+        receipt.abandon()
+        raise
+    return receipt.path
 
 
 def _verify_promoted_target(
-    target: Path, stage: Path, manifest: dict[str, Any]
+    target: Path,
+    stage: Path,
+    manifest: dict[str, Any],
+    receipt_name: str,
 ) -> None:
-    """指针提交前确认目标只含本次清单产物，并发新增条目会使切换失败。"""
+    """指针提交前确认目标只含本次清单产物，且每个目标项都有创建收据。"""
     expected = {entry["path"]: entry for entry in manifest["files"]}
     expected_dirs = {""}
     for relative in expected:
         parts = PurePosixPath(relative).parts
         for index in range(1, len(parts)):
             expected_dirs.add(PurePosixPath(*parts[:index]).as_posix())
+    receipt, _reason = _load_receipt(target, manifest["migration_id"])
+    if receipt is None:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标缺少完整迁移归属收据")
+    receipt_files = {
+        entry["path"] for entry in receipt["entries"] if entry["kind"] == "file"
+    }
+    receipt_dirs = {
+        entry["path"] for entry in receipt["entries"] if entry["kind"] == "dir"
+    }
+    if receipt_files != set(expected):
+        raise CleanroomException(409, "SWITCH_FAILED", "迁移归属收据文件不完整")
+    expected_non_root_dirs = expected_dirs - {""}
+    if expected_non_root_dirs - receipt_dirs:
+        raise CleanroomException(409, "SWITCH_FAILED", "迁移归属收据目录不完整")
     for current_text, directories, filenames in os.walk(target, followlinks=False):
         current = Path(current_text)
         if current == stage:
@@ -694,7 +816,7 @@ def _verify_promoted_target(
         for name in filenames:
             path = current / name
             relative = path.relative_to(target).as_posix()
-            if relative == MANIFEST_NAME:
+            if relative in {MANIFEST_NAME, receipt_name}:
                 continue
             entry = expected.get(relative)
             if entry is None:
@@ -705,6 +827,8 @@ def _verify_promoted_target(
                 raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不可读") from None
             if not stat.S_ISREG(info.st_mode) or int(info.st_size) != int(entry["size"]):
                 raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不一致")
+    if not (target / receipt_name).is_file():
+        raise CleanroomException(409, "SWITCH_FAILED", "目标缺失迁移归属收据")
     for relative in expected:
         path = target.joinpath(*PurePosixPath(relative).parts)
         if not path.is_file():
@@ -788,6 +912,208 @@ def _manifest_fingerprint(manifest: dict[str, Any]) -> tuple[tuple[str, int, str
             for entry in manifest["files"]
         )
     )
+
+
+def _owned_dir_allowed(relative: str) -> bool:
+    if relative in {"data", "auth", "video", "video/artifacts", "video/proxies"}:
+        return True
+    if relative.startswith("data/") or relative.startswith("video/artifacts/"):
+        return True
+    return relative.startswith("video/proxies/")
+
+
+def _receipt_path(root: Path, migration_id: str) -> Path:
+    return root / _receipt_name(migration_id)
+
+
+def _read_first_json_line(path: Path) -> dict[str, Any] | None:
+    try:
+        with open(path, encoding="utf-8") as handle:
+            line = handle.readline()
+    except (OSError, UnicodeDecodeError):
+        return None
+    try:
+        payload = json.loads(line)
+    except (json.JSONDecodeError, TypeError):
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _receipt_header_matches(root: Path, migration_id: str) -> bool:
+    payload = _read_first_json_line(_receipt_path(root, migration_id))
+    return (
+        payload is not None
+        and payload.get("format") == PROMOTION_RECEIPT_FORMAT
+        and str(payload.get("migration_id") or "") == migration_id
+    )
+
+
+def _valid_receipt_entry(raw: Any) -> dict[str, Any] | None:
+    if not isinstance(raw, dict):
+        return None
+    kind = raw.get("kind")
+    if kind not in {"file", "dir"}:
+        return None
+    relative = raw.get("path")
+    if not isinstance(relative, str) or not relative or "\\" in relative:
+        return None
+    if "\x00" in relative:
+        return None
+    pure = PurePosixPath(relative)
+    if pure.as_posix() != relative or pure.is_absolute():
+        return None
+    if any(part in {"", ".", ".."} or ":" in part for part in pure.parts):
+        return None
+    if kind == "file" and not _owned_relative_allowed(relative):
+        return None
+    if kind == "dir" and not _owned_dir_allowed(relative):
+        return None
+    for name in ("dev", "ino", "ctime_ns"):
+        value = raw.get(name)
+        if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+            return None
+    entry = {
+        "kind": kind,
+        "path": relative,
+        "dev": int(raw["dev"]),
+        "ino": int(raw["ino"]),
+        "ctime_ns": int(raw["ctime_ns"]),
+    }
+    if kind == "file":
+        for name in ("mtime_ns", "size"):
+            value = raw.get(name)
+            if not isinstance(value, int) or isinstance(value, bool) or value < 0:
+                return None
+        entry["mtime_ns"] = int(raw["mtime_ns"])
+        entry["size"] = int(raw["size"])
+    return entry
+
+
+def _load_receipt(
+    root: Path, migration_id: str
+) -> tuple[dict[str, Any] | None, str]:
+    path = _receipt_path(root, migration_id)
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return None, "missing_receipt"
+    except (OSError, UnicodeDecodeError):
+        return None, "unreadable_receipt"
+    lines = text.split("\n")
+    complete = bool(lines) and lines[-1] == ""
+    if complete:
+        lines.pop()
+    if not lines:
+        return None, "invalid_receipt"
+    try:
+        header = json.loads(lines[0])
+    except (json.JSONDecodeError, TypeError):
+        return None, "invalid_receipt"
+    if (
+        not isinstance(header, dict)
+        or header.get("format") != PROMOTION_RECEIPT_FORMAT
+        or str(header.get("migration_id") or "") != migration_id
+    ):
+        return None, "invalid_receipt"
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for index, line in enumerate(lines[1:]):
+        if not line.strip():
+            return None, "invalid_receipt"
+        try:
+            raw = json.loads(line)
+        except (json.JSONDecodeError, TypeError):
+            if index == len(lines) - 2 and not complete:
+                break
+            return None, "invalid_receipt"
+        entry = _valid_receipt_entry(raw)
+        if entry is None or entry["path"] in seen:
+            return None, "invalid_receipt"
+        seen.add(entry["path"])
+        entries.append(entry)
+    return {"migration_id": migration_id, "entries": entries}, "ok"
+
+
+def _identity_matches(root: Path, entry: dict[str, Any]) -> bool:
+    path = _safe_owned_path(root, entry["path"])
+    if path is None:
+        return False
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    if entry["kind"] == "file":
+        if not stat.S_ISREG(info.st_mode):
+            return False
+    elif not stat.S_ISDIR(info.st_mode):
+        return False
+    if int(entry["dev"]) == 0 or int(entry["ino"]) == 0:
+        return False
+    if int(info.st_dev) != int(entry["dev"]) or int(info.st_ino) != int(entry["ino"]):
+        return False
+    # 目录 ctime 会随子项增删变化，目录以 dev+ino 证明；文件同时校验 ctime。
+    if entry["kind"] == "file" and int(info.st_ctime_ns) != int(entry["ctime_ns"]):
+        return False
+    if entry["kind"] == "file":
+        if int(info.st_mtime_ns) != int(entry["mtime_ns"]):
+            return False
+        if int(info.st_size) != int(entry["size"]):
+            return False
+    return True
+
+
+def _remove_owned_by_receipt(
+    root: Path,
+    receipt: dict[str, Any],
+    manifest: dict[str, Any],
+) -> dict[str, int]:
+    expected = {entry["path"]: entry for entry in manifest["files"]}
+    result = {"removed": 0, "missing": 0}
+    directories: list[dict[str, Any]] = []
+    for entry in receipt["entries"]:
+        if entry["kind"] == "dir":
+            directories.append(entry)
+            continue
+        manifest_entry = expected.get(entry["path"])
+        if manifest_entry is None:
+            continue
+        path = _safe_owned_path(root, entry["path"])
+        if path is None or not _identity_matches(root, entry):
+            if path is not None and not path.exists():
+                result["missing"] += 1
+            continue
+        try:
+            if _sha256(path) != manifest_entry["sha256"]:
+                continue
+        except OSError:
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            continue
+        result["removed"] += 1
+    for entry in sorted(
+        directories, key=lambda item: len(PurePosixPath(item["path"]).parts), reverse=True
+    ):
+        path = _safe_owned_path(root, entry["path"])
+        if path is None or not _identity_matches(root, entry):
+            continue
+        try:
+            path.rmdir()
+        except OSError:
+            pass
+    return result
+
+
+def _remove_receipt(root: Path, migration_id: str) -> bool:
+    path = _receipt_path(root, migration_id)
+    if not _receipt_header_matches(root, migration_id):
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
 
 
 def _load_recovery_manifest(
@@ -934,7 +1260,7 @@ def _leftover_count(root: Path) -> int:
 def _cleanup_uncommitted_promotion(
     target: Path, migration_id: str
 ) -> dict[str, Any]:
-    """仅清理本次迁移清单内且哈希匹配的产物，未知文件原地保留。"""
+    """按创建收据清理本次迁移产物；收据缺失或身份不符的一律保留。"""
     if not target.is_dir() or not _root_is_link_free(target):
         return {
             "action": "preserved_unverified",
@@ -951,18 +1277,37 @@ def _cleanup_uncommitted_promotion(
             "reason": reason,
         }
     stage = target / (STAGE_PREFIX + migration_id)
-    target_result = _remove_owned_from_root(target, manifest)
+    receipt, receipt_reason = _load_receipt(target, migration_id)
+    expected = {entry["path"] for entry in manifest["files"]}
+    target_result = {"removed": 0, "missing": 0}
+    if receipt is not None:
+        target_result = _remove_owned_by_receipt(target, receipt, manifest)
     _remove_manifest_from_root(target, migration_id)
+    _remove_receipt(target, migration_id)
     stage_result = _clean_stage(stage, manifest)
     remaining = _leftover_count(target)
+    if receipt is None and remaining > 0:
+        action = "preserved_unverified"
+        reason = receipt_reason
+    elif receipt is not None and remaining > 0 and int(target_result["removed"]) == 0:
+        action = "preserved_unverified"
+        recorded = any(
+            entry.get("kind") == "file" and entry.get("path") in expected
+            for entry in receipt["entries"]
+        )
+        reason = "no_verified_target_items" if recorded else "no_recorded_target_items"
+    else:
+        action = (
+            "removed_final"
+            if remaining == 0
+            else "removed_owned_preserved_unrelated"
+        )
     return {
         "removed": int(target_result["removed"]) + int(stage_result["removed"]),
         "preserved": remaining,
         "missing": int(target_result["missing"]) + int(stage_result["missing"]),
-        "reason": "ok",
-        "action": "removed_final"
-        if remaining == 0
-        else "removed_owned_preserved_unrelated",
+        "reason": reason,
+        "action": action,
     }
 
 
@@ -1299,8 +1644,8 @@ def _run_migration(
                 raise
         window.mark_switching()
         _mark(record, status="promoting", phase="promoting")
-        _promote(stage, target, manifest)
-        _verify_promoted_target(target, stage, manifest)
+        receipt_path = _promote(stage, target, manifest)
+        _verify_promoted_target(target, stage, manifest, receipt_path.name)
         pointer = pointer_state()
         _write_pointer(
             data_location=target,
@@ -1323,6 +1668,7 @@ def _run_migration(
         window.mark_read_only(reason="migration_completed")
         _mark(record, status="completed", phase="completed")
         _clean_stage(stage, manifest)
+        _remove_receipt(target, migration_id)
     except _Cancelled:
         shutil.rmtree(stage, ignore_errors=True)
         window.reset_open(reason="cancelled")
