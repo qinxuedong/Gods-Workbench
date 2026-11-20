@@ -1011,18 +1011,19 @@ function applyStorageSettingsData(data={}){
 function renderServerDirectoryBrowser(){
     const state = serverDirectoryBrowserState;
     if(!state.open) return '';
+    const selectLabel = state.onSelect ? '选择此文件夹' : '选择并挂载';
     const rows = state.directories.map(directory =>
         '<div class="server-directory-row">' +
             '<button type="button" class="server-directory-enter" data-server-directory-enter="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '>' +
                 '<i data-lucide="folder"></i><span>' + escapeHtml(directory.name) + '</span><small>进入</small>' +
             '</button>' +
-            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择并挂载</button>' +
+            '<button type="button" class="hw-btn hw-btn-gold server-directory-mount" data-server-directory-mount="' + escapeAttr(directory.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + selectLabel + '</button>' +
         '</div>'
     ).join('');
     const path = state.path || '服务器根目录';
     const parentButton = '<button type="button" class="hw-btn" data-server-directory-parent' + (!state.parent || state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="corner-left-up"></i>上级目录</button>';
     const currentButton = state.path
-        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>选择当前目录并挂载</button>'
+        ? '<button type="button" class="hw-btn hw-btn-gold" data-server-directory-mount-current="' + escapeAttr(state.path) + '"' + (state.loading || state.saving ? ' disabled' : '') + '><i data-lucide="check"></i>' + (state.onSelect ? '选择当前文件夹' : '选择当前目录并挂载') + '</button>'
         : '';
     const message = state.loading
         ? '<p class="server-directory-browser-message" role="status">正在读取目录…</p>'
@@ -1040,6 +1041,20 @@ function renderServerDirectoryBrowser(){
     '</section>';
 }
 function renderServerDirectoryBrowserHost(){
+    if(serverDirectoryBrowserState.key === 'boardSource'){
+        let overlay = document.getElementById('boardSourceDirectoryBrowserOverlay');
+        if(!serverDirectoryBrowserState.open){ overlay?.remove(); return; }
+        if(!overlay){
+            overlay = document.createElement('div');
+            overlay.id = 'boardSourceDirectoryBrowserOverlay';
+            overlay.className = 'storage-settings-overlay';
+            document.body.appendChild(overlay);
+        }
+        overlay.innerHTML = `<div class="storage-settings-modal board-settings-modal" data-floating-content role="dialog" aria-modal="true" aria-label="选择服务器资源文件夹">${renderServerDirectoryBrowser()}</div>`;
+        markAssetFloatingSurface(overlay, {surface:'board-source-directory-picker', content:'.board-settings-modal', close:() => setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false})});
+        refreshIcons();
+        return;
+    }
     renderStorageSettingsModal();
 }
 async function loadServerDirectoryBrowser(pathValue=null){
@@ -1071,9 +1086,18 @@ async function loadServerDirectoryBrowser(pathValue=null){
     }
     renderServerDirectoryBrowserHost();
 }
-async function openServerDirectoryBrowser(key){
+async function validateServerResourceDirectory(pathValue){
+    const target = String(pathValue || '').trim();
+    if(!target) throw new Error('请选择资源文件夹');
+    const response = await apiJsonResponse(assetManagerHttp.request(
+        '/api/storage-settings/browse?path=' + encodeURIComponent(target),
+        {method:'GET', credentials:'same-origin'},
+    ));
+    return String(response?.path || target);
+}
+async function openServerDirectoryBrowser(key, options={}){
     if(!key || !canBrowseServerDirectories()) return;
-    setServerDirectoryBrowserState({open:true, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key, truncated:false, limit:100});
+    setServerDirectoryBrowserState({open:true, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key, truncated:false, limit:100, onSelect:options.onSelect || null});
     renderServerDirectoryBrowserHost();
     await loadServerDirectoryBrowser(null);
 }
@@ -1083,7 +1107,7 @@ async function fillServerDirectoryFromNative(key, pathValue){
     if(input) input.value = pathValue;
     await saveDirectoryPath(key, pathValue);
 }
-async function pickServerDirectoryNative(key){
+async function pickServerDirectoryNative(key, options={}){
     // 服务器本机会话优先弹系统原生对话框；远程/不可用时降级页面内浏览器。
     const input = directoryFieldInput(key);
     const currentPath = input ? String(input.value || '').trim() : '';
@@ -1095,7 +1119,8 @@ async function pickServerDirectoryNative(key){
             body:JSON.stringify({title:'选择服务器目录', initial_dir:currentPath || null})
         }));
         if(result.status === 'selected' && result.path){
-            await fillServerDirectoryFromNative(key, result.path);
+            if(options.onSelect) await options.onSelect(result.path);
+            else await fillServerDirectoryFromNative(key, result.path);
             return;
         }
         if(result.status === 'cancelled') return;
@@ -1103,7 +1128,7 @@ async function pickServerDirectoryNative(key){
     } catch(error){
         setStatus('服务端目录选择器不可用（' + (error.message || '请求失败') + '），已切换页面内浏览');
     }
-    await openServerDirectoryBrowser(key);
+    await openServerDirectoryBrowser(key, options);
 }
 async function pickClientDirectoryNative(){
     // 客户端字段：在客户端本机弹原生对话框；路径只存客户端本地配置。
@@ -3367,6 +3392,7 @@ GW_DEFERRED['settings'] = {
     persistThumbnailStorageSettings,
     pickClientDirectoryNative,
     pickServerDirectoryNative,
+    validateServerResourceDirectory,
     registerAllowedRootPath,
     registerAssetAvatar,
     renderGlobalDirectorySettings,
@@ -3454,4 +3480,5 @@ export {
     thumbnailGeneratorAssetIds,
     updateThumbnailCacheExclusionHint,
     verifyWorkspaceMapping,
+    validateServerResourceDirectory,
 };

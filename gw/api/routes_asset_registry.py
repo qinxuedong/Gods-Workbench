@@ -1606,6 +1606,14 @@ def reindex_registry(
             if not source_name or len(source_name) > 32:
                 raise CleanroomException(400, "INVALID_REQUEST", "素材来源名称必须为 1 到 32 个字符")
             expected_version = _version(register_root, required=True)
+            if register_root.get("authorize_root") is True:
+                index_payload = {key: value for key, value in body.items() if key != "register_root"}
+                index_payload["roots"] = [source_id]
+                accepted = index_jobs.service().submit(
+                    "reindex", index_payload, actor, idempotency_key, registration=register_root
+                )
+                registered_root = accepted.get("registered_root") or {"id": source_id, "name": source_name}
+                return JSONResponse({**accepted, "registered_root": registered_root}, status_code=202)
             root, prefix = storage.resolve_asset_registration_root(raw_path)
             registered_path = str(root.joinpath(*prefix.split("/"))) if prefix else str(root)
             snapshot = default_storage_settings_service.get_snapshot()

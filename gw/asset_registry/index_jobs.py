@@ -20,6 +20,7 @@ import hashlib
 import importlib
 import json
 import os
+import re
 import stat
 import struct
 import threading
@@ -994,7 +995,8 @@ class IndexJobs:
         from gw.asset_registry import repository as repo
 
         # QIN-604：索引服务初始化只读收据，走快照避免 /status 首次请求额外全表解析。
-        receipts = repo.readonly_registry_snapshot().get("index_job_receipts", {})
+        snapshot = repo.readonly_registry_snapshot()
+        receipts = snapshot.get("index_job_receipts", {})
 
         def restore(raw):
             for job in raw["jobs"].values():
@@ -1018,6 +1020,12 @@ class IndexJobs:
                 job["updated_at"] = storage.now_iso()
 
         self.store.mutate(restore)
+        for operation_id in list((self.store.read().get("registration_ops") or {}).keys()):
+            try:
+                self._settle_resource_folder_registration(operation_id)
+            except Exception:
+                # 补偿失败时保留日志；下一次服务重启继续按收据和归属恢复。
+                continue
 
     def shutdown(self):
         with self.condition:
@@ -1316,7 +1324,123 @@ class IndexJobs:
             ]
             return sorted(jobs, key=lambda j: j["created_at"], reverse=True)[:100]
 
-    def submit(self, kind, payload, auth, key):
+    def _settle_resource_folder_registration(self, operation_id: str, *, committed: bool = False):
+        """按登记归属收尾；无收据时只撤回仍未被其他任务使用的新增。"""
+        from gw.asset_registry import repository as repo
+        from gw.settings.service import (
+            default_storage_allowed_roots_service,
+            default_storage_settings_service,
+        )
+
+        with self.condition:
+            raw = self.store.read()
+            operation = (raw.get("registration_ops") or {}).get(operation_id)
+            if not isinstance(operation, dict):
+                return
+            receipt_id = f"{operation.get('job_id')}:{operation.get('attempt', 1)}"
+            receipt = repo.resource_folder_registration_receipt(
+                repo.readonly_registry_snapshot(), receipt_id
+            )
+            committed = committed or bool(
+                receipt and receipt.get("operation_id") == operation_id
+            )
+            source_id = str(operation.get("source_id") or "")
+            root_id = str(operation.get("root_id") or "")
+            path = str(operation.get("path") or "")
+            root_path = str(operation.get("root_path") or path)
+            source_used = False
+            root_used = False
+            if committed:
+                if source_id:
+                    default_storage_settings_service.finish_resource_folder_registration(
+                        source_id, path, operation_id, rollback=False
+                    )
+                if root_id:
+                    default_storage_allowed_roots_service.finish_resource_folder_registration(
+                        root_id, root_path, operation_id, rollback=False
+                    )
+            else:
+                registry = repo.state().read()
+                assets = registry.get("assets", {})
+                jobs = raw.get("jobs", {})
+                source_used = any(
+                    str(asset.get("storage_root_id") or "") == source_id
+                    for asset in assets.values()
+                    if isinstance(asset, dict)
+                )
+                root_used = any(
+                    str(asset.get("root_id") or "") == root_id
+                    for asset in assets.values()
+                    if isinstance(asset, dict)
+                )
+                for other_id, job in jobs.items():
+                    if other_id == operation.get("job_id") or not isinstance(job, dict):
+                        continue
+                    request = job.get("_request") or {}
+                    scopes = request.get("scopes") or []
+                    ids = {str(item) for item in request.get("roots") or [] if item}
+                    for scope in scopes:
+                        if isinstance(scope, dict):
+                            ids.update(
+                                str(scope.get(key))
+                                for key in ("root_id", "storage_root_id")
+                                if scope.get(key)
+                            )
+                    source_used = source_used or source_id in ids
+                    root_used = root_used or root_id in ids
+                settings = default_storage_settings_service._state.read()
+                root_key = storage.directory_path_key(root_path) if root_path else ""
+                separator = "\\" if "\\" in root_key else "/"
+                prefix = root_key.rstrip("\\/") + separator if root_key else ""
+                for entry in settings.get("extra_local_entries") or []:
+                    if not isinstance(entry, dict) or str(entry.get("id") or "") == source_id:
+                        continue
+                    entry_path = str(entry.get("path") or "")
+                    try:
+                        entry_key = storage.directory_path_key(entry_path)
+                    except CleanroomException:
+                        continue
+                    if root_key and (entry_key == root_key or entry_key.startswith(prefix)):
+                        root_used = True
+                for other_id, other in (raw.get("registration_ops") or {}).items():
+                    if other_id != operation_id and isinstance(other, dict):
+                        if other.get("path_key") == operation.get("path_key"):
+                            source_used = root_used = True
+                root_state = default_storage_allowed_roots_service._state.read()
+                if any(
+                    str(record.get("id") or "") == root_id
+                    and storage.directory_path_key(str(record.get("path") or ""))
+                    == storage.directory_path_key(root_path)
+                    and bool(record.get("aliases"))
+                    for record in root_state.get("roots", [])
+                ):
+                    root_used = True
+                if source_used:
+                    # 活跃任务可能只引用来源 ID，尚未产生带 root_id 的资产记录。
+                    # 保留本次新建的允许根，避免来源仍在但扫描根被误撤回。
+                    root_used = True
+
+                if operation.get("created_source") and source_id:
+                    default_storage_settings_service.finish_resource_folder_registration(
+                        source_id, path, operation_id, rollback=not source_used
+                    )
+                if operation.get("created_root") and root_id:
+                    default_storage_allowed_roots_service.finish_resource_folder_registration(
+                        root_id, root_path, operation_id, rollback=not root_used
+                    )
+
+            def finish(raw_state):
+                registrations = raw_state.setdefault("registration_ops", {})
+                registrations.pop(operation_id, None)
+                job = raw_state.get("jobs", {}).get(str(operation.get("job_id") or ""))
+                if isinstance(job, dict) and isinstance(job.get("_resource_folder_registration"), dict):
+                    job["_resource_folder_registration"]["settled"] = (
+                        "committed" if committed else "preserved" if source_used or root_used else "rolled_back"
+                    )
+
+            self.store.mutate(finish)
+
+    def submit(self, kind, payload, auth, key, *, registration=None, _registration_context=None):
         if not isinstance(key, str) or not 1 <= len(key) <= 160:
             _error(
                 400,
@@ -1328,6 +1452,229 @@ class IndexJobs:
         # QIN-628：真实索引任务提交时必须解析当前工作区/租约与执行端映射；
         # 失败即拒绝入队，不留下任务与半注册。
         execution_context = default_workspace_service.build_execution_context()
+        if registration is not None:
+            from gw.settings.models import StorageAllowedRootRequest
+            from gw.settings.service import (
+                default_storage_allowed_roots_service,
+                default_storage_settings_service,
+            )
+
+            source_id = str(registration.get("id") or "").strip()
+            source_name = str(registration.get("name") or "").strip()
+            raw_path = registration.get("path")
+            authorize_root = registration.get("authorize_root") is True
+            expected_version = registration.get("expected_version")
+            if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,127}", source_id):
+                _error(400, "INVALID_REQUEST", "素材来源标识无效")
+            if not source_name or len(source_name) > 32:
+                _error(400, "INVALID_REQUEST", "素材来源名称必须为 1 到 32 个字符")
+            if type(expected_version) is not int or expected_version < 1:
+                _error(400, "EXPECTED_VERSION_REQUIRED", "登记素材来源必须携带存储设置版本")
+            rejection = storage.describe_resource_folder_rejection(raw_path)
+            if rejection:
+                _error(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
+            normalized_path = storage.normalize_directory_path(raw_path)
+            availability = storage.probe_mount(normalized_path)
+            if not availability["available"]:
+                _error(
+                    503,
+                    "RESOURCE_FOLDER_BACKEND_UNAVAILABLE",
+                    "当前文件夹后端不可访问，需授权（共享）给后端",
+                )
+            try:
+                normalized_path = str(Path(normalized_path).resolve(strict=True))
+            except (OSError, RuntimeError, ValueError):
+                _error(
+                    503,
+                    "RESOURCE_FOLDER_BACKEND_UNAVAILABLE",
+                    "当前文件夹后端不可访问，需授权（共享）给后端",
+                )
+            path_key = storage.directory_path_key(normalized_path)
+            owner = _owner(actor)
+            key_digest = _digest([owner, key])
+            op_id = _digest(["resource-folder-registration", owner, key])
+
+            with self.condition:
+                current = self.store.read()
+                previous_id = current["keys"].get(key_digest)
+                if previous_id:
+                    previous = current["jobs"].get(previous_id)
+                    previous_registration = (previous or {}).get("_resource_folder_registration") or {}
+                    if not previous or previous_registration.get("path_key") != path_key:
+                        _error(409, "INDEX_IDEMPOTENCY_CONFLICT", "幂等键已用于不同索引请求")
+                    return self._accepted(self._committed_truth(previous))
+                for active in current["jobs"].values():
+                    active_registration = active.get("_resource_folder_registration") or {}
+                    if (
+                        active.get("_owner") == owner
+                        and active.get("status") not in TERMINAL
+                        and active_registration.get("path_key") == path_key
+                    ):
+                        current["keys"][key_digest] = active["job_id"]
+                        self.store.write(current)
+                        accepted = self._accepted(active)
+                        accepted["registered_root"] = {
+                            "id": active_registration.get("source_id"),
+                            "name": active_registration.get("source_name"),
+                        }
+                        return accepted
+                if (
+                    len(current["jobs"]) >= MAX_JOBS
+                    or sum(job["status"] not in TERMINAL for job in current["jobs"].values()) >= MAX_ACTIVE
+                ):
+                    _error(429, "INDEX_QUEUE_FULL", "索引任务容量已满")
+
+                settings_snapshot = default_storage_settings_service.get_snapshot()
+                existing_source = next(
+                    (
+                        item for item in settings_snapshot.local_libraries
+                        if item.get("path")
+                        and storage.directory_path_key(str(item["path"])) == path_key
+                    ),
+                    None,
+                )
+                if existing_source:
+                    source_id = str(existing_source["id"])
+                    source_name = str(existing_source.get("name") or source_name)
+                    normalized_path = str(existing_source.get("path") or normalized_path)
+                    path_key = storage.directory_path_key(normalized_path)
+                else:
+                    conflicting_id = next(
+                        (item for item in settings_snapshot.local_libraries if str(item.get("id")) == source_id),
+                        None,
+                    )
+                    if conflicting_id:
+                        _error(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
+
+                try:
+                    root, prefix = storage.resolve_asset_registration_root(normalized_path)
+                except CleanroomException as exc:
+                    if exc.code != "PATH_OUTSIDE_ALLOWED_ROOTS" or not authorize_root:
+                        raise
+                    if str(actor.get("role") or "").lower() != "admin":
+                        _error(403, "FORBIDDEN", "仅管理员可授权新的资源文件夹根")
+                    root_state = default_storage_allowed_roots_service._state.read()
+                    candidate = Path(normalized_path)
+                    for record in root_state.get("roots", []):
+                        if record.get("active") or not record.get("path"):
+                            continue
+                        try:
+                            candidate.relative_to(Path(record["path"]))
+                        except ValueError:
+                            continue
+                        _error(409, "MOUNT_ROOT_REMOVED", "已移除的允许根须先单独确认恢复")
+                    planned_root_id = storage.root_identity_id(Path(normalized_path))
+                    planned_job_id = f"job_index_{int(current['sequence']) + 1:08d}"
+                    operation = {
+                        "operation_id": op_id,
+                        "job_id": planned_job_id,
+                        "attempt": 1,
+                        "owner": owner,
+                        "source_id": source_id,
+                        "source_name": source_name,
+                        "path": normalized_path,
+                        "root_path": normalized_path,
+                        "path_key": path_key,
+                        "root_id": planned_root_id,
+                        "created_root": True,
+                        "created_source": existing_source is None,
+                        "phase": "prepared",
+                    }
+                    self.store.mutate(
+                        lambda state: state.setdefault("registration_ops", {}).__setitem__(op_id, operation)
+                    )
+                    try:
+                        root_snapshot = default_storage_allowed_roots_service.get_snapshot()
+                        default_storage_allowed_roots_service.add_root(
+                            StorageAllowedRootRequest(path=normalized_path, expected_version=root_snapshot.revision),
+                            registration_operation_id=op_id,
+                        )
+                        root, prefix = storage.resolve_asset_registration_root(normalized_path)
+                    except Exception:
+                        self._settle_resource_folder_registration(op_id)
+                        raise
+                else:
+                    planned_root_id = storage.root_identity_id(root)
+                    planned_job_id = f"job_index_{int(current['sequence']) + 1:08d}"
+                    operation = {
+                        "operation_id": op_id,
+                        "job_id": planned_job_id,
+                        "attempt": 1,
+                        "owner": owner,
+                        "source_id": source_id,
+                        "source_name": source_name,
+                        "path": normalized_path,
+                        "root_path": str(root),
+                        "path_key": path_key,
+                        "root_id": planned_root_id,
+                        "created_root": False,
+                        "created_source": existing_source is None,
+                        "phase": "prepared",
+                    }
+                    self.store.mutate(
+                        lambda state: state.setdefault("registration_ops", {}).__setitem__(op_id, operation)
+                    )
+
+                registered_path = str(root.joinpath(*prefix.split("/"))) if prefix else str(root)
+                if existing_source is None:
+                    if expected_version != settings_snapshot.revision:
+                        self._settle_resource_folder_registration(op_id)
+                        _error(409, "VERSION_CONFLICT", "存储设置版本已改变，请重试")
+                    try:
+                        updated_settings = default_storage_settings_service.register_resource_folder_entry(
+                            {"id": source_id, "kind": source_id, "name": source_name, "path": registered_path},
+                            source_name,
+                            expected_version,
+                            op_id,
+                        )
+                        registered_path = str(next(
+                            (item.get("path") for item in updated_settings.local_libraries if str(item.get("id")) == source_id),
+                            registered_path,
+                        ))
+                    except Exception:
+                        self._settle_resource_folder_registration(op_id)
+                        raise
+                operation["path"] = registered_path
+                operation["root_path"] = str(root)
+                operation["path_key"] = storage.directory_path_key(registered_path)
+                operation["root_id"] = storage.root_identity_id(root)
+                operation["source_id"] = source_id
+                operation["source_name"] = source_name
+                operation["created_source"] = existing_source is None
+                operation["phase"] = "registered"
+                self.store.mutate(
+                    lambda state: state.setdefault("registration_ops", {}).__setitem__(op_id, operation)
+                )
+                job_payload = {key: value for key, value in payload.items() if key != "register_root"}
+                job_payload["roots"] = [source_id]
+                context = {
+                    "operation_id": op_id,
+                    "owner": owner,
+                    "source_id": source_id,
+                    "source_name": source_name,
+                    "path": registered_path,
+                    "root_path": str(root),
+                    "path_key": storage.directory_path_key(registered_path),
+                    "root_id": storage.root_identity_id(root),
+                    "created_source": existing_source is None,
+                    "created_root": bool(operation.get("created_root")),
+                    "authorize_root": authorize_root,
+                }
+                try:
+                    accepted = self.submit(
+                        kind, job_payload, auth, key, _registration_context=context
+                    )
+                except Exception:
+                    self._settle_resource_folder_registration(op_id)
+                    raise
+                if accepted.get("job", {}).get("status") == "failed":
+                    self._settle_resource_folder_registration(op_id)
+                accepted["registered_root"] = {
+                    "id": source_id,
+                    "name": source_name,
+                }
+                return accepted
+
         canonical, aliases = _roots()
         selected = payload.get("roots")
         if selected is not None and (
@@ -1451,10 +1798,19 @@ class IndexJobs:
                 "mapping_id": execution_context.get("mapping_id"),
                 "client_instance_id": execution_context["client_instance_id"],
             }
+            if _registration_context is not None:
+                job["_resource_folder_registration"] = dict(_registration_context)
+                raw.setdefault("registration_ops", {}).setdefault(
+                    str(_registration_context["operation_id"]), {}
+                ).update(job_id=job_id, attempt=job["attempt"], phase="accepted")
             raw["jobs"][job_id] = job
             raw["keys"][key_digest] = job_id
             self.store.write(raw)
             self._dispatch(job)
+            if _registration_context is not None and job.get("status") == "failed":
+                self._settle_resource_folder_registration(
+                    str(_registration_context["operation_id"])
+                )
             return self._accepted(job)
 
     def _dispatch(self, job):
@@ -1484,6 +1840,144 @@ class IndexJobs:
             "result_unknown": view["result_unknown"],
         }
 
+    def _prepare_resource_folder_registration_retry(self, job, auth):
+        """为已回滚的首次登记创建独立 attempt 所有权。"""
+        from gw.settings.models import StorageAllowedRootRequest
+        from gw.settings.service import (
+            default_storage_allowed_roots_service,
+            default_storage_settings_service,
+        )
+
+        registration = job.get("_resource_folder_registration") or {}
+        raw_path = str(registration.get("path") or "")
+        rejection = storage.describe_resource_folder_rejection(raw_path)
+        if rejection:
+            _error(403, "RESOURCE_FOLDER_NOT_PERMITTED", rejection)
+        try:
+            path = str(Path(storage.normalize_directory_path(raw_path)).resolve(strict=True))
+        except (OSError, RuntimeError, ValueError):
+            _error(503, "RESOURCE_FOLDER_BACKEND_UNAVAILABLE", "当前文件夹后端不可访问，需授权（共享）给后端")
+        availability = storage.probe_mount(path)
+        if not availability["available"]:
+            _error(503, "RESOURCE_FOLDER_BACKEND_UNAVAILABLE", "当前文件夹后端不可访问，需授权（共享）给后端")
+
+        owner = str(job.get("_owner") or "")
+        source_id = str(registration.get("source_id") or "")
+        source_name = str(registration.get("source_name") or "")
+        path_key = storage.directory_path_key(path)
+        settings_snapshot = default_storage_settings_service.get_snapshot()
+        existing_source = next(
+            (
+                item for item in settings_snapshot.local_libraries
+                if item.get("path")
+                and storage.directory_path_key(str(item["path"])) == path_key
+            ),
+            None,
+        )
+        if existing_source:
+            source_id = str(existing_source["id"])
+            source_name = str(existing_source.get("name") or source_name)
+            path = str(existing_source.get("path") or path)
+            path_key = storage.directory_path_key(path)
+        elif any(
+            str(item.get("id") or "") == source_id
+            for item in settings_snapshot.local_libraries
+        ):
+            _error(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
+
+        try:
+            root, prefix = storage.resolve_asset_registration_root(path)
+            created_root = False
+        except CleanroomException as exc:
+            if exc.code != "PATH_OUTSIDE_ALLOWED_ROOTS" or not registration.get("authorize_root"):
+                raise
+            actor = _actor(auth)
+            if str(actor.get("role") or "").lower() != "admin":
+                _error(403, "FORBIDDEN", "仅管理员可授权新的资源文件夹根")
+            candidate = Path(path)
+            for record in default_storage_allowed_roots_service._state.read().get("roots", []):
+                if record.get("active") or not record.get("path"):
+                    continue
+                try:
+                    candidate.relative_to(Path(record["path"]))
+                except ValueError:
+                    continue
+                _error(409, "MOUNT_ROOT_REMOVED", "已移除的允许根须先单独确认恢复")
+            root = Path(path)
+            prefix = ""
+            created_root = True
+
+        attempt = int(job.get("attempt") or 0) + 1
+        previous_operation_id = str(registration.get("operation_id") or "")
+        operation_id = _digest([previous_operation_id, "retry", attempt])
+        operation = {
+            "operation_id": operation_id,
+            "job_id": str(job["job_id"]),
+            "attempt": attempt,
+            "owner": owner,
+            "source_id": source_id,
+            "source_name": source_name,
+            "path": path,
+            "root_path": str(root),
+            "path_key": path_key,
+            "root_id": storage.root_identity_id(root),
+            "created_root": created_root,
+            "created_source": existing_source is None,
+            "phase": "prepared",
+        }
+        self.store.mutate(
+            lambda state: state.setdefault("registration_ops", {}).__setitem__(operation_id, operation)
+        )
+        try:
+            if created_root:
+                root_snapshot = default_storage_allowed_roots_service.get_snapshot()
+                default_storage_allowed_roots_service.add_root(
+                    StorageAllowedRootRequest(path=path, expected_version=root_snapshot.revision),
+                    registration_operation_id=operation_id,
+                )
+                root, prefix = storage.resolve_asset_registration_root(path)
+            registered_path = str(root.joinpath(*prefix.split("/"))) if prefix else str(root)
+            if existing_source is None:
+                updated = default_storage_settings_service.register_resource_folder_entry(
+                    {"id": source_id, "kind": source_id, "name": source_name, "path": registered_path},
+                    source_name,
+                    settings_snapshot.revision,
+                    operation_id,
+                )
+                registered_path = str(next(
+                    (
+                        item.get("path") for item in updated.local_libraries
+                        if str(item.get("id")) == source_id
+                    ),
+                    registered_path,
+                ))
+            operation.update(
+                path=registered_path,
+                root_path=str(root),
+                path_key=storage.directory_path_key(registered_path),
+                root_id=storage.root_identity_id(root),
+                phase="registered",
+            )
+            self.store.mutate(
+                lambda state: state.setdefault("registration_ops", {}).__setitem__(operation_id, operation)
+            )
+            return {
+                "operation_id": operation_id,
+                "owner": owner,
+                "source_id": source_id,
+                "source_name": source_name,
+                "path": registered_path,
+                "root_path": str(root),
+                "path_key": storage.directory_path_key(registered_path),
+                "root_id": storage.root_identity_id(root),
+                "created_source": existing_source is None,
+                "created_root": created_root,
+                "authorize_root": bool(registration.get("authorize_root")),
+            }
+        except Exception:
+            self._settle_resource_folder_registration(operation_id)
+            raise
+
     def operate(self, job_id, action, payload, auth):
         if action not in ACTIONS:
             _error(400, "INVALID_ACTION", "不支持的任务操作")
@@ -1496,7 +1990,14 @@ class IndexJobs:
                 )
             if expected != job["version"]:
                 _error(409, "VERSION_CONFLICT", "任务版本已改变，请重新读取")
-            self._check(job)
+            retry_registration = None
+            if action == "retry":
+                registration = job.get("_resource_folder_registration") or {}
+                operation_id = str(registration.get("operation_id") or "")
+                if operation_id and operation_id in (self.store.read().get("registration_ops") or {}):
+                    self._settle_resource_folder_registration(operation_id)
+                    job = self._job(job_id, auth)
+                    registration = job.get("_resource_folder_registration") or {}
             if job["status"] not in ACTIONS[action] or (
                 action == "retry" and job["attempt"] >= 5
             ):
@@ -1510,6 +2011,16 @@ class IndexJobs:
                     >= MAX_ACTIVE
                 ):
                     _error(429, "INDEX_QUEUE_FULL", "索引任务容量已满")
+                if registration.get("settled") == "rolled_back":
+                    retry_registration = self._prepare_resource_folder_registration_retry(job, auth)
+                    job["_resource_folder_registration"] = retry_registration
+                    job["_request"]["roots"] = [retry_registration["root_id"]]
+                    for scope in job["_request"].get("scopes") or []:
+                        if scope.get("storage_root_id") == registration.get("source_id"):
+                            scope["storage_root_id"] = retry_registration["source_id"]
+                        if scope.get("root_id") == registration.get("root_id"):
+                            scope["root_id"] = retry_registration["root_id"]
+                self._check(job)
                 job.update(
                     status="queued",
                     phase="queued",
@@ -1520,6 +2031,7 @@ class IndexJobs:
                     error_code=None,
                 )
             else:
+                self._check(job)
                 job["status"] = {
                     "pause": "paused",
                     "resume": "running",
@@ -1528,7 +2040,21 @@ class IndexJobs:
                 if action == "cancel":
                     job["phase"] = "cancelled"
             job["version"] += 1
-            self._save(job)
+            try:
+                self._save(job)
+            except Exception:
+                if retry_registration and retry_registration.get("operation_id"):
+                    with suppress(Exception):
+                        self._settle_resource_folder_registration(
+                            str(retry_registration["operation_id"])
+                        )
+                raise
+            if action == "cancel":
+                registration = job.get("_resource_folder_registration") or {}
+                if registration.get("operation_id"):
+                    self._settle_resource_folder_registration(
+                        str(registration["operation_id"])
+                    )
             self.condition.notify_all()
             if action == "retry":
                 self._dispatch(job)
@@ -1595,6 +2121,11 @@ class IndexJobs:
                 )
                 job["version"] += 1
                 self._save(job)
+                registration = job.get("_resource_folder_registration") or {}
+                if registration.get("operation_id"):
+                    self._settle_resource_folder_registration(
+                        str(registration["operation_id"]), committed=True
+                    )
         except _Stopped:
             return
         except Exception as exc:
@@ -1626,6 +2157,12 @@ class IndexJobs:
                 # 恢复时只相信注册表收据，禁止重新提交。
                 with suppress(Exception):
                     self._save(job)
+                registration = job.get("_resource_folder_registration") or {}
+                if registration.get("operation_id"):
+                    with suppress(Exception):
+                        self._settle_resource_folder_registration(
+                            str(registration["operation_id"]), committed=bool(receipt)
+                        )
 
     def _children(self, job_id, attempt, folder, root, *, hash_files=False, resolved_root=None):
         # 目录项枚举与元数据读取共享一次检查点，paused 后不继续读取新条目。
@@ -2245,6 +2782,7 @@ class IndexJobs:
                     "revision": raw["revision"],
                 }
             receipts[receipt_id] = result
+            repo.write_resource_folder_registration_receipt(raw, job)
             return result
 
         # 提交前最后一次实时核验；令牌只包裹注册表写入，避免跨任务泄漏。

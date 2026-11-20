@@ -971,7 +971,9 @@ async function attachPathToAssetBoard(boardId, sourceName, path, options={}){
     // QIN-596 AC3：添加管道先经允许根保障（QIN-522 管道）：命中已移除允许根先弹
     // 确认恢复；取消 → 返回 null，不写任何数据。系统目录拒绝清单在 ensure 入口
     // 拒绝并提示原因。非管理员不尝试写允许根，登记 403 统一提示联系管理员。
-    const allowed = await ensureCreateLibraryPathAllowedRoot(cleanPath);
+    const allowed = options.atomicRegistration
+        ? true
+        : await ensureCreateLibraryPathAllowedRoot(cleanPath);
     if(!allowed) return null;
     const settings = await apiJsonResponse(assetManagerApi.getStorageSettings());
     applyStorageSettingsData(settings || {});
@@ -1012,7 +1014,7 @@ async function attachPathToAssetBoard(boardId, sourceName, path, options={}){
                 hash_files:true,
                 max_files:250000,
                 roots:[id],
-                register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1)},
+                register_root:{id, name:cleanName, path:cleanPath, expected_version:Number(storageSettingsState.revision || 1), authorize_root:Boolean(options.atomicRegistration)},
             };
             setStatus(`正在校验并登记素材库“${cleanName}”…`);
             let lastError = null;
@@ -1078,15 +1080,27 @@ function renderBoardSourceModal(){
     const errorHtml = boardSourceState.error
         ? `<div class="board-create-error" role="alert"><i data-lucide="alert-circle"></i><span>${escapeHtml(boardSourceState.error)}</span></div>`
         : '';
+    const pickerStatus = boardSourceState.picking
+        ? '正在选择文件夹；关闭可取消，本次尚未提交。'
+        : boardSourceState.validating
+            ? '正在检查服务端目录访问权限；关闭可取消，检查不会写入授权或来源。'
+            : boardSourceState.saving
+                ? '正在提交资源文件夹登记并受理索引任务…'
+                : '';
+    const pickerStatusHtml = pickerStatus
+        ? `<p class="board-source-picker-status" role="status" aria-live="polite">${escapeHtml(pickerStatus)}</p>`
+        : '';
+    const fieldsDisabled = boardSourceState.saving || boardSourceState.picking || boardSourceState.validating;
     overlay.innerHTML = `<div class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardSourceTitle">
-        <div class="storage-settings-head"><div><strong id="boardSourceTitle">添加资源文件夹</strong><span>添加一个可上传和分类的素材目录。</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
+        <div class="storage-settings-head"><div><strong id="boardSourceTitle">添加资源文件夹</strong><span>添加一个可上传和分类的素材目录。</span></div><button type="button" data-board-source-close aria-label="关闭" ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="x"></i></button></div>
         <div class="board-source-form-wrap"><div class="board-source-form-head"><strong>添加素材路径</strong><span>可选择已有来源，或添加新的本机 / NAS 路径。</span></div><div class="board-source-form">
-            <label><span>已有来源</span><select id="boardSourceExisting" class="board-source-select"><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
-            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || '用户素材')}" placeholder="例如：NAS 品牌素材"></label>
-            <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
+            <label><span>已有来源</span><select id="boardSourceExisting" class="board-source-select" ${fieldsDisabled ? 'disabled' : ''}><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
+            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || '用户素材')}" placeholder="例如：NAS 品牌素材" ${fieldsDisabled ? 'disabled' : ''}></label>
+            <label class="board-source-path-label"><span>素材路径</span><div class="board-source-path-row"><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录" ${fieldsDisabled ? 'disabled' : ''}><button class="hw-btn hw-btn-icon" type="button" data-board-source-pick aria-label="选择文件夹" title="选择文件夹" ${fieldsDisabled ? 'disabled' : ''}><i data-lucide="folder-open"></i></button></div></label>
+            ${pickerStatusHtml}
             ${errorHtml}
         </div></div>
-        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-source-editor-cancel ${boardSourceState.saving ? 'disabled' : ''}>关闭</button><button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="${boardSourceState.saving ? 'loader-2' : 'folder-plus'}"></i><span>${boardSourceState.saving ? '正在添加…' : '添加来源'}</span></button></div>
+        <div class="board-create-actions"><button class="hw-btn" type="button" data-board-source-editor-cancel ${boardSourceState.saving ? 'disabled' : ''}>关闭</button><button class="hw-btn hw-btn-gold" type="button" data-board-source-confirm ${(boardSourceState.saving || boardSourceState.picking || boardSourceState.validating) ? 'disabled' : ''}><i data-lucide="${(boardSourceState.saving || boardSourceState.picking || boardSourceState.validating) ? 'loader-2' : 'folder-plus'}"></i><span>${boardSourceState.picking ? '正在选择…' : boardSourceState.validating ? '正在检查…' : boardSourceState.saving ? '正在添加…' : '添加来源'}</span></button></div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-board-source', content:'.board-source-modal', close:closeBoardSourceModal});
     refreshIcons();
@@ -1105,6 +1119,8 @@ function closeBoardSourceModal(){
     // 状态由下次 facets/settings 刷新恢复。
     boardSourceState.generation = Number(boardSourceState.generation || 0) + 1;
     boardSourceState.saving = false;
+    boardSourceState.picking = false;
+    boardSourceState.validating = false;
     boardSourceState.error = '';
     boardSourceState.open = false;
     renderBoardSourceModal();
@@ -1117,7 +1133,7 @@ function closeBoardSourceModal(){
 function cancelBoardSourceEditor(){
     closeBoardSourceModal();
 }
-async function confirmBoardSource(){
+async function confirmBoardSource(options={}){
     // QIN-596 §1/§7：确认忙碌守卫（忙碌中忽略重复确认）；capture 当前代际，
     // 关闭弹窗后迟到的返回不得触发成功文案/刷新/侧栏重绘（阶段B：服务端完成，UI 静默）。
     if(boardSourceState.saving) return;
@@ -1136,7 +1152,7 @@ async function confirmBoardSource(){
             if(Number(boardSourceState.generation || 0) !== generation) return;
         } else {
             if(!path){ boardSourceState.error = '请输入素材路径'; setStatus(boardSourceState.error); return; }
-            source = await attachPathToAssetBoard('', name, path);
+            source = await attachPathToAssetBoard('', name, path, options);
             if(Number(boardSourceState.generation || 0) !== generation) return;
         }
         if(!source) return;
@@ -1146,13 +1162,15 @@ async function confirmBoardSource(){
         void refreshRegistryFacetData().catch(() => null);
         notifyShellTreeSnapshot();
         render();
-        setStatus(`已添加资源文件夹“${source.name}”，正在建立索引`);
+        setStatus(`已受理资源文件夹“${source.name}”，正在建立索引`);
         if(source?.job_id){
             waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
         }
     } catch(err) {
         if(Number(boardSourceState.generation || 0) === generation){
-            boardSourceState.error = err?.message || '添加资源文件夹失败';
+            boardSourceState.error = err?.code === 'RESOURCE_FOLDER_BACKEND_UNAVAILABLE'
+                ? '当前文件夹后端不可访问，需授权（共享）给后端'
+                : (err?.message || '添加资源文件夹失败');
             setStatus(boardSourceState.error);
         }
     } finally {

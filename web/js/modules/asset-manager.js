@@ -1226,6 +1226,8 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
                     LUT_CUBE_INVALID:'LUT 文件格式无效，请检查文件头和采样数据',
                     LUT_CUBE_TOO_LARGE:'LUT 文件超过 64 MiB 上限',
                 })[job.error_code] || job.error_code || job.status;
+                await Promise.allSettled([loadAssetAllowedRootPaths(), refreshRegistryFacetData()]);
+                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
                 setStatus(`素材库“${sourceName}”索引失败：${message}`);
                 return job;
             }
@@ -8066,6 +8068,13 @@ async function handleClick(event){
     const directoryBrowserMount = target.closest?.('[data-server-directory-mount],[data-server-directory-mount-current]');
     if(directoryBrowserMount){
         const pathValue = directoryBrowserMount.dataset.serverDirectoryMount || directoryBrowserMount.dataset.serverDirectoryMountCurrent;
+        if(serverDirectoryBrowserState.key === 'boardSource' && typeof serverDirectoryBrowserState.onSelect === 'function'){
+            const onSelect = serverDirectoryBrowserState.onSelect;
+            setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false, saving:false, error:''});
+            await onSelect(pathValue);
+            gwCall('settings', 'renderServerDirectoryBrowserHost');
+            return;
+        }
         await gwCall('settings', 'saveDirectoryPath', serverDirectoryBrowserState.key || 'projects', pathValue, true);
         return;
     }
@@ -8259,6 +8268,44 @@ async function handleClick(event){
     }
     if(target.closest?.('[data-board-source-close]')){ gwCall('organize', 'closeBoardSourceModal'); return; }
     if(target.closest?.('[data-board-source-editor-cancel]')){ gwCall('organize', 'cancelBoardSourceEditor'); return; }
+    if(target.closest?.('[data-board-source-pick]')){
+        const generation = Number(boardSourceState.generation || 0) + 1;
+        boardSourceState.generation = generation;
+        boardSourceState.error = '';
+        boardSourceState.picking = true;
+        boardSourceState.validating = false;
+        gwCall('organize', 'renderBoardSourceModal');
+        await gwCall('settings', 'pickServerDirectoryNative', 'boardSource', {onSelect: async pathValue => {
+            if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+            boardSourceState.existingId = '';
+            boardSourceState.path = String(pathValue || '').trim();
+            boardSourceState.picking = false;
+            boardSourceState.validating = true;
+            gwCall('organize', 'renderBoardSourceModal');
+            try {
+                const validatedPath = await gwCall('settings', 'validateServerResourceDirectory', boardSourceState.path);
+                if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.path = String(validatedPath || boardSourceState.path).trim();
+                boardSourceState.validating = false;
+                gwCall('organize', 'renderBoardSourceModal');
+            } catch(error) {
+                if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.validating = false;
+                boardSourceState.error = Number(error?.status) === 400 || Number(error?.status) === 404 || Number(error?.status) >= 500
+                    ? '当前文件夹后端不可访问，需授权（共享）给后端'
+                    : (error?.message || '目录访问校验失败');
+                gwCall('organize', 'renderBoardSourceModal');
+                setStatus(boardSourceState.error);
+                return;
+            }
+            await gwCall('organize', 'confirmBoardSource', {atomicRegistration:true});
+        }});
+        if(boardSourceState.open && Number(boardSourceState.generation || 0) === generation){
+            boardSourceState.picking = false;
+            gwCall('organize', 'renderBoardSourceModal');
+        }
+        return;
+    }
     if(target.closest?.('[data-board-source-new]')){
         boardSourceState = {...boardSourceState, editor:'new', existingId:'', name:`${assetBoardById(boardSourceState.boardId)?.name || ''}素材`, path:''};
         gwCall('organize', 'renderBoardSourceModal');

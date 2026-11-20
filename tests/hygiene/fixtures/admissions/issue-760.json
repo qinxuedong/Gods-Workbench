@@ -1,0 +1,35 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 760,
+  "authorization_basis": "GitHub Issue #760 (QIN-625), 2026-11-20",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/settings/service.py",
+    "tests/contracts/assets/test_qin625_register_root_index_job.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-625-resource-folder-regression.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-760.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin625_register_root_index_job.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #760 (QIN-625), 2026-11-20",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-625-resource-folder-regression.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #760 (QIN-625), 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-625：修复资源文件夹选择、服务端可达性预检、一次登记与异步索引提交/取消/恢复；202 表示 pending，失败补偿只撤回仍独占的本次新增，不删除源文件并保留已有来源及索引。"
+}

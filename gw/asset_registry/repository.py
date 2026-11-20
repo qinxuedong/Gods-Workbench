@@ -108,6 +108,29 @@ def state() -> storage.JsonState:
     return storage.JsonState(NS_REGISTRY, _blank)
 
 
+def resource_folder_registration_receipt(snapshot: dict[str, Any], receipt_id: str) -> dict[str, Any] | None:
+    """冷读登记任务与索引收据同事务写入的专用确认记录。"""
+    receipts = snapshot.get("resource_folder_registration_receipts", {})
+    receipt = receipts.get(receipt_id) if isinstance(receipts, dict) else None
+    return dict(receipt) if isinstance(receipt, dict) else None
+
+
+def write_resource_folder_registration_receipt(
+    raw: dict[str, Any], job: dict[str, Any]
+) -> None:
+    """仅供索引提交事务使用；登记归属与索引结果同一次原子落盘。"""
+    registration = job.get("_resource_folder_registration")
+    if not isinstance(registration, dict):
+        return
+    receipt_id = f"{job['job_id']}:{job['attempt']}"
+    receipts = raw.setdefault("resource_folder_registration_receipts", {})
+    receipts[receipt_id] = {
+        "operation_id": str(registration.get("operation_id") or ""),
+        "source_id": str(registration.get("source_id") or ""),
+        "root_id": str(registration.get("root_id") or ""),
+    }
+
+
 # ---------------------------------------------------------------------------
 # QIN-604：类型兼容的只读快照视图
 # ---------------------------------------------------------------------------
