@@ -1933,7 +1933,9 @@ def _acquire_lock_file(path: Path, *, label: str) -> DataDirLock:
             ) from None
         if code == "LOCK_HELD" and _identity_holder_alive(identity):
             handle.close()
-            raise DataDirLockedError(f"{label}已被另一个神工坊进程占用", code="LOCK_HELD")
+            raise DataDirLockedError(
+                f"{label}已被另一个神工坊进程占用（{path.parent}）", code="LOCK_HELD"
+            )
         marker = path.with_name(path.name + ".recover")
         try:
             fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
@@ -2023,7 +2025,7 @@ def acquire_data_dir_lock(root: Path) -> DataDirLock:
         held = _HELD_DATA_LOCKS.get(key)
         if held is not None and held._handle is not None:
             return held
-    lock = _acquire_lock_file(root / ".gw-data.lock", label="数据目录锁")
+    lock = _acquire_lock_file(root / ".gw-data.lock", label="数据目录")
     with _LOCK:
         _HELD_DATA_LOCKS[key] = lock
     return lock
