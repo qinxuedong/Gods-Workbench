@@ -7,6 +7,22 @@ const manager = readFileSync(new URL('../../web/js/modules/asset-manager.js', im
 const organize = readFileSync(new URL('../../web/js/modules/asset-manager/organize.js', import.meta.url), 'utf8');
 const settings = readFileSync(new URL('../../web/js/modules/asset-manager/settings.js', import.meta.url), 'utf8');
 const css = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
+const acceptedIndexStart = organize.indexOf('function acceptedAssetIndexJobId(');
+const acceptedIndexEnd = organize.indexOf('\nasync function attachPathToAssetBoard', acceptedIndexStart);
+const confirmStart = organize.indexOf('async function confirmBoardSource(');
+const confirmEnd = organize.indexOf('\nasync function refreshCASReadState', confirmStart);
+const attachStart = organize.indexOf('async function attachPathToAssetBoard(');
+const attachEnd = organize.indexOf('\nlet boardSourceFocusTarget', attachStart);
+const waitStart = manager.indexOf('async function waitForAssetIndexJob(');
+const waitEnd = manager.indexOf('\nasync function copyTextToClipboard', waitStart);
+assert.ok(acceptedIndexStart >= 0 && acceptedIndexEnd > acceptedIndexStart);
+assert.ok(confirmStart >= 0 && confirmEnd > confirmStart);
+assert.ok(attachStart >= 0 && attachEnd > attachStart);
+assert.ok(waitStart >= 0 && waitEnd > waitStart);
+const acceptedIndexSource = organize.slice(acceptedIndexStart, acceptedIndexEnd);
+const confirmSource = organize.slice(confirmStart, confirmEnd);
+const attachSource = organize.slice(attachStart, attachEnd);
+const waitSource = manager.slice(waitStart, waitEnd);
 
 const pickerStart = manager.indexOf("if(target.closest?.('[data-board-source-pick]')){");
 const pickerEnd = manager.indexOf("if(target.closest?.('[data-board-source-new]')){", pickerStart);
@@ -141,6 +157,178 @@ test('后端不可达提示不触发登记；受理文案保持 pending 语义',
   assert.equal(harness.state.error, '当前文件夹后端不可访问，需授权（共享）给后端');
   assert.match(organize, /已受理资源文件夹.*正在建立索引/);
   assert.doesNotMatch(organize, /已添加完成/);
+});
+
+function confirmHarness({ reindexResult, selectedId = 'source-1', sourcePath = 'Z:/shared/library', attachPathToAssetBoard, waitForAssetIndexJob } = {}) {
+  const library = { id: 'source-1', name: '已有来源', path: 'Z:/shared/library' };
+  const localLibraries = [library];
+  const state = {
+    open: true,
+    generation: 7,
+    existingId: selectedId,
+    name: '已有来源',
+    path: sourcePath,
+    error: '',
+    saving: false,
+    picking: false,
+    validating: false,
+  };
+  const calls = { reindex: [], close: 0, renderModal: 0, status: [], wait: [], waitPromise: null };
+  const fields = {
+    boardSourceExisting: { value: selectedId },
+    boardSourceName: { value: '已有来源' },
+    boardSourcePath: { value: sourcePath },
+  };
+  const run = new Function(
+    'boardSourceState', 'document', 'localLibraries', 'storageCleanName', 'reindexAssetSource',
+    'renderBoardSourceModal', 'attachPathToAssetBoard', 'closeBoardSourceModal', 'assetAllowedRootPaths',
+    'loadAssetAllowedRootPaths', 'refreshRegistryFacetData', 'notifyShellTreeSnapshot', 'render', 'setStatus', 'waitForAssetIndexJob',
+    `${acceptedIndexSource}\n${confirmSource}\nreturn confirmBoardSource;`,
+  )(
+    state,
+    { getElementById: id => fields[id] || null },
+    localLibraries,
+    (name, fallback) => name || fallback,
+    async id => { calls.reindex.push(id); return reindexResult; },
+    () => { calls.renderModal += 1; },
+    attachPathToAssetBoard || (async () => { throw new Error('意外进入新来源登记'); }),
+    () => { calls.close += 1; state.generation += 1; state.open = false; state.saving = false; state.error = ''; },
+    new Map(),
+    () => Promise.resolve(),
+    () => Promise.resolve(),
+    () => {},
+    () => {},
+    message => calls.status.push(message),
+    (jobId, sourceName) => {
+      calls.wait.push({ jobId, sourceName });
+      calls.waitPromise = waitForAssetIndexJob ? waitForAssetIndexJob(jobId, sourceName) : Promise.resolve(null);
+      return calls.waitPromise;
+    },
+  );
+  return { library, localLibraries, state, calls, run };
+}
+
+function failedScanWaitHarness(scanJob, status) {
+  const calls = { polls: [], indexStates: [], renders: 0 };
+  const wait = new Function(
+    'apiJsonResponse', 'assetManagerApi', 'markIndexState', 'refreshRegistryAssets', 'refreshRegistryFacetData',
+    'activeTab', 'assetBoardById', 'render', 'setStatus', 'loadAssetAllowedRootPaths',
+    `${waitSource}\nreturn waitForAssetIndexJob;`,
+  )(
+    async response => response,
+    { getWorkspaceJob: jobId => { calls.polls.push(jobId); return Promise.resolve({ job: scanJob }); } },
+    value => calls.indexStates.push(value),
+    async () => null,
+    async () => null,
+    'registry',
+    () => null,
+    () => { calls.renders += 1; },
+    status,
+    async () => null,
+  );
+  return { calls, wait };
+}
+
+function knownSourceAttach({ localLibraries, reindexAssetSource, status }) {
+  return new Function(
+    'ensureCreateLibraryPathAllowedRoot', 'apiJsonResponse', 'assetManagerApi', 'applyStorageSettingsData',
+    'pathCompareKey', 'localLibraries', 'storageCleanName', 'setStatus', 'reindexAssetSource',
+    `${acceptedIndexSource}\n${attachSource}\nreturn attachPathToAssetBoard;`,
+  )(
+    async () => true,
+    async response => response,
+    { getStorageSettings: () => Promise.resolve({}) },
+    () => {},
+    value => String(value || '').replace(/\\/g, '/').toLowerCase(),
+    localLibraries,
+    (name, fallback) => name || fallback,
+    status,
+    reindexAssetSource,
+  );
+}
+
+test('已有来源索引启动失败或缺少 job_id 时保留选择并显示错误', async () => {
+  const cases = [
+    { result: { ok: false, error: 'request rejected' }, error: 'request rejected' },
+    { result: { ok: true, data: {} }, error: '索引任务未返回有效任务编号' },
+  ];
+  for (const item of cases) {
+    const harness = confirmHarness({ reindexResult: item.result });
+    const before = structuredClone(harness.localLibraries);
+    await harness.run();
+    assert.equal(harness.state.open, true);
+    assert.equal(harness.state.saving, false);
+    assert.equal(harness.state.existingId, 'source-1');
+    assert.equal(harness.state.path, 'Z:/shared/library');
+    assert.equal(harness.state.error, item.error);
+    assert.equal(harness.calls.close, 0);
+    assert.deepEqual(harness.calls.wait, []);
+    assert.equal(harness.calls.status.includes('已受理资源文件夹“已有来源”，正在建立索引'), false);
+    assert.deepEqual(harness.localLibraries, before);
+  }
+});
+
+test('重复添加已登记路径的索引启动失败不伪报受理', async () => {
+  const calls = { reindex: [], status: [] };
+  const harness = confirmHarness({
+    selectedId: '',
+    reindexResult: { ok: false, error: 'request rejected' },
+    attachPathToAssetBoard: null,
+  });
+  const attach = knownSourceAttach({
+    localLibraries: harness.localLibraries,
+    reindexAssetSource: async id => { calls.reindex.push(id); return { ok: false, error: 'request rejected' }; },
+    status: message => calls.status.push(message),
+  });
+  const direct = new Function(
+    'boardSourceState', 'document', 'localLibraries', 'storageCleanName', 'reindexAssetSource',
+    'renderBoardSourceModal', 'attachPathToAssetBoard', 'closeBoardSourceModal', 'assetAllowedRootPaths',
+    'loadAssetAllowedRootPaths', 'refreshRegistryFacetData', 'notifyShellTreeSnapshot', 'render', 'setStatus', 'waitForAssetIndexJob',
+    `${acceptedIndexSource}\n${confirmSource}\nreturn confirmBoardSource;`,
+  )(
+    harness.state,
+    { getElementById: id => ({ boardSourceExisting: { value: '' }, boardSourceName: { value: '已有来源' }, boardSourcePath: { value: 'Z:/shared/library' } })[id] || null },
+    harness.localLibraries,
+    (name, fallback) => name || fallback,
+    async id => { calls.reindex.push(id); return { ok: false, error: 'request rejected' }; },
+    () => {},
+    attach,
+    () => { harness.calls.close += 1; harness.state.open = false; },
+    new Map(),
+    () => Promise.resolve(),
+    () => Promise.resolve(),
+    () => {},
+    () => {},
+    message => { calls.status.push(message); harness.calls.status.push(message); },
+    () => { harness.calls.wait.push(true); return Promise.resolve(null); },
+  );
+  await direct({ atomicRegistration: true });
+  assert.deepEqual(calls.reindex, ['source-1']);
+  assert.equal(harness.state.open, true);
+  assert.equal(harness.state.error, 'request rejected');
+  assert.equal(harness.calls.close, 0);
+  assert.equal(harness.calls.wait.length, 0);
+  assert.equal(harness.calls.status.includes('已受理资源文件夹“已有来源”，正在建立索引'), false);
+});
+
+test('已有来源的 202 任务后续失败会轮询并显示终态错误', async () => {
+  const status = [];
+  const waitHarness = failedScanWaitHarness({ status: 'failed', error_code: 'SCAN_FAILED' }, message => status.push(message));
+  const harness = confirmHarness({
+    reindexResult: { ok: true, data: { job_id: 'job-accepted-1' } },
+    waitForAssetIndexJob: waitHarness.wait,
+  });
+  const before = structuredClone(harness.localLibraries);
+  await harness.run();
+  assert.equal(harness.state.open, false);
+  assert.equal(harness.calls.close, 1);
+  assert.deepEqual(harness.calls.wait, [{ jobId: 'job-accepted-1', sourceName: '已有来源' }]);
+  await harness.calls.waitPromise;
+  assert.deepEqual(waitHarness.calls.polls, ['job-accepted-1']);
+  assert.deepEqual(waitHarness.calls.indexStates, ['failed']);
+  assert.equal(status.at(-1), '素材库“已有来源”索引失败：SCAN_FAILED');
+  assert.equal(harness.calls.status.includes('已受理资源文件夹“已有来源”，正在建立索引'), true);
+  assert.deepEqual(harness.localLibraries, before);
 });
 
 test('选择按钮与状态说明可见，焦点态仍保留', () => {

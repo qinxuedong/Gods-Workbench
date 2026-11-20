@@ -965,6 +965,16 @@ function togglePreviewDeleteCategory(id){
 }
 // QIN-599 AC2：用户自定义资源库看板的创建、编辑、来源绑定管理逻辑已全部移除；
 // 添加资源文件夹统一复用 attachPathToAssetBoard('', name, path, options)。
+function acceptedAssetIndexJobId(result){
+    if(result?.ok !== true){
+        const error = result?.error;
+        const message = typeof error === 'string' ? error : error?.message;
+        throw new Error(message || '索引任务提交失败');
+    }
+    const jobId = result.data?.job_id;
+    if(typeof jobId !== 'string' || !jobId.trim()) throw new Error('索引任务未返回有效任务编号');
+    return jobId.trim();
+}
 async function attachPathToAssetBoard(boardId, sourceName, path, options={}){
     const cleanPath = String(path || '').trim();
     if(!cleanPath) throw new Error('未填写素材路径，已跳过索引');
@@ -1059,8 +1069,7 @@ async function attachPathToAssetBoard(boardId, sourceName, path, options={}){
         // 重复添加与「登记成功但索引提交失败」的恢复统一，不重复登记、不重复写允许根。
         setStatus(`正在重建“${source.name}”索引…`);
         const reindexed = await reindexAssetSource(source.id);
-        if(reindexed?.ok && reindexed.data?.job_id) source.job_id = reindexed.data.job_id;
-        else if(reindexed && reindexed.ok === false) setStatus(reindexed.error || '索引任务提交失败');
+        source.job_id = acceptedAssetIndexJobId(reindexed);
     }
     if(accepted?.job_id){
         source.job_id = accepted.job_id;
@@ -1148,7 +1157,10 @@ async function confirmBoardSource(options={}){
         if(existingId){
             const lib = localLibraries.find(item => item.id === existingId);
             if(lib) source = {id:lib.id, name:storageCleanName(name || lib.name, lib.name), path:lib.path};
-            if(source) await reindexAssetSource(source.id);
+            if(source){
+                const reindexed = await reindexAssetSource(source.id);
+                source.job_id = acceptedAssetIndexJobId(reindexed);
+            }
             if(Number(boardSourceState.generation || 0) !== generation) return;
         } else {
             if(!path){ boardSourceState.error = '请输入素材路径'; setStatus(boardSourceState.error); return; }
