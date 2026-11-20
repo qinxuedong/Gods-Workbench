@@ -45,6 +45,7 @@ $script:installerResults = New-Object System.Collections.ArrayList
 $script:lifecycle = [ordered]@{}
 $script:desktop = $null
 $script:desktopLaunch = $null
+$script:processLaunches = @{}
 $script:holders = New-Object System.Collections.ArrayList
 $script:fatal = ""
 $script:result = "FAIL"
@@ -388,12 +389,40 @@ function Wait-ProcessExit {
     }
 }
 
+function ConvertTo-NativeArgument {
+    param([string]$Value)
+    if ($null -eq $Value -or $Value.Length -eq 0) { return '""' }
+    if ($Value -notmatch '[\s"]') { return $Value }
+    $escaped = $Value -replace '(\\*)"', '$1$1\"'
+    $escaped = $escaped -replace '(\\+)$', '$1$1'
+    return '"' + $escaped + '"'
+}
+
+function Complete-GwOutput {
+    param($Launch)
+    if ($null -eq $Launch -or $Launch.output_complete) { return }
+    $Launch.output_complete = $true
+    try {
+        $stdoutText = ""
+        $stderrText = ""
+        if ($null -ne $Launch.stdout_task) { $stdoutText = $Launch.stdout_task.GetAwaiter().GetResult() }
+        if ($null -ne $Launch.stderr_task) { $stderrText = $Launch.stderr_task.GetAwaiter().GetResult() }
+        Write-Utf8NoBom -Path $Launch.stdout -Text $stdoutText
+        Write-Utf8NoBom -Path $Launch.stderr -Text $stderrText
+    } catch {
+    }
+}
+
 function Get-ProcessExitCode {
     param($Process)
     try {
         $Process.Refresh()
         if (-not $Process.HasExited) { return $null }
-        return [int]$Process.ExitCode
+        $launch = $script:processLaunches[[int]$Process.Id]
+        if ($null -ne $launch) { Complete-GwOutput -Launch $launch }
+        $exitCode = $Process.ExitCode
+        if ($null -eq $exitCode) { return $null }
+        return [int]$exitCode
     } catch {
         return $null
     }
@@ -415,21 +444,38 @@ function Start-GwProcess {
         [Environment]::SetEnvironmentVariable($key, [string]$Environment[$key], "Process")
     }
     try {
-        $startParams = @{
-            FilePath = $FilePath
-            PassThru = $true
-            RedirectStandardOutput = $stdout
-            RedirectStandardError = $stderr
+        $startInfo = New-Object System.Diagnostics.ProcessStartInfo
+        $startInfo.FileName = $FilePath
+        if ($Arguments -and @($Arguments).Count -gt 0) {
+            $startInfo.Arguments = (@($Arguments) | ForEach-Object { ConvertTo-NativeArgument ([string]$_) }) -join " "
         }
-        if ($Arguments -and @($Arguments).Count -gt 0) { $startParams.ArgumentList = @($Arguments) }
-        if ($WorkingDirectory) { $startParams.WorkingDirectory = $WorkingDirectory }
-        $process = Start-Process @startParams
+        $startInfo.UseShellExecute = $false
+        $startInfo.RedirectStandardOutput = $true
+        $startInfo.RedirectStandardError = $true
+        $startInfo.CreateNoWindow = $true
+        $startInfo.StandardOutputEncoding = [System.Text.Encoding]::UTF8
+        $startInfo.StandardErrorEncoding = [System.Text.Encoding]::UTF8
+        if ($WorkingDirectory) { $startInfo.WorkingDirectory = $WorkingDirectory }
+        $process = New-Object System.Diagnostics.Process
+        $process.StartInfo = $startInfo
+        if (-not $process.Start()) { throw ("failed to start " + $FilePath) }
+        $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+        $stderrTask = $process.StandardError.ReadToEndAsync()
     } finally {
         foreach ($key in $saved.Keys) {
             [Environment]::SetEnvironmentVariable($key, $saved[$key], "Process")
         }
     }
-    return [pscustomobject]@{ process = $process; stdout = $stdout; stderr = $stderr }
+    $launch = [pscustomobject]@{
+        process = $process
+        stdout = $stdout
+        stderr = $stderr
+        stdout_task = $stdoutTask
+        stderr_task = $stderrTask
+        output_complete = $false
+    }
+    $script:processLaunches[[int]$process.Id] = $launch
+    return $launch
 }
 
 function Start-DesktopProcess {
@@ -820,9 +866,11 @@ function Stop-DesktopGracefully {
     Require-Check "$Label.backend-stopped-after-wait" ($backendLeft.Count -eq 0) ("backend PIDs survived quit: " + ($backendLeft -join ","))
     $desktopLeft = @(Get-DesktopPids)
     Require-Check "$Label.desktop-single-exit" ($desktopLeft.Count -eq 0) ("desktop PIDs survived quit: " + ($desktopLeft -join ","))
+    $primaryExit = Get-ProcessExitCode -Process $script:desktop
     $script:lifecycle[$Label] = [ordered]@{
         helper_exit = $quit.exit_code
         desktop_pid = $pidToStop
+        desktop_exit = $primaryExit
         lock_removed = $lockGone
         port_released = $portFree
         backend_pids_after = $backendLeft

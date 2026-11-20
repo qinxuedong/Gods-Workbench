@@ -245,16 +245,21 @@ fn is_process_alive(pid: u32) -> bool {
             dwProcessId: u32,
         ) -> *mut std::ffi::c_void;
         fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+        fn WaitForSingleObject(hHandle: *mut std::ffi::c_void, dwMilliseconds: u32) -> u32;
     }
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     const SYNCHRONIZE: u32 = 0x00100000;
+    const WAIT_TIMEOUT: u32 = 258;
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
         if handle.is_null() {
             return false;
         }
+        // OpenProcess still succeeds while another handle keeps a terminated
+        // process object alive; wait on the handle to observe real termination.
+        let wait = WaitForSingleObject(handle, 0);
         CloseHandle(handle);
-        true
+        wait == WAIT_TIMEOUT
     }
 }
 
@@ -2923,6 +2928,29 @@ mod tests {
     fn test_process_liveness_detection() {
         assert!(is_process_alive(std::process::id()));
         assert!(!is_process_alive(99_999_999));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn terminated_process_with_open_handle_is_not_alive() {
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/C", "exit", "0"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn short-lived process");
+        let pid = child.id();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while child.try_wait().expect("query helper process").is_none() {
+            assert!(std::time::Instant::now() < deadline, "helper did not exit");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !is_process_alive(pid),
+            "terminated process with an open handle must not count as alive"
+        );
+        drop(child);
     }
 
     #[test]
