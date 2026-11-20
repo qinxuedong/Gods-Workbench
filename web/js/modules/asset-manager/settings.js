@@ -260,10 +260,21 @@ let workspaceSettingsState = {
     saving: false,
     target: 'ws_nas_01',
     machine: 'machine_local_01',
+    path: '',
     error: '',
     generation: 0,
 };
 function setWorkspaceSettingsState(patch={}){ workspaceSettingsState = {...workspaceSettingsState, ...patch}; }
+function captureWorkspaceMappingForm(options={}){
+    // 任何重绘之前先捕获完整表单；重绘后仍按捕获值回填，防止读到默认机器。
+    const machineInput = document.getElementById('workspaceMapMachine');
+    const pathInput = document.getElementById('workspaceMapPath');
+    const patch = {};
+    if(machineInput) patch.machine = String(machineInput.value || '').trim() || workspaceSettingsState.machine;
+    if(pathInput) patch.path = options.clearPath ? '' : String(pathInput.value || '').trim();
+    if(Object.keys(patch).length) setWorkspaceSettingsState(patch);
+    return {machine:workspaceSettingsState.machine, path:workspaceSettingsState.path};
+}
 function workspaceClientId(){
     try {
         let id = sessionStorage.getItem('gw_workspace_client_instance');
@@ -360,21 +371,24 @@ async function switchWorkspace(workspaceId){
     }
 }
 async function verifyWorkspaceMapping(){
-    const path = String(document.getElementById('workspaceMapPath')?.value || '').trim();
+    const form = captureWorkspaceMappingForm();
+    const path = form.path;
     if(!path){ setStatus('请输入共享路径'); return; }
     const generation = workspaceSettingsState.generation;
-    setWorkspaceSettingsState({saving:true, error:''});
+    setWorkspaceSettingsState({saving:true, error:'', machine:form.machine, path});
     renderGlobalDirectorySettings();
-    setStatus('正在核验执行端权限…');
+    setStatus('正在核验服务端执行端权限…');
     try {
         const result = await workspaceRequest('/api/workspaces/verify', 'POST', {
             access_path:path,
-            execution_machine_id:String(document.getElementById('workspaceMapMachine')?.value || 'machine_local_01').trim(),
+            execution_machine_id:form.machine,
             capability:'read_write',
         });
         if(generation !== workspaceSettingsState.generation) return;
         setWorkspaceSettingsState({saving:false, error:''});
-        setStatus(result?.status === 'verified' ? '执行端可读写该路径' : '执行端核验未通过');
+        const verifiedBy = String(result?.verified_by || '服务端执行上下文');
+        const prefix = result?.status === 'verified' ? `服务端执行端可读写该路径（核验宿主：${verifiedBy}）` : '执行端核验未通过';
+        setStatus(prefix);
         renderGlobalDirectorySettings();
     } catch(error) {
         if(generation !== workspaceSettingsState.generation) return;
@@ -387,29 +401,34 @@ async function verifyWorkspaceMapping(){
 async function addWorkspaceMapping(){
     const snapshot = workspaceSettingsState.snapshot;
     if(workspaceSettingsState.saving || !snapshot) return;
-    const path = String(document.getElementById('workspaceMapPath')?.value || '').trim();
+    const form = captureWorkspaceMappingForm();
+    const path = form.path;
     if(!path){ setStatus('请输入共享路径'); return; }
     const generation = workspaceSettingsState.generation;
-    setWorkspaceSettingsState({saving:true, error:''});
+    const target = workspaceSettingsState.target;
+    setWorkspaceSettingsState({saving:true, error:'', machine:form.machine, path});
     renderGlobalDirectorySettings();
     setStatus('正在登记共享映射…');
     try {
         const updated = await workspaceRequest('/api/workspaces/mappings', 'POST', {
             access_path:path,
-            execution_machine_id:String(document.getElementById('workspaceMapMachine')?.value || 'machine_local_01').trim(),
+            execution_machine_id:form.machine,
             capability:'read_write',
-            workspace_id:workspaceSettingsState.target,
+            workspace_id:target,
             expected_version:Number(snapshot.revision || 1),
         });
         if(generation !== workspaceSettingsState.generation) return;
         applyWorkspaceSnapshot(updated);
+        const pathInput = document.getElementById('workspaceMapPath');
+        if(pathInput) pathInput.value = '';
+        setWorkspaceSettingsState({path:''});
         await loadAssetAllowedRootPaths();
         setStatus('共享映射已登记，未复制素材且未新增重复来源');
         renderGlobalDirectorySettings();
     } catch(error) {
         if(generation !== workspaceSettingsState.generation) return;
         const message = workspaceErrorMessage(error);
-        setWorkspaceSettingsState({saving:false, error:message});
+        setWorkspaceSettingsState({saving:false, error:message, machine:form.machine, path});
         setStatus(message);
         renderGlobalDirectorySettings();
     }
@@ -422,13 +441,13 @@ function renderWorkspaceSettingsBody(){
     const activeLabel = workspaces.find(item => item.workspace_id === active)?.display_name || '独立本机工作区';
     const compatibility = snapshot?.compatibility || {status:'pending', detail:'兼容检查尚未读取'};
     const modeButtons = workspaces.map(item => `<button type="button" class="hw-btn ${workspaceSettingsState.target === item.workspace_id ? 'hw-btn-gold' : ''}" data-workspace-mode="${escapeAttr(item.workspace_id)}" aria-pressed="${workspaceSettingsState.target === item.workspace_id}" ${busy ? 'disabled' : ''}>${escapeHtml(item.display_name)}</button>`).join('');
-    const mappings = (snapshot?.mappings || []).map(item => `<article class="allowed-root-row workspace-mapping-row" data-workspace-mapping="${escapeAttr(item.mapping_id)}"><div class="allowed-root-info"><strong>${escapeHtml(item.logical_source_id)}</strong><code title="共享路径">${escapeHtml(item.access_path)}</code><small>执行机器：${escapeHtml(item.execution_machine_id)} · 核验：${escapeHtml(item.verification?.status || 'pending')}</small></div></article>`).join('');
+    const mappings = (snapshot?.mappings || []).map(item => `<article class="allowed-root-row workspace-mapping-row" data-workspace-mapping="${escapeAttr(item.mapping_id)}"><div class="allowed-root-info"><strong>${escapeHtml(item.logical_source_id)}</strong><code title="共享路径">${escapeHtml(item.access_path)}</code><small>执行机器：${escapeHtml(item.execution_machine_id)} · 核验：${escapeHtml(item.verification?.status || 'pending')} · 核验宿主：${escapeHtml(item.verification?.verified_by || '服务端执行上下文')}</small></div></article>`).join('');
     return `<section class="asset-pref-section workspace-settings" data-workspace-settings aria-busy="${busy}">
         <div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>工作区</span><small>${busy ? '正在处理…' : escapeHtml(activeLabel)}</small></div>
         <p class="board-settings-hint">默认使用独立本机工作区；安装本地后台不会自动加入 NAS。切换需确认，同一客户端只向当前工作区写入。</p>
         <div class="workspace-mode-switch" role="group" aria-label="工作区模式">${modeButtons}<button type="button" class="hw-btn hw-btn-gold" data-workspace-switch="${escapeAttr(workspaceSettingsState.target)}" ${busy || workspaceSettingsState.target === active ? 'disabled' : ''}>${busy ? '处理中…' : '切换工作区'}</button></div>
         <p class="board-settings-hint workspace-compat">兼容检查：${escapeHtml(compatibility.status === 'compatible' ? '已通过' : (compatibility.detail || '待接入'))}</p>
-        <div class="allowed-root-add"><label class="storage-dir-row"><span>执行机器</span><div class="directory-input-row"><input id="workspaceMapMachine" value="${escapeAttr(workspaceSettingsState.machine)}" autocomplete="off" ${busy ? 'disabled' : ''}></div></label><label class="storage-dir-row"><span>共享路径（服务端可解析）</span><div class="directory-input-row"><input id="workspaceMapPath" value="" autocomplete="off" placeholder="输入执行端可访问的资源文件夹" ${busy ? 'disabled' : ''}></div></label><div class="workspace-mapping-actions"><button type="button" class="hw-btn" data-workspace-map-verify ${busy ? 'disabled' : ''}>核验权限</button><button type="button" class="hw-btn hw-btn-gold" data-workspace-map-add ${busy ? 'disabled' : ''}>登记映射</button></div></div>
+        <div class="allowed-root-add"><label class="storage-dir-row"><span>执行机器</span><div class="directory-input-row"><input id="workspaceMapMachine" value="${escapeAttr(workspaceSettingsState.machine)}" autocomplete="off" ${busy ? 'disabled' : ''}></div></label><label class="storage-dir-row"><span>共享路径（服务端可解析）</span><div class="directory-input-row"><input id="workspaceMapPath" value="${escapeAttr(workspaceSettingsState.path)}" autocomplete="off" placeholder="输入执行端可访问的资源文件夹" ${busy ? 'disabled' : ''}></div></label><div class="workspace-mapping-actions"><button type="button" class="hw-btn" data-workspace-map-verify ${busy ? 'disabled' : ''}>核验权限</button><button type="button" class="hw-btn hw-btn-gold" data-workspace-map-add ${busy ? 'disabled' : ''}>登记映射</button></div></div>
         ${workspaceSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(workspaceSettingsState.error)}</p>` : ''}
         <div class="allowed-root-list">${mappings || '<p class="directory-status">暂无共享映射</p>'}</div>
     </section>`;
@@ -1708,6 +1727,7 @@ function renderAllowedRootsSettings(){
     return `<section class="asset-pref-section allowed-roots-settings" data-allowed-roots-settings><div class="asset-pref-title allowed-roots-title-row"><div class="allowed-roots-title-left"><i data-lucide="folder-check"></i><span>资源文件夹</span><small>${canManageAllowedRoots() ? '管理员管理' : '只读'}</small></div></div><p class="board-settings-hint">移出资源库只撤销扫描授权并保留索引；清除索引不可恢复，但不会删除源文件。</p>${allowedRootSettingsState.error ? `<p class="allowed-root-error" role="alert">${escapeHtml(allowedRootSettingsState.error)}</p>` : ''}${addForm}<div class="allowed-root-list">${entries || '<p class="directory-status">暂无资源文件夹</p>'}</div>${pendingPurgeRoot ? renderPurgeConfirmModal() : ''}</section>`;
 }
 function renderGlobalDirectorySettings(){
+    captureWorkspaceMappingForm();
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
     const focusId = host.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';

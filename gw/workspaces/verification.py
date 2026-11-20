@@ -104,5 +104,8 @@ def verify_executor_path(access_path: str, capability: str = model.CAPABILITY_RE
         "status": model.VERIFICATION_VERIFIED,
         "verified_at": storage.now_iso(),
         "checked_capability": capability,
+        # 实际探测由服务端进程执行，不采信客户端传来的执行机器 ID。
+        "verified_by": model.LOCAL_EXECUTION_MACHINE_ID,
+        "verification_source": "server_context",
         "reason": "",
     }

@@ -90,7 +90,7 @@ class WorkspaceService:
         }
 
     def verify_path(self, payload: Any) -> dict[str, str]:
-        """只探测不落盘，供前端在登记前给出明确可达/不可达结论。"""
+        """只探测不落盘；探测宿主由服务端上下文决定，不采信客户端标签。"""
         return verification.verify_executor_path(payload.access_path, payload.capability)
 
     def build_execution_context(

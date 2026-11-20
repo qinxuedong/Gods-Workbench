@@ -118,6 +118,46 @@ def test_mapping_is_deduped_by_logical_source_and_executor(workspace_runtime):
     assert service.get_snapshot()["mappings"][0]["mapping_id"] == mapping["mapping_id"]
 
 
+def test_two_execution_machines_register_independently_and_server_context_verifies(workspace_runtime):
+    _, allowed, _ = workspace_runtime
+    _compatible()
+    machines = ("qa_machine_remote_628", "qa_machine_remote_629")
+    with TestClient(create_app()) as client:
+        revision = 1
+        for machine in machines:
+            verified = client.post(
+                BASE + "/verify",
+                headers=ADMIN,
+                json={
+                    "access_path": str(allowed),
+                    "execution_machine_id": machine,
+                    "capability": "read_write",
+                },
+            )
+            assert verified.status_code == 200, verified.text
+            assert verified.json()["verified_by"] == model.LOCAL_EXECUTION_MACHINE_ID
+            assert verified.json()["verification_source"] == "server_context"
+
+            created = client.post(
+                BASE + "/mappings",
+                headers=ADMIN,
+                json={
+                    "access_path": str(allowed),
+                    "execution_machine_id": machine,
+                    "capability": "read_write",
+                    "expected_version": revision,
+                },
+            )
+            assert created.status_code == 200, created.text
+            revision = created.json()["revision"]
+        snapshot = _snapshot(client)
+    assert len(snapshot["mappings"]) == 2
+    assert {item["execution_machine_id"] for item in snapshot["mappings"]} == set(machines)
+    for item in snapshot["mappings"]:
+        assert item["verification"]["verified_by"] == model.LOCAL_EXECUTION_MACHINE_ID
+        assert item["verification"]["verification_source"] == "server_context"
+
+
 def test_unreachable_path_does_not_register_partial_mapping(workspace_runtime):
     tmp_path, _, _ = workspace_runtime
     with TestClient(create_app()) as client:

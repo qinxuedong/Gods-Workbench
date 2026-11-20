@@ -64,6 +64,8 @@ class MappingVerification(BaseModel):
     status: str = VERIFICATION_PENDING
     verified_at: str | None = None
     checked_capability: str = CAPABILITY_READ_WRITE
+    verified_by: str | None = None
+    verification_source: str = ""
     reason: str = ""
 
 
