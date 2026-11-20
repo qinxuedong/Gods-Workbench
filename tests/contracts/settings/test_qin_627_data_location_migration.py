@@ -572,19 +572,25 @@ def test_recovery_cleans_stage_for_copying_journal(prod_home, tmp_path):
 
 
 def test_recovery_marks_completed_when_pointer_advanced(prod_home, tmp_path):
+    migration_id = "promo1"
     target = tmp_path / "target-promoted"
     target.mkdir()
-    (target / "data").mkdir()
+    payload = b'{"projects": []}'
+    files = {"data/projects.json": payload}
+    _write_recovery_files(target, files)
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
     service._write_pointer(
         data_location=target,
         revision=2,
         previous_location=prod_home["runtime_root"],
-        last_migration={"id": "promo1", "status": "completed"},
+        last_migration={"id": migration_id, "status": "completed"},
     )
     service._write_journal(
         {
             "schema_version": service.JOURNAL_SCHEMA_VERSION,
-            "migration_id": "promo1",
+            "migration_id": migration_id,
             "status": "promoting",
             "phase": "promoting",
             "target": str(target),
@@ -595,6 +601,8 @@ def test_recovery_marks_completed_when_pointer_advanced(prod_home, tmp_path):
     result = service.recover_on_startup()
     assert result["action"] == "marked_completed"
     assert service.read_journal()["status"] == "completed"
+    assert (target / "data" / "projects.json").read_bytes() == payload
+    assert not (target / service._receipt_name(migration_id)).exists()
 
 
 def test_recovery_removes_only_owned_files_and_preserves_target_user_file(prod_home, tmp_path):
@@ -801,6 +809,182 @@ def test_promoted_target_scan_rejects_concurrent_new_file(prod_home, tmp_path):
 
     assert exc.value.code == "SWITCH_FAILED"
     assert (target / "user-file.txt").read_text(encoding="utf-8") == "concurrent"
+
+
+def test_promoted_target_scan_rejects_same_size_content_change(prod_home, tmp_path):
+    migration_id = "promo-same-size"
+    target = tmp_path / "target-same-size"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    original = b"ORIGINAL"
+    corrupted = b"CORRUPT!"
+    assert len(original) == len(corrupted)
+    manifest = _recovery_manifest(migration_id, {"data/record.bin": original})
+    _write_recovery_files(target, {"data/record.bin": original})
+    service._atomic_write_json(target / "manifest.json", manifest)
+    receipt = _write_promotion_receipt(target, migration_id, ["data/record.bin"])
+    (target / "data" / "record.bin").write_bytes(corrupted)
+
+    with pytest.raises(CleanroomException) as exc:
+        service._verify_promoted_target(target, stage, manifest, receipt.name)
+
+    assert exc.value.code == "SWITCH_FAILED"
+    assert "内容不一致" in exc.value.message
+    assert (target / "data" / "record.bin").read_bytes() == corrupted
+
+
+def test_promoted_target_scan_rejects_replaced_file_identity(prod_home, tmp_path):
+    migration_id = "promo-replaced"
+    target = tmp_path / "target-replaced"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    payload = b"ORIGINAL"
+    manifest = _recovery_manifest(migration_id, {"data/record.bin": payload})
+    _write_recovery_files(target, {"data/record.bin": payload})
+    service._atomic_write_json(target / "manifest.json", manifest)
+    receipt = _write_promotion_receipt(target, migration_id, ["data/record.bin"])
+    replacement = target / "data" / "record.bin.new"
+    replacement.write_bytes(payload)
+    os.replace(replacement, target / "data" / "record.bin")
+
+    with pytest.raises(CleanroomException) as exc:
+        service._verify_promoted_target(target, stage, manifest, receipt.name)
+
+    assert exc.value.code == "SWITCH_FAILED"
+    assert "创建身份不一致" in exc.value.message
+
+
+def test_restore_pointer_snapshot_restores_previous_pointer(prod_home, tmp_path):
+    old_location = tmp_path / "old-location"
+    old_location.mkdir()
+    service._write_pointer(
+        data_location=old_location,
+        revision=5,
+        previous_location=None,
+        last_migration=None,
+    )
+    snapshot = service._read_json(service.data_location_pointer_path(service.bootstrap_root()))
+    service._write_pointer(
+        data_location=tmp_path / "new-location",
+        revision=6,
+        previous_location=old_location,
+        last_migration={"id": "x", "status": "completed"},
+    )
+    service._restore_pointer_snapshot(snapshot)
+
+    pointer = service.pointer_state()
+    assert pointer["data_location"] == str(old_location)
+    assert pointer["revision"] == 5
+    assert pointer["last_migration"] is None
+
+
+def test_same_size_change_after_final_verify_rolls_back_pointer(
+    prod_home, tmp_path, monkeypatch
+):
+    _seed(prod_home["runtime_root"])
+    target = tmp_path / "target-post-verify"
+    original_verify = service._verify_promoted_target
+
+    def verify_then_corrupt(target_path, stage, manifest, receipt_name):
+        original_verify(target_path, stage, manifest, receipt_name)
+        file_path = target_path / "data" / "projects.json"
+        if file_path.read_bytes() == b'{"projects": []}':
+            file_path.write_bytes(b'{"projects": [x}')
+
+    monkeypatch.setattr(service, "_verify_promoted_target", verify_then_corrupt)
+    record = _start(target)
+    finished = _wait_status(record["migration_id"])
+
+    assert finished["status"] == "failed"
+    assert finished["error_code"] == "SWITCH_FAILED"
+    assert "回滚旧位置" in finished["message"]
+    assert service.pointer_state()["present"] is False
+    assert service.current_location() == prod_home["runtime_root"]
+    assert (prod_home["runtime_root"] / "data" / "projects.json").read_text(
+        encoding="utf-8"
+    ) == '{"projects": []}'
+    assert (target / "data" / "projects.json").read_bytes() == b'{"projects": [x}'
+    assert not (target / "auth").exists()
+    assert not (target / "manifest.json").exists()
+    assert get_write_window().state == STATE_OPEN
+
+
+def test_recovery_rolls_back_pointer_when_committed_target_is_corrupt(
+    prod_home, tmp_path
+):
+    _seed(prod_home["runtime_root"])
+    migration_id = "promo-corrupt-recovery"
+    target = tmp_path / "target-corrupt-recovery"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    original = b'{"projects": []}'
+    corrupted = b'{"projects": [x}'
+    assert len(original) == len(corrupted)
+    files = {"data/projects.json": original}
+    _write_recovery_files(target, files)
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
+    service._write_pointer(
+        data_location=target,
+        revision=2,
+        previous_location=prod_home["runtime_root"],
+        last_migration={"id": migration_id, "status": "complete"},
+    )
+    _write_promoting_journal(target, migration_id)
+    (target / "data" / "projects.json").write_bytes(corrupted)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "rolled_back_corrupt_target"
+    assert service.pointer_state()["data_location"] == str(prod_home["runtime_root"])
+    assert service.current_location() == prod_home["runtime_root"]
+    assert service.read_journal()["status"] == "failed"
+    assert (target / "data" / "projects.json").read_bytes() == corrupted
+    assert (prod_home["runtime_root"] / "data" / "projects.json").read_text(
+        encoding="utf-8"
+    ) == original.decode()
+
+
+def test_restore_pointer_failure_fails_closed_then_recovery_rolls_back(
+    prod_home, tmp_path, monkeypatch
+):
+    _seed(prod_home["runtime_root"])
+    target = tmp_path / "target-restore-failed"
+    original_verify = service._verify_promoted_target
+
+    def verify_then_corrupt(target_path, stage, manifest, receipt_name):
+        original_verify(target_path, stage, manifest, receipt_name)
+        file_path = target_path / "data" / "projects.json"
+        if file_path.read_bytes() == b'{"projects": []}':
+            file_path.write_bytes(b'{"projects": [x}')
+
+    def fail_restore(_snapshot):
+        raise service.CleanroomException(500, "SWITCH_FAILED", "旧指针无法恢复")
+
+    monkeypatch.setattr(service, "_verify_promoted_target", verify_then_corrupt)
+    monkeypatch.setattr(service, "_restore_pointer_snapshot", fail_restore)
+    record = _start(target)
+    finished = _wait_status(record["migration_id"])
+
+    assert finished["status"] == "failed"
+    assert finished["restart_required"] is True
+    assert "旧指针无法恢复" in finished["message"]
+    assert service.pointer_state()["data_location"] == str(target)
+    assert get_write_window().state == STATE_READ_ONLY
+    assert service.read_journal()["status"] == "failed"
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "rolled_back_corrupt_target"
+    assert service.pointer_state()["data_location"] == str(prod_home["runtime_root"])
+    assert (target / "data" / "projects.json").read_bytes() == b'{"projects": [x}'
+    assert (prod_home["runtime_root"] / "data" / "projects.json").read_text(
+        encoding="utf-8"
+    ) == '{"projects": []}'
 
 
 def test_concurrent_target_file_aborts_switch_and_is_preserved(
@@ -1064,4 +1248,3 @@ def test_data_location_api_check_does_not_write_pointer(api_client, tmp_path):
     # 预检不是迁移：指针版本保持不变，也不创建目标目录。
     assert api_client.get("/api/data-location", headers=ADMIN).json()["pointer"]["revision"] == 1
     assert not target.exists()
-

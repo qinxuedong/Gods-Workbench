@@ -156,6 +156,25 @@ def pointer_state() -> dict[str, Any]:
     }
 
 
+def _restore_pointer_snapshot(snapshot: dict[str, Any] | None) -> None:
+    """提交后校验失败时恢复提交前的指针；None 表示原本没有指针文件。"""
+    path = data_location_pointer_path(bootstrap_root())
+    if snapshot is None:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            raise CleanroomException(
+                500, "SWITCH_FAILED", "目标校验失败且旧指针无法恢复"
+            ) from None
+        return
+    try:
+        _atomic_write_json(path, snapshot)
+    except OSError:
+        raise CleanroomException(
+            500, "SWITCH_FAILED", "目标校验失败且旧指针无法恢复"
+        ) from None
+
+
 def _write_pointer(
     *,
     data_location: Path,
@@ -790,11 +809,20 @@ def _verify_promoted_target(
     receipt_dirs = {
         entry["path"] for entry in receipt["entries"] if entry["kind"] == "dir"
     }
+    receipt_files_by_path = {
+        entry["path"]: entry for entry in receipt["entries"] if entry["kind"] == "file"
+    }
+    receipt_dirs_by_path = {
+        entry["path"]: entry for entry in receipt["entries"] if entry["kind"] == "dir"
+    }
     if receipt_files != set(expected):
         raise CleanroomException(409, "SWITCH_FAILED", "迁移归属收据文件不完整")
     expected_non_root_dirs = expected_dirs - {""}
     if expected_non_root_dirs - receipt_dirs:
         raise CleanroomException(409, "SWITCH_FAILED", "迁移归属收据目录不完整")
+    for receipt_dir in receipt_dirs_by_path.values():
+        if not _identity_matches(target, receipt_dir):
+            raise CleanroomException(409, "SWITCH_FAILED", "目标目录创建身份不一致")
     for current_text, directories, filenames in os.walk(target, followlinks=False):
         current = Path(current_text)
         if current == stage:
@@ -829,10 +857,26 @@ def _verify_promoted_target(
                 raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不一致")
     if not (target / receipt_name).is_file():
         raise CleanroomException(409, "SWITCH_FAILED", "目标缺失迁移归属收据")
-    for relative in expected:
+    for relative, expected_entry in expected.items():
         path = target.joinpath(*PurePosixPath(relative).parts)
-        if not path.is_file():
-            raise CleanroomException(409, "SWITCH_FAILED", "目标缺少清单内文件")
+        try:
+            info = path.lstat()
+        except OSError:
+            raise CleanroomException(409, "SWITCH_FAILED", "目标缺少清单内文件") from None
+        if not stat.S_ISREG(info.st_mode):
+            raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件类型不一致")
+        if int(info.st_size) != int(expected_entry["size"]):
+            raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件大小不一致")
+        try:
+            if _sha256(path) != expected_entry["sha256"]:
+                raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件内容不一致")
+        except CleanroomException:
+            raise
+        except OSError:
+            raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不可读") from None
+        receipt_entry = receipt_files_by_path.get(relative)
+        if receipt_entry is None or not _identity_matches(target, receipt_entry):
+            raise CleanroomException(409, "SWITCH_FAILED", "目标文件创建身份不一致")
 
 
 def _remove_stage(target: Path, migration_id: str) -> None:
@@ -1567,6 +1611,7 @@ def _run_migration(
     migration_id = record["migration_id"]
     stage = target / (STAGE_PREFIX + migration_id)
     pointer_committed = False
+    pointer_restore_failed = False
     try:
         _mark(record, status="checking_space", phase="checking_space")
         token = window.begin_quiescing(reason=migration_id)
@@ -1647,6 +1692,7 @@ def _run_migration(
         receipt_path = _promote(stage, target, manifest)
         _verify_promoted_target(target, stage, manifest, receipt_path.name)
         pointer = pointer_state()
+        pointer_snapshot = _read_json(data_location_pointer_path(bootstrap_root()))
         _write_pointer(
             data_location=target,
             revision=int(pointer["revision"]) + 1,
@@ -1663,6 +1709,25 @@ def _run_migration(
             },
         )
         pointer_committed = True
+        try:
+            # 指针落盘后再次复核；覆盖“最终校验到提交之间”被同长度改写或替换的窗口。
+            _verify_promoted_target(target, stage, manifest, receipt_path.name)
+        except CleanroomException:
+            try:
+                _restore_pointer_snapshot(pointer_snapshot)
+            except CleanroomException:
+                pointer_restore_failed = True
+                raise CleanroomException(
+                    409,
+                    "SWITCH_FAILED",
+                    "目标在提交前后被并发修改且旧指针无法恢复；已停止写入，请恢复旧位置后重启",
+                ) from None
+            pointer_committed = False
+            raise CleanroomException(
+                409,
+                "SWITCH_FAILED",
+                "目标在提交前后被并发修改，已回滚旧位置",
+            ) from None
         record["restart_required"] = True
         # 先进入只读再落 completed，保证外部观察到 completed 时写窗口已经关闭。
         window.mark_read_only(reason="migration_completed")
@@ -1689,6 +1754,10 @@ def _run_migration(
             elif cleanup is not None and cleanup.get("action") == "preserved_unverified":
                 message = f"{message}；未能核验迁移归属，目标目录未删除任何内容"
             _mark(record, status="failed", error_code=exc.code, message=message)
+        elif pointer_restore_failed:  # pragma: no cover - 指针回写失败的兜底
+            record["restart_required"] = True
+            window.mark_read_only(reason="pointer_restore_failed")
+            _mark(record, status="failed", error_code=exc.code, message=exc.message)
         else:  # pragma: no cover - 指针已提交后只可能停在只读
             window.mark_read_only(reason="pointer_committed")
             _mark(record, status="completed", phase="completed")
@@ -1707,8 +1776,18 @@ def _run_migration(
                 )
             _mark(record, status="failed", error_code="SWITCH_FAILED", message=message)
         else:
-            window.mark_read_only(reason="pointer_committed")
-            _mark(record, status="completed", phase="completed")
+            if pointer_restore_failed:
+                record["restart_required"] = True
+                window.mark_read_only(reason="pointer_restore_failed")
+                _mark(
+                    record,
+                    status="failed",
+                    error_code="SWITCH_FAILED",
+                    message="目标在提交前后被并发修改且旧指针无法恢复；已停止写入，请恢复旧位置后重启",
+                )
+            else:
+                window.mark_read_only(reason="pointer_committed")
+                _mark(record, status="completed", phase="completed")
     finally:
         with _STATE_LOCK:
             thread = _ACTIVE.get("thread")
@@ -1786,6 +1865,83 @@ def rollback() -> dict[str, Any]:
     }
 
 
+def _recover_committed_target(
+    journal: dict[str, Any],
+    pointer: dict[str, Any],
+    *,
+    target: Path | None,
+    migration_id: str,
+    revision: int,
+) -> dict[str, Any]:
+    """指针已提交后复核目标；有效才认完成，无效回滚旧位置并保留并发修改。"""
+    location = target if target is not None else Path(str(pointer["data_location"]))
+    if migration_id:
+        manifest, reason = _load_recovery_manifest(location, migration_id)
+        receipt, _receipt_reason = _load_receipt(location, migration_id)
+    else:
+        manifest, reason = None, "missing_migration_id"
+        receipt = None
+    verified = False
+    if manifest is not None and receipt is not None:
+        try:
+            _verify_promoted_target(
+                location,
+                location / (STAGE_PREFIX + migration_id),
+                manifest,
+                _receipt_name(migration_id),
+            )
+        except CleanroomException:
+            verified = False
+        else:
+            verified = True
+    if verified:
+        journal.update({"status": "completed", "phase": "completed"})
+        _write_journal(journal)
+        _remove_receipt(location, migration_id)
+        return {"action": "marked_completed", "migration_id": migration_id}
+    previous_text = str(pointer.get("previous_location") or "")
+    if previous_text:
+        _write_pointer(
+            data_location=Path(previous_text),
+            revision=revision + 1,
+            previous_location=location,
+            last_migration={
+                "id": migration_id,
+                "status": "rolled_back",
+                "phase": "rolled_back",
+            },
+        )
+        cleanup = _cleanup_uncommitted_promotion(location, migration_id)
+        journal.update(
+            {
+                "status": "failed",
+                "phase": "failed",
+                "error_code": "SWITCH_FAILED",
+                "message": "切换提交后目标复核失败，已回滚旧位置；并发修改已保留",
+            }
+        )
+        _write_journal(journal)
+        cleanup["action"] = "rolled_back_corrupt_target"
+        cleanup["migration_id"] = migration_id
+        cleanup["data_location"] = previous_text
+        return cleanup
+    journal.update(
+        {
+            "status": "failed",
+            "phase": "failed",
+            "error_code": "RECOVERY_OWNERSHIP_UNKNOWN",
+            "message": "切换提交后目标复核失败且缺少旧位置，未删除任何内容",
+        }
+    )
+    _write_journal(journal)
+    return {
+        "action": "preserved_unverified",
+        "preserved": _leftover_count(location),
+        "reason": reason or "missing_previous_location",
+        "migration_id": migration_id,
+    }
+
+
 def recover_on_startup() -> dict[str, Any]:
     """按 journal 阶段 + 指针 revision + stage/final 事实收敛，绝不产生两个可写根。"""
     result: dict[str, Any] = {"action": "none"}
@@ -1806,11 +1962,15 @@ def recover_on_startup() -> dict[str, Any]:
         journal.update({"status": "failed", "phase": "failed", "error_code": "MIGRATION_INTERRUPTED"})
         _write_journal(journal)
         return {"action": "cleaned_stage", "migration_id": migration_id}
+    if status in {"promoting", "failed"} and revision > base_revision:
+        return _recover_committed_target(
+            journal,
+            pointer,
+            target=target,
+            migration_id=migration_id,
+            revision=revision,
+        )
     if status == "promoting":
-        if revision > base_revision:
-            journal.update({"status": "completed", "phase": "completed"})
-            _write_journal(journal)
-            return {"action": "marked_completed", "migration_id": migration_id}
         if target is None or not migration_id:
             journal.update(
                 {
