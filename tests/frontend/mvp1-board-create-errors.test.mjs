@@ -6,6 +6,8 @@ import {runInNewContext} from 'node:vm';
 import test from 'node:test';
 
 const source = readAssetManagerAggregate();
+const organize = readFileSync(new URL('../../web/js/modules/asset-manager/organize.js', import.meta.url), 'utf8');
+const settings = readFileSync(new URL('../../web/js/modules/asset-manager/settings.js', import.meta.url), 'utf8');
 const styles = readFileSync(new URL('../../web/css/pages/asset-manager.css', import.meta.url), 'utf8');
 const controller = readFileSync(new URL('../../web/js/controllers/assets-controller.js', import.meta.url), 'utf8');
 const shell = readFileSync(new URL('../../web/pages/assets.html', import.meta.url), 'utf8');
@@ -32,7 +34,7 @@ test('新增资源库弹窗已移除并统一收敛到「+ 添加资源文件夹
 test('添加资源文件夹取消旧版 boardCreatePath 表单，统一走资源文件夹来源弹窗与目录输入（QIN-599 AC2）', () => {
     assert.doesNotMatch(source, /BOARD_CREATE_PATH_FIELD_KEY|function updateBoardCreatePath/);
     assert.match(source, /<label><span>来源名称<\/span><input id="boardSourceName"/);
-    assert.match(source, /<label><span>素材路径<\/span><input id="boardSourcePath"/);
+    assert.match(organize, /<label class="board-source-path-label"><span>素材路径<\/span><div class="board-source-path-row"><input id="boardSourcePath"[\s\S]*?data-board-source-pick/);
 });
 
 test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列', () => {
@@ -43,10 +45,11 @@ test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空�
 
 test('管理员添加资源文件夹时将未登记路径加入允许根，非管理员沿用现有权限校验', () => {
     // QIN-596 / QIN-599：ensure 入口保留拒绝清单与管理员自动登记；统一从 attachPathToAssetBoard('', name, path) 触发。
-    assert.match(source, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{[\s\S]{0,600}?await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return true;/);
-    assert.match(source, /body:JSON\.stringify\(\{path, expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
-    assert.match(source, /const allowed = await ensureCreateLibraryPathAllowedRoot\(cleanPath\);\s*if\(!allowed\) return null;/);
-    assert.match(source, /source = await attachPathToAssetBoard\('', name, path\)/);
+    assert.match(settings, /async function ensureCreateLibraryPathAllowedRoot\(path\)\{[\s\S]{0,600}?await loadRegistryPrincipal\(\);\s*if\(!canManageAllowedRoots\(\)\) return true;/);
+    assert.match(settings, /body:JSON\.stringify\(\{path, expected_version:Number\(snapshot\.revision \|\| 1\)\}\)/);
+    assert.match(organize, /const allowed = options\.atomicRegistration\s*\?\s*true\s*:\s*await ensureCreateLibraryPathAllowedRoot\(cleanPath\);\s*if\(!allowed\) return null;/);
+    assert.match(organize, /register_root:\{[^}]*authorize_root:Boolean\(options\.atomicRegistration\)/);
+    assert.match(organize, /source = await attachPathToAssetBoard\('', name, path, options\)/);
 });
 
 test('添加资源文件夹命中已移除旧根时确认恢复并继续添加', () => {
@@ -117,15 +120,15 @@ test('资源文件夹弹窗模板包含错误回显容器与状态图标', () =>
 });
 
 test('资源文件夹确认与关闭按钮在 saving 状态下禁用防重并展示 loading', () => {
-    assert.match(source, /data-board-source-editor-cancel \$\{boardSourceState\.saving \? 'disabled' : ''\}/);
-    assert.match(source, /data-board-source-confirm \$\{boardSourceState\.saving \? 'disabled' : ''\}/);
-    assert.match(source, /boardSourceState\.saving \? 'loader-2' : 'folder-plus'/);
-    assert.match(source, /boardSourceState\.saving \? '正在添加…' : '添加来源'/);
+    assert.match(organize, /data-board-source-editor-cancel \$\{boardSourceState\.saving \? 'disabled' : ''\}/);
+    assert.match(organize, /data-board-source-confirm \$\{\(boardSourceState\.saving \|\| boardSourceState\.picking \|\| boardSourceState\.validating\) \? 'disabled' : ''\}/);
+    assert.match(organize, /boardSourceState\.saving \|\| boardSourceState\.picking \|\| boardSourceState\.validating\) \? 'loader-2' : 'folder-plus'/);
+    assert.match(organize, /boardSourceState\.picking \? '正在选择…' : boardSourceState\.validating \? '正在检查…' : boardSourceState\.saving \? '正在添加…' : '添加来源'/);
 });
 
 test('confirmBoardSource 捕获异常后将错误同步到 boardSourceState.error 并重新渲染弹窗', () => {
-    assert.match(source, /boardSourceState\.error = err\?\.message \|\| '添加资源文件夹失败';/);
-    assert.match(source, /if\(boardSourceState\.open\) renderBoardSourceModal\(\);/);
+    assert.match(organize, /boardSourceState\.error = err\?\.code === 'RESOURCE_FOLDER_BACKEND_UNAVAILABLE'[\s\S]*?: \(err\?\.message \|\| '添加资源文件夹失败'\);/);
+    assert.match(organize, /if\(boardSourceState\.open\) renderBoardSourceModal\(\);/);
 });
 
 test('attachPathToAssetBoard 对别名建议查询具备容错保护', () => {
