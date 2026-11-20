@@ -1,0 +1,20 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 758,
+  "authorization_basis": "GitHub Issue #758, 2026-11-20",
+  "files": [
+    "run.py",
+    "start.bat",
+    "tests/runtime/test_run_entrypoint.py"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/runtime/test_run_entrypoint.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #758, 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-624 (#758)：run.py 与 start.bat 支持 --host 参数与局域网自适应提示，start.bat 支持 %* 参数透传。"
+}

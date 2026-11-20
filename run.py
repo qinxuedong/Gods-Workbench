@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import threading
 import time
 import uuid
@@ -36,6 +37,13 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import uvicorn
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from gw.core.runtime_paths import (
     MODE_DEV,
@@ -61,12 +69,48 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--prod", action="store_true", help="使用 LOCALAPPDATA/GodsWorkbench 生产数据根")
     parser.add_argument("--test", action="store_true", help="使用显式 GW_DATA_DIR/GW_LOCAL_AUTH_DB/GW_VIDEO_DATA_DIR 测试路径")
     parser.add_argument("--open-browser", action="store_true", help="健康检查就绪后打开首页")
+    parser.add_argument("--host", help="监听网络地址；默认 127.0.0.1，设为 0.0.0.0 可供局域网设备访问")
     parser.add_argument("--port", type=int, help="监听端口；默认 2077，可用于同时运行第二个实例")
     parser.add_argument("--reset", metavar="TARGET", nargs="?", help="显式清理开发沙盒内的目标路径")
     parser.add_argument("--migrate", action="store_true", help="一次性迁移旧 GodsWorkbenchClear 数据到生产数据根")
     parser.add_argument("--legacy-root", metavar="PATH", help="迁移源目录（默认 LOCALAPPDATA\\GodsWorkbenchClear）")
     parser.add_argument("--target-root", metavar="PATH", help="迁移目标目录（默认 LOCALAPPDATA\\GodsWorkbench）")
     return parser
+
+
+def _resolve_host(cli_host: str | None = None) -> str:
+    """解析监听主机地址；优先级：CLI --host > 环境变量 GW_HOST > DEFAULT_HOST (127.0.0.1)。"""
+    if cli_host is not None and str(cli_host).strip():
+        return str(cli_host).strip()
+    env_host = os.environ.get("GW_HOST")
+    if env_host is not None and env_host.strip():
+        return env_host.strip()
+    return DEFAULT_HOST
+
+
+def _get_lan_ip() -> str | None:
+    """尝试获取本机局域网活跃 IPv4 地址；失败或无可用 IP 时优雅降级返回 None。"""
+    import socket
+
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+            sock.connect(("8.8.8.8", 80))
+            candidate = sock.getsockname()[0]
+            if candidate and not candidate.startswith("127.") and candidate != "0.0.0.0":
+                return candidate
+    except Exception:
+        pass
+
+    try:
+        hostname = socket.gethostname()
+        candidates = socket.gethostbyname_ex(hostname)[2]
+        for ip in candidates:
+            if not ip.startswith("127.") and ip != "0.0.0.0" and ":" not in ip:
+                return ip
+    except Exception:
+        pass
+
+    return None
 
 
 def _reset_target(raw: str, repo_root: Path = ROOT_DIR) -> Path:
@@ -333,7 +377,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"已清理开发沙盒目标: {target}")
         return 0
 
-    host = os.environ.get("GW_HOST", DEFAULT_HOST)
+    host = _resolve_host(args.host)
     from gw.core.auth import validate_auth_mode_host
     from gw.core.config import resolve_auth_mode
 
@@ -362,17 +406,23 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("GW_PORT 必须是整数")
     if not 1 <= port <= 65535:
         parser.error("端口必须在 1 到 65535 之间")
-    browser_url = f"http://{host}:{port}/static/pages/index.html"
-    print("=" * 60)
-    print("  Gods' Workbench Cleanroom")
-    print(f"  运行态: {mode}")
-    print(f"  数据根: {paths.data_root}")
-    print(f"  账户库: {paths.auth_db}")
-    print(f"  视频根: {paths.video_root}")
-    print(f"  服务地址: http://{host}:{port}")
-    print("=" * 60)
+
+    browser_host = "127.0.0.1" if host == "0.0.0.0" else host
+    browser_url = f"http://{browser_host}:{port}/static/pages/index.html"
+    print("=" * 60, flush=True)
+    print("  Gods' Workbench Cleanroom", flush=True)
+    print(f"  运行态: {mode}", flush=True)
+    print(f"  数据根: {paths.data_root}", flush=True)
+    print(f"  账户库: {paths.auth_db}", flush=True)
+    print(f"  视频根: {paths.video_root}", flush=True)
+    print(f"  服务地址: http://{host}:{port}", flush=True)
+    if host == "0.0.0.0":
+        lan_ip = _get_lan_ip()
+        if lan_ip:
+            print(f"  局域网访问地址: http://{lan_ip}:{port}", flush=True)
+    print("=" * 60, flush=True)
     if args.open_browser:
-        _open_browser_when_ready(browser_url, f"http://{host}:{port}/healthz")
+        _open_browser_when_ready(browser_url, f"http://{browser_host}:{port}/healthz")
     uvicorn.run(app, host=host, port=port, workers=1, reload=False)
     return 0
 
