@@ -244,11 +244,13 @@ def test_start_bat_help_argument_forwarding() -> None:
         cwd=str(ROOT_DIR),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=10,
         check=False,
     )
     assert res.returncode == 0
-    assert "--host HOST" in res.stdout
+    assert "--host HOST" in (res.stdout or "")
 
 
 @pytest.mark.skipif(sys.platform != "win32", reason="仅在 Windows 下验证 start.bat 真实命令调用")
@@ -261,11 +263,13 @@ def test_start_bat_local_auth_refusal() -> None:
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=10,
         check=False,
     )
     assert res.returncode == 2
-    assert "GW_AUTH_MODE=local 仅允许绑定" in res.stderr
+    assert "GW_AUTH_MODE=local 仅允许绑定" in (res.stderr or "")
 
 
 def _kill_process_tree(proc: subprocess.Popen) -> tuple[str, str]:
@@ -408,11 +412,12 @@ def test_start_bat_full_pipeline_with_healthz_and_browser_dispatch(tmp_path: Pat
             except Exception:
                 time.sleep(0.3)
 
-        assert healthy, (
-            f"start.bat 启动后产品服务未在时限内健康就绪；进程退出码: {proc.poll()};\n"
-            f"STDOUT:\n{proc.stdout.read() if proc.stdout else ''}\n"
-            f"STDERR:\n{proc.stderr.read() if proc.stderr else ''}"
-        )
+        if not healthy:
+            stdout, stderr = _kill_process_tree(proc)
+            raise AssertionError(
+                f"start.bat 启动后产品服务未在时限内健康就绪；进程退出码: {proc.poll()};\n"
+                f"STDOUT:\n{stdout}\nSTDERR:\n{stderr}"
+            )
 
         recorded_url = None
         browser_deadline = time.monotonic() + 5.0
@@ -444,6 +449,8 @@ def test_negative_proof_bat_without_args_fails_forwarding(tmp_path: Path) -> Non
         cwd=str(ROOT_DIR),
         capture_output=True,
         text=True,
+        encoding="utf-8",
+        errors="replace",
         timeout=10,
         check=False,
     )
