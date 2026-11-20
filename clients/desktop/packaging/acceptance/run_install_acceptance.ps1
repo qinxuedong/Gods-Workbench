@@ -409,11 +409,11 @@ function Start-GwProcess {
     try {
         $startParams = @{
             FilePath = $FilePath
-            ArgumentList = $Arguments
             PassThru = $true
             RedirectStandardOutput = $stdout
             RedirectStandardError = $stderr
         }
+        if ($Arguments -and @($Arguments).Count -gt 0) { $startParams.ArgumentList = @($Arguments) }
         if ($WorkingDirectory) { $startParams.WorkingDirectory = $WorkingDirectory }
         $process = Start-Process @startParams
     } finally {
