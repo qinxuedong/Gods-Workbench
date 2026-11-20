@@ -16,7 +16,7 @@ function Set-JournalState([string]$state) {
 }
 
 function Fail([string]$message) {
-  Set-JournalState "rolled_back"
+  # 保留 installed，交由 NSIS 还原后再写 rolled_back；提前落盘会让中断的安装器覆盖唯一备份。
   Write-Error $message
   exit 1
 }

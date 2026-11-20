@@ -407,8 +407,9 @@ def test_installer_hooks_and_self_check_contract() -> None:
     main_source = (DESKTOP / "src" / "main.rs").read_text(encoding="utf-8")
     assert '.env("PYTHONDONTWRITEBYTECODE", "1")' in main_source
     assert hooks.startswith("\ufeff"), "NSIS 3 需要 UTF-8 BOM 才能正确编译中文提示"
-    for state in ("prepare", "backed_up", "installing", "installed", "verified", "rolled_back", "aborted"):
+    for state in ("prepare", "backed_up", "installing", "installed", "rolled_back", "aborted"):
         assert f'"{state}"' in hooks
+    assert '"verified"' not in hooks, "verified 由安装后自检写入，且不得触发上一代备份还原"
     assert "NSIS_HOOK_PREINSTALL" in hooks
     assert "NSIS_HOOK_POSTINSTALL" in hooks
     assert "NSIS_HOOK_PREUNINSTALL" in hooks
@@ -420,6 +421,9 @@ def test_installer_hooks_and_self_check_contract() -> None:
     assert "Gods Workbench.exe" not in hooks, "安装产物主程序名以生成脚本的 MAINBINARYNAME 为准"
     assert 'RMDir /r "$GW_DATA_ROOT"' not in hooks
     assert 'GW_WRITE_STATE "committed"' not in hooks
+    message_boxes = [line for line in hooks.splitlines() if "MessageBox" in line]
+    assert message_boxes
+    assert all("/SD IDOK" in line for line in message_boxes), "静默安装失败必须返回退出码而不是阻塞在提示框"
     assert "--self-check" in upgrade
     assert "--expect-version" in upgrade
     assert 'Set-JournalState "verified"' in upgrade
@@ -434,6 +438,31 @@ def test_upgrade_journal_commit_is_deferred_to_first_handshake() -> None:
     assert 'matches!(state.trim(), "installed" | "verified")' in main_source
     assert "if report.local {\n        commit_upgrade_journal();\n    }" in main_source
     assert "commit_upgrade_journal();\n\n    if manifest.is_some() && report.trusted_bootstrap_available" in main_source
+
+
+def test_upgrade_recovery_never_restores_an_older_successful_generation() -> None:
+    hooks = (PACKAGING / "nsis" / "hooks.nsh").read_text(encoding="utf-8")
+    upgrade = (PACKAGING / "nsis" / "upgrade.ps1").read_text(encoding="utf-8")
+    preinstall = hooks.split("!macro NSIS_HOOK_PREINSTALL", 1)[1].split("!macroend", 1)[0]
+    recovery_guard = preinstall.split('StrCpy $R3 "clean"', 1)[1].split(
+        '!insertmacro GW_WRITE_STATE "prepare"', 1
+    )[0]
+    restore_macro = hooks.split("!macro GW_RESTORE_BACKUP", 1)[1].split("!macroend", 1)[0]
+    restore_failure = restore_macro.split("${If} $0 > 7", 1)[1].split("${EndIf}", 1)[0]
+
+    assert "rolled_back" not in restore_failure, "还原失败不能写成已回退，否则下次会覆盖仍可用的备份"
+    assert '$R3 == "installing"' in recovery_guard
+    assert '$R3 == "installed"' in recovery_guard
+    assert '$R3 == "verified"' not in recovery_guard, (
+        "verified 表示上一代升级已通过自检，若据此还原 backup-last，"
+        "下一次升级会先回退到更早版本，失败时也无法回到升级前版本"
+    )
+    assert preinstall.index('!insertmacro GW_WRITE_STATE "backed_up"') < preinstall.index(
+        '!insertmacro GW_WRITE_STATE "installing"'
+    )
+    assert 'Set-JournalState "rolled_back"' not in upgrade, (
+        "自检失败必须先由 NSIS 完成还原再写 rolled_back；提前写入会让中断的安装覆盖唯一备份"
+    )
 
 
 def test_ticket_delivery_is_loopback_fragment_and_memory_only() -> None:

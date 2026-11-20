@@ -26,17 +26,17 @@
 
 !macro GW_ASSERT_NON_CONTAINMENT
   ${If} $INSTDIR == "${GW_DATA_ROOT}"
-    MessageBox MB_ICONSTOP "安装目录不能与神工坊数据根相同。请选择独立目录后重试。"
+    MessageBox MB_ICONSTOP "安装目录不能与神工坊数据根相同。请选择独立目录后重试。" /SD IDOK
     Abort
   ${EndIf}
   !insertmacro GW_PREFIX_MATCH $R2 "${GW_DATA_ROOT}\" "$INSTDIR"
   ${If} $R2 == "1"
-    MessageBox MB_ICONSTOP "安装目录不能位于神工坊数据根内。请选择独立目录后重试。"
+    MessageBox MB_ICONSTOP "安装目录不能位于神工坊数据根内。请选择独立目录后重试。" /SD IDOK
     Abort
   ${EndIf}
   !insertmacro GW_PREFIX_MATCH $R2 "$INSTDIR\" "${GW_DATA_ROOT}"
   ${If} $R2 == "1"
-    MessageBox MB_ICONSTOP "数据根不能位于安装目录内。请选择独立安装目录后重试。"
+    MessageBox MB_ICONSTOP "数据根不能位于安装目录内。请选择独立安装目录后重试。" /SD IDOK
     Abort
   ${EndIf}
 !macroend
@@ -44,21 +44,20 @@
 !macro GW_RESTORE_BACKUP reason
   ${IfNot} ${FileExists} "${GW_BACKUP_PROGRAM}\${MAINBINARYNAME}.exe"
     !insertmacro GW_WRITE_STATE "rolled_back"
-    MessageBox MB_ICONSTOP "${reason}；未找到可还原的上一版本，请重新安装或联系支持。"
+    MessageBox MB_ICONSTOP "${reason}；未找到可还原的上一版本，请重新安装或联系支持。" /SD IDOK
     Abort
   ${EndIf}
   nsExec::ExecToLog '"${GW_ROBOCOPY}" "${GW_BACKUP_PROGRAM}" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
   Pop $0
   ${If} $0 > 7
-    !insertmacro GW_WRITE_STATE "rolled_back"
-    MessageBox MB_ICONSTOP "${reason}；自动还原失败，请使用上一版本安装包重新安装。"
+    MessageBox MB_ICONSTOP "${reason}；自动还原失败，请使用上一版本安装包重新安装。" /SD IDOK
     Abort
   ${EndIf}
   ${If} ${FileExists} "${GW_BACKUP_CLIENT}"
     CopyFiles /SILENT "${GW_BACKUP_CLIENT}" "${GW_CLIENT_CONFIG}"
   ${EndIf}
   !insertmacro GW_WRITE_STATE "rolled_back"
-  MessageBox MB_ICONSTOP "${reason}；已还原上一版本程序。用户数据未被修改。"
+  MessageBox MB_ICONSTOP "${reason}；已还原上一版本程序。用户数据未被修改。" /SD IDOK
   Abort
 !macroend
 
@@ -72,14 +71,24 @@
     FileRead $0 $R3
     FileClose $0
   ${EndIf}
+  ; verified / committed 表示上一代安装已通过自检，不得还原更早的 backup-last。
   ${If} $R3 == "installing"
   ${OrIf} $R3 == "installed"
-  ${OrIf} $R3 == "verified"
+    ${IfNot} ${FileExists} "${GW_BACKUP_PROGRAM}\${MAINBINARYNAME}.exe"
+      !insertmacro GW_WRITE_STATE "rolled_back"
+      MessageBox MB_ICONSTOP "上次升级未完成，且未找到可还原的上一版本。请重新安装或联系支持。" /SD IDOK
+      Abort
+    ${EndIf}
     nsExec::ExecToLog '"${GW_ROBOCOPY}" "${GW_BACKUP_PROGRAM}" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
     Pop $0
-    ${If} $0 <= 7
-      !insertmacro GW_WRITE_STATE "rolled_back"
+    ${If} $0 > 7
+      MessageBox MB_ICONSTOP "上次升级未完成，自动还原上一版本失败。升级备份已保留，请检查磁盘空间与文件权限后重试。" /SD IDOK
+      Abort
     ${EndIf}
+    ${If} ${FileExists} "${GW_BACKUP_CLIENT}"
+      CopyFiles /SILENT "${GW_BACKUP_CLIENT}" "${GW_CLIENT_CONFIG}"
+    ${EndIf}
+    !insertmacro GW_WRITE_STATE "rolled_back"
   ${EndIf}
 
   !insertmacro GW_WRITE_STATE "prepare"
@@ -90,7 +99,7 @@
     Pop $0
     ${If} $0 > 7
       !insertmacro GW_WRITE_STATE "aborted"
-      MessageBox MB_ICONSTOP "无法备份现有安装，升级已中止。请确认磁盘空间与文件权限后重试。"
+      MessageBox MB_ICONSTOP "无法备份现有安装，升级已中止。请确认磁盘空间与文件权限后重试。" /SD IDOK
       Abort
     ${EndIf}
     ${If} ${FileExists} "${GW_CLIENT_CONFIG}"
@@ -98,6 +107,7 @@
     ${EndIf}
   ${EndIf}
   !insertmacro GW_WRITE_STATE "backed_up"
+  !insertmacro GW_WRITE_STATE "installing"
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
