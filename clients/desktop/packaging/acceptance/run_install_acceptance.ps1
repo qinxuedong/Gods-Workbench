@@ -1272,6 +1272,11 @@ public static class GwNative {
     Set-Generation -RunPy $script:installedRunPy -Generation "G0"
 
     Add-Step "first-run"
+    # Pin the first-run preference to the bundled local backend so an unrelated
+    # workbench server on the LAN cannot divert startup into the discovery list.
+    $localServerPin = [ordered]@{ server_url = "http://127.0.0.1:2077/" } | ConvertTo-Json -Compress
+    Write-Utf8NoBom -Path $script:serverConfig -Text ($localServerPin + "`r`n")
+    Add-Check "first-run.local-server-pin" (Test-Path -LiteralPath $script:serverConfig) "local server preference fixture not created"
     $first = Start-DesktopPrimary -Label "02-first-run"
     Assert-DesktopReady -Label "02-first-run"
     $shot = Save-Screenshot -Path (Join-Path $script:outputDirPath "02-first-run.png")
@@ -1280,8 +1285,10 @@ public static class GwNative {
     New-Item -ItemType Directory -Force -Path (Join-Path $script:processLocalAppData "GodsWorkbench") | Out-Null
     Write-Utf8NoBom -Path $script:sentinelPath -Text ("{""kind"":""qin626-acceptance-sentinel"",""version"":""" + $script:expectedVersionValue + """}`r`n")
     Add-Check "first-run.data-sentinel" (Test-Path -LiteralPath $script:sentinelPath) "data sentinel not created"
-    $serverConfigReady = Wait-ForFile -Path $script:serverConfig -TimeoutSeconds 20
-    Add-Check "first-run.server-config" $serverConfigReady "server.json not written"
+    $null = Wait-ForFile -Path $script:serverConfig -TimeoutSeconds 20
+    $serverConfigData = Read-JsonFile -Path $script:serverConfig
+    $savedServerUrl = Get-PropertyValue -Object $serverConfigData -Name "server_url"
+    Add-Check "first-run.server-config" ($savedServerUrl -eq "http://127.0.0.1:2077") ("server.json not normalized to the local backend: " + [string]$savedServerUrl)
     $clientSettingsFixture = [ordered]@{ upload_source_dir = "<acceptance-upload-source>" } | ConvertTo-Json -Compress
     Write-Utf8NoBom -Path $script:clientConfig -Text ($clientSettingsFixture + "`r`n")
     Add-Check "first-run.client-settings-fixture" (Test-Path -LiteralPath $script:clientConfig) "client.json fixture not created"

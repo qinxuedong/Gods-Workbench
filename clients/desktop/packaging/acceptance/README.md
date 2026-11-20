@@ -56,7 +56,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 
 ## 场景与证据
 
-1. **首装**：安装器退出码、`journal.txt` 为 `verified`、桌面主窗口可见、`/healthz` 与 `/openapi.json`（`<product_version>+gw.<build-id>`）版本、`server.json` 已写入、后端私有 Python 进程、2077 监听者、实例锁 PID。
+1. **首装**：安装器退出码、`journal.txt` 为 `verified`、桌面主窗口可见、`/healthz` 与 `/openapi.json`（`<product_version>+gw.<build-id>`）版本、`server.json` 已写入、后端私有 Python 进程、2077 监听者、实例锁 PID。启动前脚本会写入带尾斜杠的本机服务器偏好，隔离局域网内其他工作台实例；桌面必须将其规范化为 `http://127.0.0.1:2077` 并拉起内置后端，证据同时检查该规范化结果。
 2. **热启动**：再次启动桌面，第二个进程退出码 `0`，桌面/后端/监听者仍各一个，锁 PID 不变。
 3. **冷启动与退出清理**：退出后桌面和后端进程消失、锁文件删除、2077 释放。
 4. **陈旧锁恢复**：写入离线 PID 的遗留锁，桌面应成为新主实例并替换锁。
