@@ -1122,13 +1122,12 @@ async function confirmBoardSource(){
     // 关闭弹窗后迟到的返回不得触发成功文案/刷新/侧栏重绘（阶段B：服务端完成，UI 静默）。
     if(boardSourceState.saving) return;
     const generation = Number(boardSourceState.generation || 0);
-    boardSourceState.saving = true;
-    boardSourceState.error = '';
+    const existingId = String(document.getElementById('boardSourceExisting')?.value || '');
+    const name = String(document.getElementById('boardSourceName')?.value || '用户素材').trim();
+    const path = String(document.getElementById('boardSourcePath')?.value || '').trim();
+    Object.assign(boardSourceState, {existingId, name, path, saving:true, error:''});
     renderBoardSourceModal();
     try {
-        const existingId = String(document.getElementById('boardSourceExisting')?.value || '');
-        const name = String(document.getElementById('boardSourceName')?.value || '用户素材').trim();
-        const path = String(document.getElementById('boardSourcePath')?.value || '').trim();
         let source = null;
         if(existingId){
             const lib = localLibraries.find(item => item.id === existingId);

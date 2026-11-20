@@ -10872,11 +10872,14 @@ document.addEventListener('change', event => {
         return;
     }
     if(event.target?.id === 'boardSourceExisting'){
-        const lib = localLibraries.find(item => item.id === event.target.value);
+        boardSourceState.existingId = event.target.value || '';
+        const lib = localLibraries.find(item => item.id === boardSourceState.existingId);
         const nameInput = document.getElementById('boardSourceName');
         const pathInput = document.getElementById('boardSourcePath');
         if(lib){ if(nameInput) nameInput.value = lib.name || '用户素材'; if(pathInput) pathInput.value = lib.path || ''; }
         else if(pathInput) pathInput.value = '';
+        boardSourceState.name = nameInput?.value || '';
+        boardSourceState.path = pathInput?.value || '';
         return;
     }
     if(!event.target?.closest?.('#storageSettingsOverlay')) return;
