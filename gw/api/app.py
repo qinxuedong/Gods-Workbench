@@ -153,6 +153,7 @@ async def _app_lifespan(app: FastAPI):
             data_root,
             is_data_dir_lock_held,
             is_instance_lock_held,
+            release_data_dir_lock,
         )
         from gw.core.write_window import get_write_window
         from gw.god_canvas.service import default_god_canvas_service
@@ -165,11 +166,25 @@ async def _app_lifespan(app: FastAPI):
         app.state.instance_lock = acquire_instance_lock(runtime.runtime_root)
         owned_instance_lock = None if preheld_instance else app.state.instance_lock
         # 先持有数据目录锁再做启动恢复；绕过 run.py 直接用 uvicorn 启动也受保护。
-        preheld = is_data_dir_lock_held(data_root())
-        app.state.data_dir_lock = acquire_data_dir_lock(data_root())
+        initial_root = data_root()
+        preheld = is_data_dir_lock_held(initial_root)
+        initial_lock = acquire_data_dir_lock(initial_root)
+        app.state.data_dir_lock = initial_lock
         # 只释放本 lifespan 自己拿到的锁；run.py 预先持有的锁由进程退出时释放。
-        owned_data_lock = None if preheld else app.state.data_dir_lock
-        recover_on_startup()
+        owned_data_lock = None if preheld else initial_lock
+        recovery = recover_on_startup()
+        final_root = data_root()
+        if final_root.resolve() != initial_root.resolve():
+            # 恢复可能把数据位置回滚到旧根；必须先锁住最终根，再释放旧根，
+            # 任一步失败都停止启动，不能留下正在使用的根无人持锁。
+            final_lock = acquire_data_dir_lock(final_root)
+            app.state.data_dir_lock = final_lock
+            owned_data_lock = final_lock
+            release_data_dir_lock(initial_root)
+            logging.getLogger("gw.api.app").info(
+                "启动恢复已切换数据根并交接跨进程锁：action=%s",
+                recovery.get("action"),
+            )
         default_god_canvas_service.recover_interrupted_jobs()
         # FFmpeg/FFprobe 部署自检一行摘要（QIN-607）：无路径回显，异常不阻断启动。
         try:

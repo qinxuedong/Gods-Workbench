@@ -1169,6 +1169,140 @@ def test_lock_unsupported_filesystem_maps_error(prod_home, monkeypatch):
     assert exc.value.code == "LOCK_UNSUPPORTED"
 
 
+@pytest.mark.parametrize("preheld", [False, True])
+def test_app_startup_relocks_recovered_data_root(prod_home, tmp_path, preheld):
+    _seed(prod_home["runtime_root"])
+    migration_id = f"lifespan-relock-{preheld}"
+    target = tmp_path / f"target-lifespan-{preheld}"
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir(parents=True)
+    original = b'{"projects": []}'
+    corrupted = b'{"projects": [x}'
+    assert len(original) == len(corrupted)
+    files = {"data/projects.json": original}
+    _write_recovery_files(target, files)
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
+    service._write_pointer(
+        data_location=target,
+        revision=2,
+        previous_location=prod_home["runtime_root"],
+        last_migration={"id": migration_id, "status": "complete"},
+    )
+    _write_promoting_journal(target, migration_id)
+    (target / "data" / "projects.json").write_bytes(corrupted)
+
+    storage._HELD_DATA_LOCKS.clear()
+    initial_data_root = target / "data"
+    held_target = (
+        storage.acquire_data_dir_lock(initial_data_root) if preheld else None
+    )
+
+    from gw.api.app import create_app
+
+    reset_write_window()
+    try:
+        with TestClient(create_app()):
+            assert service.current_location() == prod_home["runtime_root"]
+            current_data_root = prod_home["runtime_root"] / "data"
+            assert storage.is_data_dir_lock_held(current_data_root) is True, (
+                f"locks={list(storage._HELD_DATA_LOCKS)} current={current_data_root.resolve()} "
+                f"target={initial_data_root.resolve()}"
+            )
+            script = (
+                "import sys\n"
+                "sys.path.insert(0, r'%s')\n"
+                "from pathlib import Path\n"
+                "from gw.core.storage import acquire_data_dir_lock, DataDirLockedError\n"
+                "try:\n"
+                "    acquire_data_dir_lock(Path(sys.argv[1]))\n"
+                "except DataDirLockedError:\n"
+                "    print('blocked')\n"
+                "    sys.exit(0)\n"
+                "else:\n"
+                "    print('acquired')\n"
+                "    sys.exit(2)\n"
+            ) % str(REPO_ROOT)
+            probe = subprocess.run(
+                [sys.executable, "-c", script, str(current_data_root)],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            assert probe.returncode == 0, probe.stderr
+            assert probe.stdout.strip() == "blocked"
+        assert storage.is_data_dir_lock_held(current_data_root) is False
+    finally:
+        if held_target is not None:
+            held_target.release()
+        storage._HELD_DATA_LOCKS.clear()
+        reset_write_window()
+
+
+def test_app_startup_refuses_when_recovery_target_root_is_occupied(
+    prod_home, tmp_path
+):
+    _seed(prod_home["runtime_root"])
+    migration_id = "lifespan-old-root-occupied"
+    target = tmp_path / "target-old-root-occupied"
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir(parents=True)
+    original = b'{"projects": []}'
+    corrupted = b'{"projects": [x}'
+    assert len(original) == len(corrupted)
+    files = {"data/projects.json": original}
+    _write_recovery_files(target, files)
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    _write_promotion_receipt(target, migration_id, ["data/projects.json"])
+    service._write_pointer(
+        data_location=target,
+        revision=2,
+        previous_location=prod_home["runtime_root"],
+        last_migration={"id": migration_id, "status": "complete"},
+    )
+    _write_promoting_journal(target, migration_id)
+    (target / "data" / "projects.json").write_bytes(corrupted)
+
+    old_data_root = prod_home["runtime_root"] / "data"
+    script = (
+        "import sys,time\n"
+        "sys.path.insert(0, r'%s')\n"
+        "from pathlib import Path\n"
+        "from gw.core.storage import acquire_data_dir_lock\n"
+        "lock = acquire_data_dir_lock(Path(sys.argv[1]))\n"
+        "print('ready', flush=True)\n"
+        "time.sleep(5)\n"
+    ) % str(REPO_ROOT)
+    holder = subprocess.Popen(
+        [sys.executable, "-c", script, str(old_data_root)],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    storage._HELD_DATA_LOCKS.clear()
+    try:
+        assert holder.stdout.readline().strip() == "ready"
+        from gw.api.app import create_app
+
+        reset_write_window()
+        with pytest.raises(storage.DataDirLockedError) as exc:
+            with TestClient(create_app()):
+                pass
+        assert exc.value.code == "LOCK_HELD"
+        assert service.current_location() == prod_home["runtime_root"]
+        assert storage.is_data_dir_lock_held(old_data_root) is False
+        assert storage.is_data_dir_lock_held(target / "data") is False
+    finally:
+        holder.terminate()
+        holder.wait(timeout=10)
+        storage._HELD_DATA_LOCKS.clear()
+        reset_write_window()
+
+
 def test_live_holder_is_not_taken_over(prod_home, tmp_path):
     root = tmp_path / "lock-holder"
     root.mkdir()

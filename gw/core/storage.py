@@ -2029,3 +2029,16 @@ def acquire_data_dir_lock(root: Path) -> DataDirLock:
     with _LOCK:
         _HELD_DATA_LOCKS[key] = lock
     return lock
+
+
+def release_data_dir_lock(root: Path) -> None:
+    """释放本进程登记的某个数据根锁，供启动恢复切换根时安全交棒。
+
+    只释放本进程持有的句柄；未持有或已释放时为空操作。调用方必须先取得
+    最终根的锁，再调用本函数，避免出现两个根都无人持有的窗口。
+    """
+    key = str(Path(root).resolve())
+    with _LOCK:
+        lock = _HELD_DATA_LOCKS.pop(key, None)
+    if lock is not None:
+        lock.release()
