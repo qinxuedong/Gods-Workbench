@@ -1081,7 +1081,7 @@ function renderBoardSourceModal(){
     overlay.innerHTML = `<div class="board-source-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="boardSourceTitle">
         <div class="storage-settings-head"><div><strong id="boardSourceTitle">添加资源文件夹</strong><span>添加一个可上传和分类的素材目录。</span></div><button type="button" data-board-source-close aria-label="关闭"><i data-lucide="x"></i></button></div>
         <div class="board-source-form-wrap"><div class="board-source-form-head"><strong>添加素材路径</strong><span>可选择已有来源，或添加新的本机 / NAS 路径。</span></div><div class="board-source-form">
-            <label><span>已有来源</span><select id="boardSourceExisting"><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
+            <label><span>已有来源</span><select id="boardSourceExisting" class="board-source-select"><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
             <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || '用户素材')}" placeholder="例如：NAS 品牌素材"></label>
             <label><span>素材路径</span><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录"></label>
             ${errorHtml}
