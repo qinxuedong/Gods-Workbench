@@ -49,6 +49,9 @@ def _trusted_open_url_host(value: str | None) -> str | None:
         address = ipaddress.ip_address(raw)
     except ValueError:
         return None
+    if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+        # Python 版本对映射地址的 is_loopback 判定可能不同，统一拒绝该形式。
+        return None
     if not address.is_loopback or getattr(address, "scope_id", None):
         return None
     if isinstance(address, ipaddress.IPv6Address):
