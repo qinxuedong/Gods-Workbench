@@ -354,7 +354,8 @@
 
             return attempt().then(function (outcome) {
                 clearTimer(slowTimer);
-                if (outcome.state === STATE.ENTERED) instance.ticket = '';
+                // 终态一律清空内存中的票据：用过、过期或被拒都不再需要保留。
+                instance.ticket = '';
                 setState(outcome.state, {
                     error: outcome.state === STATE.FAILED
                         ? (outcome.code || 'TRUSTED_LOCAL_BOOTSTRAP_INVALID')

@@ -296,6 +296,24 @@ def _read_device_key(path: Path) -> bytes:
     return raw
 
 
+def read_device_key() -> bytes:
+    """读取**既有**设备密钥；缺失或损坏一律显式失败。
+
+    校验路径**绝不允许**顺手创建新密钥：那等于静默轮换信任根，会让既有本机
+    绑定与新密钥指纹不一致，违反「损坏或撤销时明确报错、不得静默创建第二个
+    owner」的要求（AC8）。
+    """
+    path = device_key_path()
+    if not path.exists():
+        raise CleanroomException(
+            500,
+            "TRUSTED_LOCAL_KEY_MISSING",
+            "设备密钥缺失，请执行显式恢复命令后再试",
+        )
+    verify_file_permissions(path)
+    return _read_device_key(path)
+
+
 def load_or_create_device_key() -> bytes:
     """读取或原子创建设备长期密钥。
 
@@ -352,6 +370,29 @@ def _canonical_payload(payload: dict) -> bytes:
     ).encode("utf-8")
 
 
+def _reject_rotated_trust_root() -> None:
+    """已建立本机绑定但设备密钥缺失时**拒绝签发**，不静默轮换信任根。
+
+    密钥缺失或损坏属于「显式恢复」场景：直接另起一把密钥会让既有绑定与新指纹
+    不一致，等于悄悄造出第二个互相矛盾的所有者（AC8）。
+    """
+    from gw.core import local_accounts
+
+    try:
+        with local_accounts.database() as db:
+            binding = local_accounts.trusted_local_owner(db)
+    except Exception:  # noqa: BLE001 - 存储不可用时不阻断签发路径
+        return
+    if binding is None:
+        return
+    if not device_key_path().exists():
+        raise CleanroomException(
+            500,
+            "TRUSTED_LOCAL_KEY_MISSING",
+            "设备密钥缺失且本机所有者已建立，请先执行显式恢复或解绑命令",
+        )
+
+
 def issue_bootstrap_ticket(*, now: float | None = None) -> str:
     """签发一张短时一次性启动票据，并登记待用票据文件。
 
@@ -362,6 +403,7 @@ def issue_bootstrap_ticket(*, now: float | None = None) -> str:
         raise CleanroomException(
             403, "TRUSTED_LOCAL_DISABLED", "受信本机模式未启用，已拒绝签发启动票据"
         )
+    _reject_rotated_trust_root()
     key = load_or_create_device_key()
     fingerprint = device_key_fingerprint(key)
     issued_at = time.time() if now is None else now
@@ -450,7 +492,7 @@ def verify_bootstrap_ticket(ticket: str, *, now: float | None = None) -> dict:
             "TRUSTED_LOCAL_BOOTSTRAP_INVALID",
             "启动票据版本不受支持，已拒绝本次请求",
         )
-    key = load_or_create_device_key()
+    key = read_device_key()
     expected = hmac.new(key, canonical, hashlib.sha256).digest()
     if not hmac.compare_digest(expected, signature_bytes):
         raise CleanroomException(
@@ -490,6 +532,7 @@ __all__ = [
     "issue_bootstrap_ticket",
     "load_or_create_device_key",
     "pending_ticket_path",
+    "read_device_key",
     "read_pending_ticket",
     "restrict_file_permissions",
     "trusted_local_enabled",

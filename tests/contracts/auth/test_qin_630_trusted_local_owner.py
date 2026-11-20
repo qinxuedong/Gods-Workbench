@@ -8,6 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import app
+from gw.core.errors import CleanroomException
 
 PASSWORD = "Test2026"
 BOOTSTRAP_PATH = "/api/asset-auth/local/trusted-bootstrap"
@@ -270,3 +271,48 @@ def test_device_key_is_created_with_restricted_permissions(trusted_env):
     assert key_path.parent == Path(os.path.dirname(auth_db_path()))
     trusted_local.verify_file_permissions(key_path)
     assert len(key_path.read_bytes()) == trusted_local.DEVICE_KEY_BYTES
+
+
+def test_missing_device_key_fails_closed_without_rotating_trust_root(trusted_env):
+    """设备密钥缺失时显式报错，既不兑换、也不静默换一把新密钥（AC8）。"""
+    from gw.core import trusted_local
+
+    ticket = issue_ticket()
+    key_path = trusted_local.device_key_path()
+    original = key_path.read_bytes()
+    key_path.unlink()
+    with make_client() as client:
+        response = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert response.status_code == 500, response.text
+        assert response.json()["detail"]["code"] == "TRUSTED_LOCAL_KEY_MISSING"
+        state = client.get("/api/asset-auth/status").json()
+        assert state["authenticated"] is False
+    # 关键：校验路径不得悄悄创建新密钥
+    assert not key_path.exists()
+    assert read_table("local_users") == []
+    assert read_table("trusted_local_owners") == []
+    # 恢复密钥后，同一张票据仍可正常兑换（票据未被消费）
+    key_path.write_bytes(original)
+    trusted_local.restrict_file_permissions(key_path)
+    with make_client() as client:
+        assert client.post(BOOTSTRAP_PATH, json={"ticket": ticket}).status_code == 200
+
+
+def test_existing_owner_blocks_new_ticket_when_device_key_is_lost(trusted_env):
+    """已建立绑定且密钥丢失时拒绝签发新票据，不静默轮换信任根。"""
+    from gw.core import trusted_local
+
+    ticket = issue_ticket()
+    with make_client() as client:
+        assert client.post(BOOTSTRAP_PATH, json={"ticket": ticket}).status_code == 200
+    key_path = trusted_local.device_key_path()
+    key_path.unlink()
+    try:
+        trusted_local.issue_bootstrap_ticket()
+    except CleanroomException as exc:
+        assert exc.code == "TRUSTED_LOCAL_KEY_MISSING"
+    else:
+        raise AssertionError("设备密钥丢失后仍允许签发新票据")
+    assert not key_path.exists()
+    # 既有绑定不受影响
+    assert len(read_table("trusted_local_owners")) == 1

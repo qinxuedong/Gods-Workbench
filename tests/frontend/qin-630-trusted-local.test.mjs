@@ -143,6 +143,8 @@ test('已有账户需要人工认领时状态为 needs_claim', async () => {
     const detail = await instance.start();
     assert.equal(detail.state, 'needs_claim');
     assert.equal(detail.code, 'TRUSTED_LOCAL_CLAIM_REQUIRED');
+    // 终态后内存中不再保留票据
+    assert.equal(instance.ticket, '');
 });
 
 test('票据无效时状态为 failed，且错误信息不回显票据', async () => {
