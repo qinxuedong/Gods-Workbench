@@ -7673,7 +7673,10 @@ async function assetOrganizeUndoLast(){
 /* ----- 右键菜单 ----- */
 function renderAssetOrganizeMenu(target){
     const label = assetOrganizeFolderLabel(target);
-    const rootActions = target.isRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
+    const canManageRoot = target.isRoot && canManageAllowedRoots()
+        && Boolean(assetRackRootDiskPath(target.rootId))
+        && [target.rootId, target.id, ...(target.aliases || [])].some(id => /^root_[a-f0-9]{24}$/i.test(String(id || '')));
+    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
         <button type="button" role="menuitem" class="is-danger" data-asset-organize-purge-root><i data-lucide="trash-2"></i><span>清除索引</span></button>` : '';
     return `<div class="asset-organize-menu" id="assetOrganizeMenu" role="menu" aria-label="文件夹整理">
         <div class="asset-organize-menu-title"><i data-lucide="folder"></i><span title="${escapeAttr(label)}">${escapeHtml(label)}</span></div>

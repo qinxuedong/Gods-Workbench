@@ -1706,7 +1706,8 @@ function renderAllowedRootsSettings(){
         uniqueRoots.push(root);
     }
     const entries = uniqueRoots.map(root => {
-        const removable = canManageAllowedRoots() && !root.readOnly;
+        const removable = canManageAllowedRoots() && !root.readOnly && Boolean(root.path);
+        const canOperateActiveRoot = removable && root.availability === 'available';
         const purgeIncomplete = root.availabilityReason === 'PURGE_INCOMPLETE';
         const status = root.active ? statusLabel(root) : (purgeIncomplete ? '清除未完成' : '已移除');
         const rowClass = root.active ? 'allowed-root-row' : 'allowed-root-row allowed-root-row--removed';
@@ -1714,7 +1715,7 @@ function renderAllowedRootsSettings(){
         // 系统根（只读）
         // root.active ? root.aliasCandidates.map
         const actions = root.active
-            ? `${root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${!canManageAllowedRoots() || allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('')}${removable ? `<button type="button" class="hw-btn" data-resource-folder-remove="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移出资源库</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`
+            ? `${root.aliasCandidates.map(candidate => `<button type="button" class="hw-btn" data-storage-root-alias-confirm="${escapeAttr(root.id)}" data-storage-root-alias-path="${escapeAttr(candidate.path || '')}" ${!canManageAllowedRoots() || allowedRootSettingsState.saving ? 'disabled' : ''}>确认别名：${escapeHtml(candidate.path || '')}</button>`).join('')}${canOperateActiveRoot ? `<button type="button" class="hw-btn" data-resource-folder-remove="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>移出资源库</button><button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`
             : `${removable ? `${purgeIncomplete ? '' : `<button type="button" class="hw-btn hw-btn-gold" data-storage-root-restore="${escapeAttr(root.id)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>恢复</button>`}<button type="button" class="hw-btn hw-btn-danger" data-storage-root-purge-prompt="${escapeAttr(root.id)}" data-root-path="${escapeAttr(root.path)}" ${allowedRootSettingsState.saving ? 'disabled' : ''}>清除索引</button>` : ''}`;
         return `<article class="${rowClass}" data-allowed-root="${escapeAttr(root.id)}"><div class="allowed-root-info"><strong>${escapeHtml(resourceFolderDisplayName(root))}</strong><code title="${escapeAttr(root.path)}">${escapeHtml(root.path)}</code><small class="allowed-root-status allowed-root-status--${escapeAttr(root.availability)}">${escapeHtml(status)}${root.availabilityReason ? ` · ${escapeHtml(root.availabilityReason)}` : ''}</small>${root.availabilityMessage ? `<small>${escapeHtml(root.availabilityMessage)}</small>` : ''}${root.aliases.map(alias => `<small>已确认路径别名：<code>${escapeHtml(alias)}</code></small>`).join('')}</div><div class="allowed-root-actions">${actions}</div></article>`;
     }).join('');
