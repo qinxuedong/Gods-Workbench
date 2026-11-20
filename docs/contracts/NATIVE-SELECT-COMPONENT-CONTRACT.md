@@ -1,8 +1,8 @@
 # 原生公共下拉组件契约规范 (Native Enhanced Select Component Contract)
 
-> **工单**：QIN-631 / GitHub #771  
-> **适用范围**：神工坊产品 UI 原生控件层（Native Component Layer）  
-> **设计系统**：黑金硬件设计系统（Black-Gold Hardware Design System）  
+> **工单**：QIN-631 / GitHub #771
+> **适用范围**：神工坊产品 UI 原生控件层（Native Component Layer）
+> **设计系统**：黑金硬件设计系统（Black-Gold Hardware Design System）
 
 ---
 

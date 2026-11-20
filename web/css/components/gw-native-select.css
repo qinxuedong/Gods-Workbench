@@ -10,6 +10,7 @@
   position: relative;
   display: inline-block;
   width: 100%;
+  max-width: 100%;
   box-sizing: border-box;
   vertical-align: middle;
 }
@@ -23,6 +24,7 @@ select.gw-native-select-input {
   -moz-appearance: none;
   display: block;
   width: 100%;
+  max-width: 100%;
   min-height: 40px;
   box-sizing: border-box;
   margin: 0;

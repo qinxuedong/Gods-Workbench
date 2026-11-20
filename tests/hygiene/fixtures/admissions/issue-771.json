@@ -3,16 +3,24 @@
   "issue": 771,
   "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20 (comment 7043461010)",
   "files": [
+    "docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md",
     "tests/frontend/node-files.txt",
     "tests/frontend/qin-631-native-select-pilot.test.mjs",
     "tests/hygiene/fixtures/admissions/issue-771.json",
     "web/css/components/gw-native-select.css",
     "web/js/core/gw-native-select.js",
-    "web/js/core/gw-native-select.md",
     "web/pages/agents.html",
     "web/pages/projects.html"
   ],
-  "admitted_files": [],
+  "admitted_files": [
+    {
+      "path": "docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20",
+      "sha256": "5a6b2d2ab7680eb0945a9cb454023fe7dfc50fcbd3bccee2fcbec3677c095afe",
+      "admission": "accepted"
+    }
+  ],
   "accepted_test_files": [
     {
       "path": "tests/frontend/qin-631-native-select-pilot.test.mjs",
@@ -21,5 +29,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-631：交付原生公共下拉组件（GWNativeSelect 与 .gw-select-shell），在 projects.html（#newProjectTypeSelect）与 agents.html（#agentProviderSelect）两页试点复用，配套新增违规 CI 必失败与旧基线只减不增门禁；仅写本票分片，基础卫生账本不动。"
+  "notes": "QIN-631：交付原生公共下拉组件（GWNativeSelect 与 .gw-select-shell），在 projects.html（#newProjectTypeSelect）与 agents.html（#agentProviderSelect）两页试点复用，配套新增违规 CI 必失败与旧基线只减不增门禁；契约文档登记入 admitted_files，同步准入计数 112->113，基础卫生账本不动。"
 }

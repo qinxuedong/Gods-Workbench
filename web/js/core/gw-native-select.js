@@ -26,12 +26,6 @@
       return null;
     }
 
-    // 已经经过增强，只执行状态同步
-    if (selectEl.classList.contains('gw-native-select-input') && selectEl.parentElement && selectEl.parentElement.classList.contains('gw-select-shell')) {
-      sync(selectEl);
-      return selectEl.parentElement;
-    }
-
     // 确保内部 select 具备标准类
     selectEl.classList.add('gw-native-select-input');
 
@@ -60,20 +54,43 @@
       wrapper.classList.add('gw-select-shell');
     }
 
-    // 绑定键盘交互：Esc 键失焦并释放焦点
-    selectEl.addEventListener('keydown', function (e) {
-      if (e.key === 'Escape' || e.key === 'Esc') {
-        selectEl.blur();
-      }
-    });
+    // 幂等事件绑定：仅当未初始化增强时绑定键盘与变更事件（解决预包装控件未绑定事件缺陷）
+    const isEnhanced = (selectEl.dataset && selectEl.dataset.gwEnhanced === 'true') ||
+      (typeof selectEl.getAttribute === 'function' && selectEl.getAttribute('data-gw-enhanced') === 'true');
 
-    // 监听原生 change 事件，保持状态同步
-    selectEl.addEventListener('change', function () {
-      sync(selectEl);
-      if (typeof opts.onChange === 'function') {
-        opts.onChange(selectEl.value, selectEl);
+    if (!isEnhanced) {
+      // 绑定键盘交互：Esc 键失焦并释放焦点（支持返还至触发控件）
+      selectEl.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape' || e.key === 'Esc') {
+          selectEl.blur();
+          const trigger = opts.triggerElement || (typeof opts.getTriggerElement === 'function' ? opts.getTriggerElement() : null);
+          if (trigger && typeof trigger.focus === 'function') {
+            trigger.focus();
+          }
+        }
+      });
+
+      // 监听原生 change 事件，保持状态同步并触发回调
+      selectEl.addEventListener('change', function () {
+        sync(selectEl);
+        if (typeof opts.onChange === 'function') {
+          opts.onChange(selectEl.value, selectEl);
+        }
+      });
+
+      if (selectEl.dataset) {
+        selectEl.dataset.gwEnhanced = 'true';
       }
-    });
+      if (typeof selectEl.setAttribute === 'function') {
+        selectEl.setAttribute('data-gw-enhanced', 'true');
+      }
+      if (wrapper && wrapper.dataset) {
+        wrapper.dataset.gwSelectShell = 'true';
+      }
+      if (wrapper && typeof wrapper.setAttribute === 'function') {
+        wrapper.setAttribute('data-gw-select-shell', 'true');
+      }
+    }
 
     sync(selectEl);
     return wrapper;
@@ -110,7 +127,7 @@
     const container = root || (typeof document !== 'undefined' ? document : null);
     if (!container || typeof container.querySelectorAll !== 'function') return;
 
-    const targets = container.querySelectorAll('select[data-gw-select]');
+    const targets = container.querySelectorAll('select[data-gw-select], .gw-select-shell select, select.gw-native-select-input');
     for (let i = 0; i < targets.length; i++) {
       enhance(targets[i]);
     }
