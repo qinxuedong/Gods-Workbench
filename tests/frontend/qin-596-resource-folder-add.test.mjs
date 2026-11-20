@@ -19,7 +19,8 @@ test('QIN-596 AC2: 侧栏按钮/分组/空态/弹窗标题文案统一', () => {
 });
 
 test('QIN-596 AC3: 共享管道——attach 内置 ensure，旧建看板入口已移除', () => {
-  assert.match(organize, /const allowed = await ensureCreateLibraryPathAllowedRoot\(cleanPath\);/);
+  assert.match(organize, /const allowed = options\.atomicRegistration\s*\?\s*true\s*:\s*await ensureCreateLibraryPathAllowedRoot\(cleanPath\);/);
+  assert.match(organize, /authorize_root:Boolean\(options\.atomicRegistration\)/);
   assert.match(organize, /if\(!allowed\) return null;/);
   assert.doesNotMatch(organize, /async function createPresetAssetBoard/);
   assert.match(manager, /gwCall\('organize', 'openBoardSourceModal', '', 'new'\)/);
