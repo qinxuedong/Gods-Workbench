@@ -256,6 +256,25 @@ let registryRegisteredFolders = [];
 let registryIndexedFolders = [];
 let registryRegisteredFoldersLoaded = false;
 let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:'', saving:false, generation:0};
+let workspaceContext = null;
+function setWorkspaceContext(snapshot){ workspaceContext = snapshot || null; renderWorkspaceIndicator(); }
+function renderWorkspaceIndicator(){
+    const host = document.querySelector('[data-workspace-indicator]');
+    if(!host) return;
+    if(!workspaceContext){ host.hidden = true; return; }
+    const modeLabel = workspaceContext.active_workspace_id === 'ws_nas_01' ? '连接 NAS 工作区' : '独立本机工作区';
+    const compatible = workspaceContext.compatibility?.status === 'compatible';
+    host.hidden = false;
+    host.innerHTML = `<i data-lucide="${compatible ? 'hard-drive' : 'shield-alert'}"></i><span class="workspace-indicator-mode">${escapeHtml(modeLabel)}</span><span class="workspace-indicator-detail">执行：${escapeHtml(workspaceContext.execution_machine_id || 'machine_local_01')} · 结果：${escapeHtml(workspaceContext.result_root_label || modeLabel)}</span>`;
+    refreshIcons?.();
+}
+async function loadWorkspaceContext(){
+    try {
+        const snapshot = await apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'}));
+        setWorkspaceContext(snapshot);
+    } catch(_) { setWorkspaceContext(null); }
+}
+document.addEventListener('gw-workspace-changed', event => setWorkspaceContext(event.detail));
 let boardFolderCreateState = {open:false, boardId:'', rootId:'', parent:'', name:'新文件夹', saving:false, error:''};
 let boardMigrationState = {running:false, blockedBoards:[], failedMessage:'', completed:false, dismissed:false};
 let boardMigrationSeq = 0;
@@ -1347,7 +1366,7 @@ async function loadGlobalDirectorySettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageProjectWorkspaceSettings()) throw new Error('仅管理员可查看和修改目录设置');
-        const [storage, thumbnail, status, roots, facets] = await Promise.all([
+        const [storage, thumbnail, status, roots, facets, workspace] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerApi.getThumbnailSettings()),
             apiJsonResponse(assetManagerApi.getRegistryStatus()),
@@ -1355,9 +1374,11 @@ async function loadGlobalDirectorySettings(){
                 ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}))
                 : Promise.resolve(null),
             apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'})).catch(() => null),
         ]);
         gwCall('settings', 'applyStorageSettingsData', storage);
         if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(workspace) gwCall('settings', 'applyWorkspaceSnapshot', workspace);
         if(facets) registryFacets = {
             kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
             categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -1381,13 +1402,15 @@ async function loadPermissionsAllowedRootsSettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageAllowedRoots()) throw new Error('仅管理员可查看和修改允许根权限');
-        const [storage, roots, facets] = await Promise.all([
+        const [storage, roots, facets, workspace] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'})),
             apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'})).catch(() => null),
         ]);
         gwCall('settings', 'applyStorageSettingsData', storage);
         if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(workspace) gwCall('settings', 'applyWorkspaceSnapshot', workspace);
         if(facets) registryFacets = {
             kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
             categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -1477,7 +1500,8 @@ async function saveAllowedRootPurge(rootId, options={}){
 document.addEventListener('click', event => {
     const target = event.target?.closest?.(
         '[data-storage-root-add],[data-storage-root-delete],[data-storage-root-alias-confirm],' +
-        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm],[data-resource-folder-remove]'
+        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm],[data-resource-folder-remove],' +
+        '[data-workspace-mode],[data-workspace-switch],[data-workspace-map-verify],[data-workspace-map-add]'
     );
     if(!target){
         if(event.target?.getAttribute?.('data-modal-backdrop') === 'purge-confirm'){
@@ -1498,6 +1522,24 @@ document.addEventListener('click', event => {
         const purgePath = target.getAttribute('data-root-path') || '';
         pendingPurgeRoot = {id: purgePromptId, path: purgePath};
         gwCall('settings', 'renderGlobalDirectorySettings');
+        return;
+    }
+    const workspaceModeId = target.getAttribute('data-workspace-mode');
+    if(workspaceModeId){
+        void gwCall('settings', 'selectWorkspaceTarget', workspaceModeId);
+        return;
+    }
+    const workspaceSwitchId = target.getAttribute('data-workspace-switch');
+    if(workspaceSwitchId){
+        void gwCall('settings', 'switchWorkspace', workspaceSwitchId);
+        return;
+    }
+    if(target.hasAttribute('data-workspace-map-verify')){
+        void gwCall('settings', 'verifyWorkspaceMapping');
+        return;
+    }
+    if(target.hasAttribute('data-workspace-map-add')){
+        void gwCall('settings', 'addWorkspaceMapping');
         return;
     }
     if(allowedRootSettingsState.saving) return;
@@ -11404,6 +11446,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
+    void loadWorkspaceContext();
     // 【QIN-585 AC2】治理建议的启动期意图仍在此声明；loadGovernanceSuggestions 会在
     // 首屏列表落地前把自己排队（见该函数内的闸门），不再与列表争服务端资源。
     gwCall('governance', 'loadGovernanceSuggestions');

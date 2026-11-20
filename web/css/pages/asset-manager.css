@@ -15,6 +15,17 @@ button { border:0; cursor:pointer; }
 .asset-title { color:var(--text);      font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); letter-spacing: 0; text-transform: none;}
 .asset-sub { margin-top:5px; color:var(--muted); font-size: var(--gw-type-body-sm); font-weight:650; }
 .asset-head-actions { display:flex; align-items:center; gap:10px; }
+.workspace-indicator { display:inline-flex; align-items:center; gap:8px; max-width:420px; padding:6px 11px; border:1px solid var(--line); border-radius:11px; background:var(--panel); color:var(--muted); font-size:var(--gw-type-label-md); font-weight:800; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.workspace-indicator[hidden] { display:none !important; }
+.workspace-indicator svg { width:15px; height:15px; flex:0 0 15px; stroke-width:2.1; }
+.workspace-indicator-mode { color:var(--text); }
+.workspace-indicator-detail { color:var(--faint); font-weight:650; }
+.workspace-mode-switch { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:8px 0; }
+.workspace-compat { margin:2px 0 10px; }
+.workspace-mapping-actions { display:flex; align-items:center; gap:8px; margin-top:8px; }
+.workspace-mapping-row { align-items:flex-start; }
+.workspace-mapping-row code { max-width:100%; overflow-wrap:anywhere; }
+@media (max-width:900px){ .workspace-indicator { max-width:240px; } .workspace-indicator-detail { display:none; } }
 .asset-refresh-btn { width:34px; height:34px; border-radius:11px; border:1px solid var(--line); background:var(--card); color:var(--muted); display:inline-flex; align-items:center; justify-content:center; padding:0; box-shadow:0 8px 18px rgba(15,23,42,.05); transition:transform .16s ease, background .16s ease, color .16s ease, border-color .16s ease, box-shadow .16s ease; }
 .asset-refresh-btn:hover { background:var(--strong); color:var(--strong-text); border-color:var(--strong); transform:translateY(-1px); box-shadow:0 12px 24px rgba(15,23,42,.12); }
 .asset-refresh-btn svg { width:16px; height:16px; stroke-width:2.2; }

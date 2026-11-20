@@ -70,6 +70,13 @@ from gw.settings.service import (
     default_storage_settings_service,
     register_root_cascade_hooks,
 )
+from gw.workspaces.model import (
+    MappingCreateRequest,
+    MappingVerifyRequest,
+    WorkspaceSnapshot,
+    WorkspaceSwitchRequest,
+)
+from gw.workspaces.service import default_workspace_service
 
 
 def _wire_root_cascade_hooks() -> None:
@@ -353,6 +360,87 @@ def confirm_storage_allowed_root_alias(
 ):
     _require_storage_admin(authorization, x_user_role)
     return default_storage_allowed_roots_service.confirm_alias(root_id, payload)
+
+
+# ---------------------------------------------------------------------------
+# 工作区与共享映射（QIN-628）
+# ---------------------------------------------------------------------------
+
+
+@router.get(
+    "/api/workspaces",
+    response_model=WorkspaceSnapshot,
+    summary="读取工作区与共享映射真值快照",
+    status_code=status.HTTP_200_OK,
+)
+def get_workspaces(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """默认只激活独立本机工作区；兼容状态实时返回，不缓存过期结论。"""
+    _require_storage_admin(authorization, x_user_role)
+    return default_workspace_service.get_snapshot()
+
+
+@router.get(
+    "/api/workspaces/compatibility",
+    summary="读取 NAS 兼容检查状态",
+    status_code=status.HTTP_200_OK,
+)
+def get_workspace_compatibility(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """QIN-626 未接入时返回 pending，连接 NAS 工作区须拒绝。"""
+    _require_storage_admin(authorization, x_user_role)
+    return default_workspace_service.compatibility()
+
+
+@router.post(
+    "/api/workspaces/verify",
+    summary="探测执行端对共享路径的真实读/写能力",
+    status_code=status.HTTP_200_OK,
+)
+def verify_workspace_mapping(
+    payload: MappingVerifyRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """只探测不落盘；失败返回明确错误码，不产生半注册。"""
+    _require_storage_admin(authorization, x_user_role)
+    return default_workspace_service.verify_path(payload)
+
+
+@router.post(
+    "/api/workspaces/mappings",
+    response_model=WorkspaceSnapshot,
+    summary="登记或刷新共享路径映射",
+    status_code=status.HTTP_200_OK,
+)
+def add_workspace_mapping(
+    payload: MappingCreateRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """同一逻辑来源+执行机器+工作区幂等刷新，不新增重复来源。"""
+    _require_storage_admin(authorization, x_user_role)
+    return default_workspace_service.add_mapping(payload)
+
+
+@router.post(
+    "/api/workspaces/switch",
+    response_model=WorkspaceSnapshot,
+    summary="切换当前写入工作区",
+    status_code=status.HTTP_200_OK,
+)
+def switch_workspace(
+    payload: WorkspaceSwitchRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    """兼容检查、执行端核验与 CAS 全部通过后才改变当前工作区。"""
+    _require_storage_admin(authorization, x_user_role)
+    return default_workspace_service.switch_workspace(payload)
 
 
 # ---------------------------------------------------------------------------

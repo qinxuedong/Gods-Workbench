@@ -1,0 +1,27 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 763,
+  "authorization_basis": "GitHub Issue #763, PM design approval 2026-11-20",
+  "files": [
+    "gw/api/routes_settings.py",
+    "gw/workspaces/model.py",
+    "gw/workspaces/service.py",
+    "gw/workspaces/verification.py",
+    "tests/contracts/settings/test_qin_628_workspace_mapping.py",
+    "tests/hygiene/fixtures/admissions/issue-763.json",
+    "web/css/pages/asset-manager.css",
+    "web/embeds/asset-manager.html",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/settings/test_qin_628_workspace_mapping.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #763, 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-628：独立本机/连接 NAS 双工作区、共享路径映射、执行端权限核验与 QIN-626 兼容检查接缝；仅写本票分片，未改基础账本。"
+}
