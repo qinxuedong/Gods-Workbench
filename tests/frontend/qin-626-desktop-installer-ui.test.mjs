@@ -32,6 +32,12 @@ test("AC1: 安装说明与界面不冒充正式发布，并给出可信下载与
   assert.match(readme, /QIN-630/);
 });
 
+test("AC1: 已保存的本机地址在冷启动时拉起内置后端，远程地址仍直接连接", () => {
+  assert.match(app, /isLocalServerUrl\(saved\)/);
+  assert.match(app, /await invoke\("launch_local_backend"\)/);
+  assert.match(app, /invoke\("connect_to_server", \{ serverUrl: saved \}\)/);
+});
+
 test("AC8: 票据只经导航地址交付，界面不保存、不展示、不拼接票据", () => {
   assert.match(app, /window\.location\.replace\(destination\)/);
   assert.match(index, /客户端仅保存服务器地址，不保存模型 API 密钥、设备密钥或本机票据/);

@@ -25,6 +25,15 @@
     return result?.destination || "";
   }
 
+  function isLocalServerUrl(value) {
+    try {
+      const host = new URL(value).hostname.toLowerCase();
+      return host === "127.0.0.1" || host === "localhost" || host === "[::1]";
+    } catch {
+      return false;
+    }
+  }
+
   async function openResult(result, delayMs = 0) {
     const destination = destinationOf(result);
     if (!destination) throw new Error("桌面端未返回导航地址。请重新扫描或重启客户端。");
@@ -190,7 +199,9 @@
         const saved = await invoke("last_server");
         if (saved) {
           urlInput.value = saved;
-          const result = await invoke("connect_to_server", { serverUrl: saved });
+          const result = isLocalServerUrl(saved)
+            ? await invoke("launch_local_backend")
+            : await invoke("connect_to_server", { serverUrl: saved });
           await openResult(result);
           return;
         }

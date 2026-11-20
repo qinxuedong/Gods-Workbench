@@ -144,6 +144,14 @@ function Read-JsonFile {
     return (Get-Content -LiteralPath $Path -Raw -Encoding UTF8 | ConvertFrom-Json)
 }
 
+function Get-PropertyValue {
+    param($Object, [string]$Name)
+    if ($null -eq $Object) { return $null }
+    $property = $Object.PSObject.Properties[$Name]
+    if ($null -eq $property) { return $null }
+    return $property.Value
+}
+
 function Get-RegistryString {
     param([string]$Path, [string]$Name)
     try {
@@ -716,49 +724,61 @@ function Assert-DesktopReady {
     $openapiVersion = Get-OpenApiVersion
     Require-Check "$Label.openapi-version" (Test-ExpectedOpenApiVersion $openapiVersion) ("expected prefix " + $script:expectedVersionValue + "+gw., got " + $openapiVersion)
     $manifest = Read-JsonFile -Path (Join-Path $script:installDirPath "backend\bundle-manifest.json")
+    $manifestVersion = Get-PropertyValue -Object $manifest -Name "product_version"
+    $manifestCommit = Get-PropertyValue -Object $manifest -Name "git_commit"
     Require-Check "$Label.manifest-present" ($null -ne $manifest) "bundle manifest unreadable"
-    Require-Check "$Label.manifest-version" ([string]$manifest.product_version -eq $script:expectedVersionValue) ("manifest version " + [string]$manifest.product_version)
-    Require-Check "$Label.manifest-commit" (([string]$manifest.git_commit).ToLowerInvariant().StartsWith($script:expectedCommitValue)) ("manifest commit " + [string]$manifest.git_commit)
+    Require-Check "$Label.manifest-version" ([string]$manifestVersion -eq $script:expectedVersionValue) ("manifest version " + [string]$manifestVersion)
+    Require-Check "$Label.manifest-commit" (([string]$manifestCommit).ToLowerInvariant().StartsWith($script:expectedCommitValue)) ("manifest commit " + [string]$manifestCommit)
     $backendPids = @(Get-BackendPids)
     Require-Check "$Label.backend-single" ($backendPids.Count -eq 1) ("backend PIDs: " + ($backendPids -join ","))
     $listenerPids = @(Get-ListeningPids -Port 2077)
     Require-Check "$Label.port-owner" ((@($listenerPids) -contains $backendPids[0])) ("listener PIDs: " + ($listenerPids -join ",") + "; backend PIDs: " + ($backendPids -join ","))
     $lock = Get-InstanceLock
+    $lockPid = Get-PropertyValue -Object $lock -Name "pid"
     Require-Check "$Label.lock-present" ($null -ne $lock) "instance lock missing"
-    Require-Check "$Label.lock-owner" ($null -ne $lock -and [int]$lock.pid -eq [int]$script:desktop.Id) ("lock pid " + [string]$lock.pid + "; desktop pid " + [string]$script:desktop.Id)
+    Require-Check "$Label.lock-owner" ($null -ne $lock -and [int]$lockPid -eq [int]$script:desktop.Id) ("lock pid " + [string]$lockPid + "; desktop pid " + [string]$script:desktop.Id)
     $diag = $null
     $view = $null
     $diagDeadline = (Get-Date).AddSeconds(90)
     while ((Get-Date) -lt $diagDeadline) {
         $diag = Get-DesktopDiagnosticsSnapshot -Label ($Label + ".diagnostics") -WaitSeconds 30
-        if ($null -ne $diag.data -and [bool]$diag.data.running -and $null -ne $diag.data.diagnostics) {
-            $view = $diag.data.diagnostics
-            if ($null -ne $view.handshake -and [bool]$view.handshake.verified -and [string]$view.backend_phase -eq "running") {
+        $diagData = Get-PropertyValue -Object $diag -Name "data"
+        if ($null -ne $diagData -and [bool](Get-PropertyValue -Object $diagData -Name "running")) {
+            $view = Get-PropertyValue -Object $diagData -Name "diagnostics"
+            $loopHandshake = Get-PropertyValue -Object $view -Name "handshake"
+            if ($null -ne $loopHandshake -and [bool](Get-PropertyValue -Object $loopHandshake -Name "verified") -and [string](Get-PropertyValue -Object $view -Name "backend_phase") -eq "running") {
                 break
             }
         }
         Start-Sleep -Seconds 1
     }
+    $diagData = Get-PropertyValue -Object $diag -Name "data"
+    $viewDesktopVersion = Get-PropertyValue -Object $view -Name "desktop_version"
+    $viewBackendPhase = Get-PropertyValue -Object $view -Name "backend_phase"
+    $viewHandshake = Get-PropertyValue -Object $view -Name "handshake"
+    $viewTrusted = Get-PropertyValue -Object $view -Name "trusted"
     Require-Check "$Label.diagnostics-exit" ($null -ne $diag -and $diag.exit_code -eq 0) ("diagnostics helper exit " + $(if ($null -ne $diag) { [string]$diag.exit_code } else { "<none>" }))
-    Require-Check "$Label.diagnostics-running" ($null -ne $diag.data -and [bool]$diag.data.running) "diagnostics did not report a running instance"
+    Require-Check "$Label.diagnostics-running" ($null -ne $diagData -and [bool](Get-PropertyValue -Object $diagData -Name "running")) "diagnostics did not report a running instance"
     Require-Check "$Label.diagnostics-view" ($null -ne $view) "diagnostics payload missing"
-    Require-Check "$Label.diagnostics-version" ([string]$view.desktop_version -eq $script:expectedVersionValue) ("desktop version " + [string]$view.desktop_version)
-    Require-Check "$Label.diagnostics-backend" ([string]$view.backend_phase -eq "running") ("backend phase " + [string]$view.backend_phase)
-    Require-Check "$Label.diagnostics-handshake" ($null -ne $view.handshake -and [bool]$view.handshake.verified) "capability handshake not verified"
+    Require-Check "$Label.diagnostics-version" ([string]$viewDesktopVersion -eq $script:expectedVersionValue) ("desktop version " + [string]$viewDesktopVersion)
+    Require-Check "$Label.diagnostics-backend" ([string]$viewBackendPhase -eq "running") ("backend phase " + [string]$viewBackendPhase)
+    Require-Check "$Label.diagnostics-handshake" ($null -ne $viewHandshake -and [bool](Get-PropertyValue -Object $viewHandshake -Name "verified")) "capability handshake not verified"
     $healthJson = $null
     try { $healthJson = $health.body | ConvertFrom-Json } catch { }
-    if ($null -ne $healthJson -and $healthJson.pid) {
-        Require-Check "$Label.health-pid" ([int]$healthJson.pid -eq [int]$backendPids[0]) ("health pid " + [string]$healthJson.pid + "; backend PIDs " + ($backendPids -join ","))
+    $healthPid = Get-PropertyValue -Object $healthJson -Name "pid"
+    if ($null -ne $healthPid) {
+        Require-Check "$Label.health-pid" ([int]$healthPid -eq [int]$backendPids[0]) ("health pid " + [string]$healthPid + "; backend PIDs " + ($backendPids -join ","))
     }
     $script:lifecycle[$Label] = [ordered]@{
         desktop_pid = [int]$script:desktop.Id
         backend_pids = $backendPids
         listener_pids = $listenerPids
-        lock_pid = if ($null -ne $lock) { [int]$lock.pid } else { 0 }
+        lock_pid = if ($null -ne $lock) { [int]$lockPid } else { 0 }
         health_status = [int]$health.status
+        health_pid = $healthPid
         openapi_version = $openapiVersion
-        handshake = if ($null -ne $view -and $null -ne $view.handshake) { [bool]$view.handshake.verified } else { $false }
-        trusted = if ($null -ne $view -and $null -ne $view.trusted) { [bool]$view.trusted.available } else { $false }
+        handshake = if ($null -ne $viewHandshake) { [bool](Get-PropertyValue -Object $viewHandshake -Name "verified") } else { $false }
+        trusted = if ($null -ne $viewTrusted) { [bool](Get-PropertyValue -Object $viewTrusted -Name "available") } else { $false }
     }
 }
 
@@ -1134,7 +1154,8 @@ public static class GwNative {
 
     if (Test-Path -LiteralPath $script:lockPath) {
         $lock = Get-InstanceLock
-        if ($null -ne $lock -and $lock.pid -and (Get-Process -Id ([int]$lock.pid) -ErrorAction SilentlyContinue)) {
+        $lockPid = Get-PropertyValue -Object $lock -Name "pid"
+        if ($null -ne $lock -and $lockPid -and (Get-Process -Id ([int]$lockPid) -ErrorAction SilentlyContinue)) {
             throw "another desktop instance is running; close it before acceptance"
         }
         Remove-Item -LiteralPath $script:lockPath -Force -ErrorAction SilentlyContinue
@@ -1233,13 +1254,14 @@ public static class GwNative {
     $listenerPids = @(Get-ListeningPids -Port 2077)
     Require-Check "hot-start.single-listener" ($listenerPids.Count -eq 1 -and $listenerPids[0] -eq $backendPids[0]) ("listener PIDs " + ($listenerPids -join ",") + "; backend PIDs " + ($backendPids -join ","))
     $lock = Get-InstanceLock
-    Require-Check "hot-start.lock-unchanged" ($null -ne $lock -and [int]$lock.pid -eq [int]$script:desktop.Id) ("lock pid " + [string]$lock.pid)
+    $hotLockPid = Get-PropertyValue -Object $lock -Name "pid"
+    Require-Check "hot-start.lock-unchanged" ($null -ne $lock -and [int]$hotLockPid -eq [int]$script:desktop.Id) ("lock pid " + [string]$hotLockPid)
     $script:lifecycle["03-hot-start"] = [ordered]@{
         helper_exit = $hotCode
         desktop_pids = $desktopPids
         backend_pids = $backendPids
         listener_pids = $listenerPids
-        lock_pid = if ($null -ne $lock) { [int]$lock.pid } else { 0 }
+        lock_pid = if ($null -ne $lock) { [int]$hotLockPid } else { 0 }
     }
 
     Stop-DesktopGracefully -Label "04-clean-quit"
