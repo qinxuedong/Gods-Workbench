@@ -11415,6 +11415,9 @@ function scheduleDeferredBootRequests(){
         // 会抢在它前面；治理建议还会被 pending 闸门挡下，之后再无人补取。执行时按当前代际
         // 再确认一次（wait 内部会循环等新一代落地），两条链路最终都仍会补齐。
         await waitRegistryBootstrapSettled();
+        // 【QIN-628 AC5】工作区指示器只展示执行端与结果落点；与治理建议同属首屏后读取，
+        // 不在列表在途时再发一条非首屏请求。夹具未加载该域函数时安全跳过。
+        if(typeof loadWorkspaceContext === 'function') void loadWorkspaceContext();
         // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
         if(!inboxLoaded){
             void gwLoad('inbox').then(m => m.loadAssetInbox()).then(() => {
@@ -11446,7 +11449,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
-    void loadWorkspaceContext();
+    // 【QIN-628 AC5】工作区上下文移入 scheduleDeferredBootRequests，首屏列表落地后再读取。
     // 【QIN-585 AC2】治理建议的启动期意图仍在此声明；loadGovernanceSuggestions 会在
     // 首屏列表落地前把自己排队（见该函数内的闸门），不再与列表争服务端资源。
     gwCall('governance', 'loadGovernanceSuggestions');
