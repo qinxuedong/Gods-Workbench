@@ -87,6 +87,10 @@ def pair(request: Request, authorization: str | None = Header(None), x_user_role
 
 
 def _new_job(owner):
+    # QIN-627 L5：写窗口关闭后不再建立素材收集任务。
+    from gw.core.write_window import guard_write
+
+    guard_write()
     job_id = "collect_" + uuid4().hex
     with _lock:
         _jobs[job_id] = {"job_id": job_id, "status": "queued", "progress": 0, "owner": owner}
@@ -189,3 +193,19 @@ def job(job_id: str, request: Request, authorization: str | None = Header(None),
         if not entry or entry["owner"] != owner:
             raise CleanroomException(404, "NOT_FOUND", "收集任务不存在")
         return {key: value for key, value in entry.items() if key != "owner"}
+
+def active_job_count():
+    """当前排队/执行中的素材收集任务数。"""
+    with _lock:
+        return sum(
+            1 for job in _jobs.values() if job.get("status") in {"queued", "running"}
+        )
+
+
+def _register_write_window_host():
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("asset_collect", active_job_count)
+
+
+_register_write_window_host()

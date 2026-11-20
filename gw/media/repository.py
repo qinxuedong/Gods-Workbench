@@ -2881,6 +2881,12 @@ def _atomic_write_bytes(target: Path, data: bytes, *, durable: bool = True) -> N
     留下半截文件（``replace`` 原子），断电丢失只会导致下次重新生成。全库预热时
     每项一次 fsync 会把 8 路并发压成单线程（实测 354 项从 3 秒退化到 15 秒）。
     """
+    from gw.core.write_window import cache_writes_allowed
+
+    if not cache_writes_allowed():
+        # 数据位置切换待重启窗口：派生缓存是再生数据，直接放弃落盘，
+        # 避免在旧根或新根之外产生额外写入。
+        return
     partial = target.parent / (target.stem + ".part" + target.suffix)
     try:
         partial.parent.mkdir(parents=True, exist_ok=True)

@@ -201,7 +201,11 @@ class TeamMessageRepository:
             existed = path.exists()
             try:
                 path.parent.mkdir(parents=True, exist_ok=True)
-                connection = sqlite3.connect(path, timeout=5, isolation_level=None)
+                from gw.core.write_window import open_sqlite
+
+                connection = open_sqlite(
+                    path, timeout=5, isolation_level=None
+                )
                 try:
                     connection.row_factory = sqlite3.Row
                     connection.execute("PRAGMA busy_timeout=5000")
@@ -282,13 +286,21 @@ class TeamMessageRepository:
     @contextmanager
     def _connection(self) -> Iterator[sqlite3.Connection]:
         path = self.database_path()
-        self._initialize_path(path)
+        # QIN-627 L3：只读窗口跳过初始化写入，仅以 mode=ro 打开读取既有库。
+        from gw.core.write_window import open_sqlite, writes_blocked
+
+        read_only = writes_blocked()
+        if not read_only:
+            self._initialize_path(path)
         try:
-            connection = sqlite3.connect(path, timeout=5, isolation_level=None)
+            connection = open_sqlite(
+                path, write=not read_only, timeout=5, isolation_level=None
+            )
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA busy_timeout=5000")
             connection.execute("PRAGMA foreign_keys=ON")
-            connection.execute("PRAGMA synchronous=FULL")
+            if not read_only:
+                connection.execute("PRAGMA synchronous=FULL")
         except (OSError, sqlite3.Error, RuntimeError, ValueError) as exc:
             raise self._unavailable() from exc
         try:

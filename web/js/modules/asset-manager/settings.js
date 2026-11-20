@@ -1771,10 +1771,12 @@ function renderGlobalDirectorySettings(){
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取允许根权限…'}</p>` : `<fieldset class="permissions-roots-fieldset" ${directorySettingsSaving ? 'disabled' : ''}>${renderAllowedRootsSettings()}</fieldset>${renderWorkspaceSettingsBody()}${renderServerDirectoryBrowser()}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
     } else {
         host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
+        ${renderDataLocationBanner()}
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
         <div class="directory-cards-column directory-cards-column--left">
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>客户端与默认目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div></section>
+        ${renderDataLocationCard()}
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         </div>
@@ -1798,6 +1800,7 @@ function renderGlobalDirectorySettings(){
         const next = host.querySelector(`[id="${focusId.replace(/"/g,'')}"]`);
         if(next && document.activeElement !== next) next.focus({preventScroll:true});
     });
+    ensureDataLocationBindings(host);
 }
 // 资源文件夹授权登记：Enter、选文件夹与「添加资源文件夹」按钮共用同一条持久化路径。
 async function registerAllowedRootPath(pathValue){
@@ -3482,3 +3485,266 @@ export {
     verifyWorkspaceMapping,
     validateServerResourceDirectory,
 };
+// ---------------------------------------------------------------------------
+// QIN-627：数据位置卡片（当前根、四类分离、预检、迁移、只读横幅）
+// ---------------------------------------------------------------------------
+const dataLocationState = {
+    loading: false,
+    ready: false,
+    error: "",
+    snapshot: null,
+    check: null,
+    target: "",
+    busy: false,
+    poll: null,
+};
+
+function dataLocationFormatBytes(value){
+    const bytes = Number(value);
+    if(!Number.isFinite(bytes) || bytes < 0) return "—";
+    const units = ["B", "KB", "MB", "GB", "TB"];
+    let size = bytes;
+    let index = 0;
+    while(size >= 1024 && index < units.length - 1){ size /= 1024; index += 1; }
+    return `${size >= 100 || index === 0 ? Math.round(size) : size.toFixed(1)} ${units[index]}`;
+}
+
+function dataLocationReadOnly(){
+    const snapshot = dataLocationState.snapshot;
+    return Boolean(snapshot && String(snapshot.write_window?.state || "open") !== "open");
+}
+
+function dataLocationActiveMigration(){
+    const migration = dataLocationState.snapshot?.migration;
+    return Boolean(migration && !["completed", "failed", "cancelled", "rolled_back"].includes(String(migration.status || "")));
+}
+
+function renderDataLocationBanner(){
+    const visible = dataLocationReadOnly();
+    return `<div class="data-location-readonly-banner" data-location-readonly ${visible ? "" : "hidden"} role="alert">
+        <i data-lucide="lock"></i>
+        <div><strong>数据位置已切换，重启后生效；当前为只读</strong>
+        <span>所有写入、上传、任务启动与设置保存均已暂停；请重启工作台完成切换。旧位置数据保留，不会被自动删除。</span></div>
+    </div>`;
+}
+
+function renderDataLocationCategoryRows(snapshot){
+    const rows = Array.isArray(snapshot?.categories) ? snapshot.categories : [];
+    return rows.map(item => `<li class="data-location-category" data-data-location-category="${escapeAttr(String(item.key || ""))}">
+        <div><strong>${escapeHtml(String(item.label || item.key || ""))}</strong>
+        <span class="data-location-path">${escapeHtml(String(item.path || item.note || "由素材来源目录持有"))}</span></div>
+        <em class="${item.default_migrated ? "is-migrated" : "is-kept"}">${item.default_migrated ? "随数据迁移" : (item.key === "models" ? "默认不迁移" : "永不复制/移动")}</em>
+    </li>`).join("");
+}
+
+function renderDataLocationCard(){
+    const snapshot = dataLocationState.snapshot;
+    const pointer = snapshot?.pointer || {};
+    const migration = snapshot?.migration;
+    const busy = dataLocationState.busy;
+    const readOnly = dataLocationReadOnly();
+    const activeJobs = snapshot?.active_jobs || {};
+    const activeJobText = Object.keys(activeJobs).length
+        ? Object.entries(activeJobs).map(([name, count]) => `${escapeHtml(name)} × ${Number(count)}`).join("、")
+        : "无";
+    const checked = dataLocationState.check;
+    const targetMatchesCheck = Boolean(checked && dataLocationState.target.trim() && String(checked.target) === dataLocationState.target.trim());
+    const canStart = Boolean(snapshot && !readOnly && !migration && !busy && targetMatchesCheck);
+    const migrationView = migration ? `<div class="data-location-progress" data-data-location-progress>
+        <div class="data-location-progress-head"><strong>迁移 ${escapeHtml(String(migration.status || ""))}</strong>
+        <span>${escapeHtml(String(migration.phase || ""))} · ${dataLocationFormatBytes(migration.copied_bytes)} / ${dataLocationFormatBytes(migration.total_bytes)}</span></div>
+        <div class="data-location-progress-track"><i style="width:${Math.max(0, Math.min(100, Number(migration.percent || 0)))}%"></i></div>
+        ${migration.error_code ? `<p class="data-location-error" role="alert">${escapeHtml(String(migration.error_code))}：${escapeHtml(String(migration.message || ""))}</p>` : ""}
+        <div class="data-location-actions">
+            ${dataLocationActiveMigration() && ["planned", "checking_space", "quiescing", "copying", "verifying"].includes(String(migration.status)) ? `<button class="hw-btn" type="button" data-data-location-cancel ${busy ? "disabled" : ""}><i data-lucide="x"></i>取消迁移</button>` : ""}
+            ${readOnly ? `<button class="hw-btn hw-btn-danger" type="button" data-data-location-rollback ${busy ? "disabled" : ""}><i data-lucide="undo-2"></i>回退到旧位置</button>` : ""}
+        </div></div>` : "";
+    const errorBox = dataLocationState.error ? `<p class="data-location-error" role="alert">${escapeHtml(dataLocationState.error)}</p>` : "";
+    if(!dataLocationState.ready){
+        return `<section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card data-location-card" data-board-data-location>
+            <div class="asset-pref-title"><i data-lucide="database"></i><span>数据位置</span><button class="hw-btn hw-btn-icon" type="button" data-data-location-refresh title="重新读取数据位置" aria-label="重新读取数据位置"><i data-lucide="refresh-cw"></i></button></div>
+            ${errorBox || `<p class="directory-status" role="status">${dataLocationState.loading ? "正在读取数据位置…" : "等待读取数据位置"}</p>`}
+        </section>`;
+    }
+    return `<section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card data-location-card" data-board-data-location>
+        <div class="asset-pref-title"><i data-lucide="database"></i><span>数据位置</span><button class="hw-btn hw-btn-icon" type="button" data-data-location-refresh title="重新读取数据位置" aria-label="重新读取数据位置" ${busy ? "disabled" : ""}><i data-lucide="refresh-cw"></i></button></div>
+        ${errorBox}
+        <div class="data-location-summary">
+            <div><span>程序与引导位置</span><strong title="${escapeAttr(String(snapshot.bootstrap_root || ""))}">${escapeHtml(String(snapshot.bootstrap_root || ""))}</strong></div>
+            <div><span>当前数据位置</span><strong title="${escapeAttr(String(snapshot.data_location || ""))}">${escapeHtml(String(snapshot.data_location || ""))}</strong></div>
+            <div><span>指针版本</span><strong>${Number(pointer.revision || 1)}${pointer.present ? "" : "（默认位置）"}</strong></div>
+            <div><span>可用空间</span><strong>${dataLocationFormatBytes(snapshot.disk?.free_bytes)} / ${dataLocationFormatBytes(snapshot.disk?.total_bytes)}</strong></div>
+        </div>
+        <ul class="data-location-categories">${renderDataLocationCategoryRows(snapshot)}</ul>
+        <p class="data-location-note">模型缓存默认不迁移：旧 <code>data/models</code> 文件保留在原位置并继续占用磁盘，迁移后可能需要重新配置或下载；素材原件由资源文件夹持有，永不复制或移动。</p>
+        <div class="data-location-target">
+            <label><span>新数据位置（绝对路径）</span><div class="directory-input-row"><input type="text" data-data-location-target value="${escapeAttr(dataLocationState.target)}" placeholder="${escapeAttr(String(snapshot.data_location || "选择新的数据目录"))}" autocomplete="off" ${readOnly || busy ? "disabled" : ""}><button class="hw-btn" type="button" data-data-location-check ${readOnly || busy ? "disabled" : ""}><i data-lucide="shield-check"></i>预检</button></div></label>
+            <div class="data-location-categories-picker" role="group" aria-label="迁移类别">
+                <label><input type="checkbox" data-data-location-category-option="user_data" checked disabled> 用户数据与索引（必选）</label>
+                <label><input type="checkbox" data-data-location-category-option="cache" checked ${readOnly || busy ? "disabled" : ""}> 缓存输出</label>
+                <label><input type="checkbox" data-data-location-category-option="models" ${readOnly || busy ? "disabled" : ""}> 模型缓存（默认不迁移）</label>
+            </div>
+        </div>
+        ${checked ? `<div class="data-location-check ${targetMatchesCheck ? "is-ok" : "is-stale"}" data-data-location-check-result>
+            <strong>预检${targetMatchesCheck ? "通过" : "结果已过期"}</strong>
+            <span>目标 ${escapeHtml(String(checked.target || ""))} · 需 ${dataLocationFormatBytes(checked.required_bytes)} · 可用 ${dataLocationFormatBytes(checked.free_bytes)} · ${Number(checked.files || 0)} 个文件</span>
+            ${checked.excluded?.length ? `<span>排除：${checked.excluded.map(item => `${escapeHtml(String(item.reason || ""))} × ${Number(item.files || 0)}`).join("、")}</span>` : ""}
+        </div>` : ""}
+        <div class="data-location-actions">
+            <button class="hw-btn hw-btn-gold" type="button" data-data-location-start ${canStart ? "" : "disabled"}><i data-lucide="hard-drive-upload"></i>${busy ? "处理中…" : "开始迁移"}</button>
+            <span class="data-location-jobs">活动后台任务：${activeJobText}</span>
+        </div>
+        ${migrationView}
+        ${readOnly ? `<p class="data-location-note">重启后新进程读取新位置并恢复写入；旧位置完整保留。回退会把指针切回旧位置，但仍需重启后生效。</p>` : ""}
+    </section>`;
+}
+
+function refreshDataLocationDom(){
+    const host = document.getElementById('storageSettingsOverlay');
+    if(!host) return;
+    const card = host.querySelector('[data-board-data-location]');
+    if(card) card.outerHTML = renderDataLocationCard();
+    const banner = host.querySelector('[data-location-readonly]');
+    if(banner) banner.outerHTML = renderDataLocationBanner();
+    refreshIcons();
+}
+
+async function loadDataLocationData(){
+    if(dataLocationState.loading) return;
+    dataLocationState.loading = true;
+    refreshDataLocationDom();
+    try{
+        const snapshot = await apiJsonResponse(fetch('/api/data-location', {credentials:'same-origin', cache:'no-store'}));
+        dataLocationState.snapshot = snapshot;
+        dataLocationState.error = '';
+        dataLocationState.ready = true;
+        if(dataLocationReadOnly()) dataLocationState.check = null;
+    }catch(error){
+        dataLocationState.error = error.message || '数据位置读取失败';
+    }finally{
+        dataLocationState.loading = false;
+        refreshDataLocationDom();
+        if(dataLocationActiveMigration()){
+            clearTimeout(dataLocationState.poll);
+            dataLocationState.poll = setTimeout(() => { loadDataLocationData(); }, 900);
+        }
+    }
+}
+
+function selectedDataLocationCategories(){
+    const options = document.querySelectorAll('[data-data-location-category-option]');
+    const values = [];
+    options.forEach(option => { if(option.checked) values.push(option.dataset.dataLocationCategoryOption); });
+    if(!values.includes('user_data')) values.unshift('user_data');
+    return values;
+}
+
+async function checkDataLocationTarget(){
+    const target = String(dataLocationState.target || '').trim();
+    if(!target){ dataLocationState.error = '请输入新的数据位置绝对路径'; refreshDataLocationDom(); return; }
+    dataLocationState.busy = true;
+    dataLocationState.error = '';
+    refreshDataLocationDom();
+    try{
+        dataLocationState.check = await apiJsonResponse(fetch('/api/data-location/check', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({target, categories:selectedDataLocationCategories()}),
+        }));
+    }catch(error){
+        dataLocationState.check = null;
+        dataLocationState.error = error.message || '目标位置预检失败';
+    }finally{
+        dataLocationState.busy = false;
+        refreshDataLocationDom();
+    }
+}
+
+async function startDataLocationMigration(){
+    const snapshot = dataLocationState.snapshot;
+    const target = String(dataLocationState.target || '').trim();
+    if(!snapshot || !target || !dataLocationState.check) return;
+    const modelsSelected = selectedDataLocationCategories().includes('models');
+    const message = modelsSelected
+        ? '将迁移用户数据、缓存与模型缓存到新位置；完成后需重启生效，旧位置数据保留。素材原件不会被复制或移动。确认开始？'
+        : '模型缓存默认不迁移：旧 data/models 文件会保留在原位置并继续占用磁盘，迁移后可能需要重新配置或下载。素材原件永不复制或移动。确认开始？';
+    if(!window.confirm(message)) return;
+    dataLocationState.busy = true;
+    dataLocationState.error = '';
+    refreshDataLocationDom();
+    try{
+        await apiJsonResponse(fetch('/api/data-location/migrations', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({
+                target,
+                expected_version:Number(snapshot.pointer?.revision || 1),
+                categories:selectedDataLocationCategories(),
+            }),
+        }));
+        dataLocationState.check = null;
+    }catch(error){
+        dataLocationState.error = error.message || '迁移启动失败';
+    }finally{
+        dataLocationState.busy = false;
+        await loadDataLocationData();
+        refreshDataLocationDom();
+    }
+}
+
+async function cancelDataLocationMigration(){
+    const migration = dataLocationState.snapshot?.migration;
+    if(!migration || dataLocationState.busy) return;
+    dataLocationState.busy = true;
+    try{
+        await apiJsonResponse(fetch(`/api/data-location/migrations/${encodeURIComponent(migration.migration_id)}/cancel`, {
+            method:'POST', credentials:'same-origin',
+        }));
+    }catch(error){
+        dataLocationState.error = error.message || '取消失败';
+    }finally{
+        dataLocationState.busy = false;
+        await loadDataLocationData();
+    }
+}
+
+async function rollbackDataLocation(){
+    if(dataLocationState.busy) return;
+    if(!window.confirm('回退会把数据位置指针切回上一位置，仍需重启后生效；旧（新）位置数据保留。确认回退？')) return;
+    dataLocationState.busy = true;
+    try{
+        await apiJsonResponse(fetch('/api/data-location/rollback', {
+            method:'POST', credentials:'same-origin',
+        }));
+    }catch(error){
+        dataLocationState.error = error.message || '回退失败';
+    }finally{
+        dataLocationState.busy = false;
+        await loadDataLocationData();
+    }
+}
+
+function handleDataLocationClick(event){
+    if(event.target.closest('[data-data-location-refresh]')){ loadDataLocationData(); return; }
+    if(event.target.closest('[data-data-location-check]')){ checkDataLocationTarget(); return; }
+    if(event.target.closest('[data-data-location-start]')){ startDataLocationMigration(); return; }
+    if(event.target.closest('[data-data-location-cancel]')){ cancelDataLocationMigration(); return; }
+    if(event.target.closest('[data-data-location-rollback]')){ rollbackDataLocation(); return; }
+}
+
+function ensureDataLocationBindings(host){
+    if(!host.dataset.dataLocationBound){
+        host.dataset.dataLocationBound = '1';
+        host.addEventListener('click', handleDataLocationClick);
+        host.addEventListener('input', event => {
+            const input = event.target.closest('[data-data-location-target]');
+            if(!input) return;
+            dataLocationState.target = input.value;
+            dataLocationState.check = null;
+        });
+        host.addEventListener('change', event => {
+            if(event.target.closest('[data-data-location-category-option]')) dataLocationState.check = null;
+        });
+    }
+    if(!dataLocationState.ready && !dataLocationState.loading) loadDataLocationData();
+}

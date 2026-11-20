@@ -347,6 +347,9 @@ def _transcode_one(
         restored_path.unlink(missing_ok=True)
 
 
+_INSTANCES: list[JxlLosslessTranscodeService] = []
+
+
 class JxlLosslessTranscodeService:
     """独立落盘的单实例任务服务；源 JPEG 永不由该服务改写或删除。"""
 
@@ -362,7 +365,16 @@ class JxlLosslessTranscodeService:
         self._executor = ThreadPoolExecutor(
             max_workers=1, thread_name_prefix="jxl-lossless"
         )
+        _INSTANCES.append(self)
         self._recover_interrupted()
+
+    def active_job_count(self) -> int:
+        raw = self._store.read()
+        return sum(
+            1
+            for job in raw.get("jobs", {}).values()
+            if job.get("status") not in TERMINAL_STATUSES
+        )
 
     def _recover_interrupted(self) -> None:
         def mutate(raw: dict[str, Any]) -> None:
@@ -419,6 +431,10 @@ class JxlLosslessTranscodeService:
         return self._store.mutate(mutate)
 
     def submit(self, items: list[dict[str, Any]], owner: str) -> dict[str, Any]:
+        # QIN-627 L5：写窗口关闭后不再受理新的转码任务。
+        from gw.core.write_window import guard_write
+
+        guard_write()
         if not items:
             raise CleanroomException(409, "NO_PENDING_JPEG", "没有待转码的 JPEG 素材")
         if len(items) > MAX_ASSETS_PER_JOB:
@@ -762,3 +778,16 @@ class JxlLosslessTranscodeService:
                     "finished_at": storage.now_iso(),
                 },
             )
+
+def active_job_count() -> int:
+    """当前活动转码任务数（供 QIN-627 迁移预检）。"""
+    return sum(1 for service in _INSTANCES if service.active_job_count())
+
+
+def _register_write_window_host() -> None:
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("jxl_transcode", active_job_count)
+
+
+_register_write_window_host()

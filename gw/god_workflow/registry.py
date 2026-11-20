@@ -154,6 +154,9 @@ def _task_path(context: Any, task_id: str) -> Path:
 # atomic json io
 # ---------------------------------------------------------------------------
 def _atomic_write(path: Path, payload: Any) -> None:
+    from gw.core.write_window import guard_write
+
+    guard_write()
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
         prefix=f".{path.stem}.", suffix=".tmp", dir=path.parent

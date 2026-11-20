@@ -47,6 +47,7 @@ from gw.core.auth import require_authenticated, require_edit_access
 from gw.core.credentials_vault import CredentialVault
 from gw.core.errors import CleanroomException, ForbiddenException
 from gw.settings import chat as chat_runtime
+from gw.settings import data_location as data_location_service
 from gw.settings import native_picker
 from gw.settings import probes as provider_probes
 from gw.settings.models import (
@@ -707,3 +708,124 @@ def delete_asset_structure(
     require_edit_access(authorization, x_user_role)
     deleted_id, revision = default_asset_structure_service.delete_structure(structure_id, expected_version)
     return AssetStructureDeleteResponse(deleted_structure_id=deleted_id, revision=revision)
+
+
+# ---------------------------------------------------------------------------
+# QIN-627：本地数据目录生命周期
+# ---------------------------------------------------------------------------
+
+
+class DataLocationCheckRequest(BaseModel):
+    """目标位置预检请求；类别缺省时按用户数据 + 缓存处理，模型默认排除。"""
+
+    model_config = ConfigDict(extra="forbid")
+
+    target: str = Field(min_length=1, max_length=4096)
+    categories: list[str] | None = None
+
+
+class DataLocationMigrationRequest(DataLocationCheckRequest):
+    """启动迁移请求；``expected_version`` 为指针 revision 的 CAS 期望值。"""
+
+    expected_version: int = Field(ge=1)
+
+
+def _data_location_admin(authorization: str | None, x_user_role: str):
+    _require_storage_admin(authorization, x_user_role)
+
+
+@router.get(
+    "/api/data-location",
+    summary="读取当前数据位置与迁移状态",
+    status_code=status.HTTP_200_OK,
+)
+def get_data_location(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.status_snapshot()
+
+
+@router.post(
+    "/api/data-location/check",
+    summary="预检目标空间与权限（不写配置）",
+    status_code=status.HTTP_200_OK,
+)
+def check_data_location(
+    payload: DataLocationCheckRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.check_target(payload.target, payload.categories)
+
+
+@router.post(
+    "/api/data-location/migrations",
+    summary="启动可验证数据迁移",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def start_data_location_migration(
+    payload: DataLocationMigrationRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.start_migration(
+        payload.target, payload.expected_version, payload.categories
+    )
+
+
+@router.get(
+    "/api/data-location/migrations/{migration_id}",
+    summary="读取迁移进度",
+    status_code=status.HTTP_200_OK,
+)
+def get_data_location_migration(
+    migration_id: str = Path(..., min_length=1, max_length=64),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.migration_status(migration_id)
+
+
+@router.post(
+    "/api/data-location/migrations/{migration_id}/cancel",
+    summary="取消复制或校验阶段的迁移",
+    status_code=status.HTTP_200_OK,
+)
+def cancel_data_location_migration(
+    migration_id: str = Path(..., min_length=1, max_length=64),
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.cancel_migration(migration_id)
+
+
+@router.post(
+    "/api/data-location/rollback",
+    summary="只读窗口内回退到上一位置",
+    status_code=status.HTTP_200_OK,
+)
+def rollback_data_location(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.rollback()
+
+
+@router.get(
+    "/api/data-location/restart-hint",
+    summary="读取重启提示",
+    status_code=status.HTTP_200_OK,
+)
+def get_data_location_restart_hint(
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
+):
+    _data_location_admin(authorization, x_user_role)
+    return data_location_service.restart_hint()

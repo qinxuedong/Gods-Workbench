@@ -65,6 +65,10 @@ from gw.core.config import (
     resolve_auth_mode,
 )
 from gw.core.errors import CleanroomException
+from gw.core.write_window import (
+    WriteWindowClosed,
+    install_write_window_middleware,
+)
 from gw.core.platform import RELEASE_AUTHORIZED
 from gw.god_workflow.routes import router as god_workflow_router
 from gw.observability import telemetry as observability_telemetry
@@ -140,18 +144,32 @@ async def _app_lifespan(app: FastAPI):
     stop_integration = None
     primary_error = None
     owned_data_lock = None
+    owned_instance_lock = None
     try:
+        from gw.core.runtime_paths import resolve_runtime_paths
         from gw.core.storage import (
             acquire_data_dir_lock,
+            acquire_instance_lock,
             data_root,
             is_data_dir_lock_held,
+            is_instance_lock_held,
         )
+        from gw.core.write_window import get_write_window
         from gw.god_canvas.service import default_god_canvas_service
+        from gw.settings.data_location import recover_on_startup
+
+        # 新进程一律从 open 开始；先前进程停在 READ_ONLY 时由指针冷读决定实际根。
+        get_write_window().reset_open(reason="startup")
+        runtime = resolve_runtime_paths()
+        preheld_instance = is_instance_lock_held(runtime.runtime_root)
+        app.state.instance_lock = acquire_instance_lock(runtime.runtime_root)
+        owned_instance_lock = None if preheld_instance else app.state.instance_lock
         # 先持有数据目录锁再做启动恢复；绕过 run.py 直接用 uvicorn 启动也受保护。
         preheld = is_data_dir_lock_held(data_root())
         app.state.data_dir_lock = acquire_data_dir_lock(data_root())
         # 只释放本 lifespan 自己拿到的锁；run.py 预先持有的锁由进程退出时释放。
         owned_data_lock = None if preheld else app.state.data_dir_lock
+        recover_on_startup()
         default_god_canvas_service.recover_interrupted_jobs()
         # FFmpeg/FFprobe 部署自检一行摘要（QIN-607）：无路径回显，异常不阻断启动。
         try:
@@ -213,6 +231,11 @@ async def _app_lifespan(app: FastAPI):
                 owned_data_lock.release()
             except BaseException as error:
                 cleanup_errors.append(error)
+        if owned_instance_lock is not None:
+            try:
+                owned_instance_lock.release()
+            except BaseException as error:
+                cleanup_errors.append(error)
 
         if cleanup_errors:
             cleanup_error = (
@@ -245,6 +268,14 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
         return JSONResponse(
             status_code=exc.status_code,
             content=envelope.model_dump(exclude_none=True),
+        )
+
+    @app.exception_handler(WriteWindowClosed)
+    async def write_window_exception_handler(request: Request, exc: WriteWindowClosed):
+        """写窗口关闭：统一 503，保留错误码与重试提示。"""
+        headers = {"Retry-After": str(exc.retry_after)} if exc.retry_after else None
+        return JSONResponse(
+            status_code=503, content={"detail": exc.as_detail()}, headers=headers
         )
 
     @app.exception_handler(DomainError)
@@ -613,6 +644,9 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
             "Referrer-Policy", "strict-origin-when-cross-origin"
         )
         return response
+
+    # 注册在最外层：窗口关闭时任何写请求都先被 503 拦下，不进入路由与业务依赖。
+    install_write_window_middleware(app)
 
     return app
 

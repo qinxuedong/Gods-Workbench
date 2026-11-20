@@ -51,11 +51,16 @@ def database_path() -> Path:
 def database():
     path = database_path()
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-    connection = sqlite3.connect(path, timeout=10)
+    # QIN-627 L3：只读窗口内以 mode=ro 打开，跳过建表与迁移，保证 GET 仍可认证。
+    from gw.core.write_window import open_sqlite, writes_blocked
+
+    read_only = writes_blocked()
+    connection = open_sqlite(path, write=not read_only, timeout=10)
     connection.row_factory = sqlite3.Row
     try:
         connection.execute("PRAGMA foreign_keys=ON")
-        connection.executescript("""
+        if not read_only:
+            connection.executescript("""
             CREATE TABLE IF NOT EXISTS local_users (
                 user_id TEXT PRIMARY KEY,
                 username TEXT UNIQUE NOT NULL,
@@ -114,38 +119,38 @@ def database():
                 consumed_at REAL
             );
         """)
-        expires_column = next(
-            row
-            for row in connection.execute("PRAGMA table_info(local_sessions)")
-            if row["name"] == "expires_at"
-        )
-        if expires_column["notnull"]:
-            connection.execute("BEGIN IMMEDIATE")
-            try:
-                connection.execute("DROP TABLE IF EXISTS local_sessions_migration")
-                connection.execute(
-                    """CREATE TABLE local_sessions_migration (
-                        token_hash TEXT PRIMARY KEY,
-                        user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
-                        expires_at REAL
-                    )"""
-                )
-                connection.execute(
-                    """INSERT INTO local_sessions_migration
-                       (token_hash, user_id, expires_at)
-                       SELECT token_hash, user_id,
-                              CASE WHEN expires_at > ? THEN NULL ELSE expires_at END
-                       FROM local_sessions""",
-                    (time.time(),),
-                )
-                connection.execute("DROP TABLE local_sessions")
-                connection.execute(
-                    "ALTER TABLE local_sessions_migration RENAME TO local_sessions"
-                )
-                connection.commit()
-            except BaseException:
-                connection.rollback()
-                raise
+            expires_column = next(
+                row
+                for row in connection.execute("PRAGMA table_info(local_sessions)")
+                if row["name"] == "expires_at"
+            )
+            if expires_column["notnull"]:
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    connection.execute("DROP TABLE IF EXISTS local_sessions_migration")
+                    connection.execute(
+                        """CREATE TABLE local_sessions_migration (
+                            token_hash TEXT PRIMARY KEY,
+                            user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
+                            expires_at REAL
+                        )"""
+                    )
+                    connection.execute(
+                        """INSERT INTO local_sessions_migration
+                           (token_hash, user_id, expires_at)
+                           SELECT token_hash, user_id,
+                                  CASE WHEN expires_at > ? THEN NULL ELSE expires_at END
+                           FROM local_sessions""",
+                        (time.time(),),
+                    )
+                    connection.execute("DROP TABLE local_sessions")
+                    connection.execute(
+                        "ALTER TABLE local_sessions_migration RENAME TO local_sessions"
+                    )
+                    connection.commit()
+                except BaseException:
+                    connection.rollback()
+                    raise
         with connection:
             yield connection
     finally:

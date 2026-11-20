@@ -504,6 +504,15 @@ class AgentIntegration:
         self._initialize_host_tables()
         self._load_profiles()
 
+    def active_run_count(self) -> int:
+        """排队/运行中的 Agent 任务数；只读窗口内仍可查询。"""
+        with self.database.connect() as connection:
+            row = connection.execute(
+                "SELECT COUNT(*) FROM runs "
+                "WHERE json_extract(run_json,'$.status') IN ('queued','running')"
+            ).fetchone()
+        return int(row[0] if row else 0)
+
     def _initialize_host_tables(self) -> None:
         with self.database.connect() as db:
             db.executescript("""
@@ -1554,6 +1563,10 @@ class AgentIntegration:
                     503, "AGENT_NOT_INTEGRATED", "服务端配置快照不可恢复，任务未排队"
                 )
 
+        # QIN-627 L5：数据位置切换窗口内不再创建新的 Agent 运行。
+        from gw.core.write_window import guard_write
+
+        guard_write()
         run = await self.service.create_run(request_model)
         self._write_binding(
             run_id=run.run_id.root,
@@ -1703,6 +1716,9 @@ async def start_agent_integration(app: Any) -> AgentIntegration:
         raise TypeError("agent_integration_factory must return AgentIntegration")
     app.state.agent_integration = integration
     await integration.start()
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("agent_runtime", integration.active_run_count)
     return integration
 
 
@@ -1710,6 +1726,9 @@ async def stop_agent_integration(app: Any) -> None:
     integration = getattr(app.state, "agent_integration", None)
     if integration is not None:
         await integration.stop()
+        from gw.core.write_window import get_write_window
+
+        get_write_window().unregister_host("agent_runtime")
 
 
 __all__ = [

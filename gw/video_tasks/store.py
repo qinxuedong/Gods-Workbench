@@ -120,7 +120,10 @@ class VideoTaskStore:
                         raise sqlite3.DatabaseError(
                             "existing video database failed integrity/schema check"
                         )
-                self._initialize_schema(db)
+                from gw.core.write_window import writes_blocked
+
+                if not writes_blocked():
+                    self._initialize_schema(db)
             finally:
                 db.close()
         except CleanroomException:
@@ -135,7 +138,15 @@ class VideoTaskStore:
         self._processes: dict[str, Any] = {}
 
     def _connect(self) -> sqlite3.Connection:
-        db = sqlite3.connect(str(self.db_path), timeout=10, isolation_level=None)
+        # QIN-627 L3：写窗口关闭时退化为只读连接，读任务列表仍可用。
+        from gw.core.write_window import open_sqlite, writes_blocked
+
+        db = open_sqlite(
+            self.db_path,
+            write=not writes_blocked(),
+            timeout=10,
+            isolation_level=None,
+        )
         db.row_factory = sqlite3.Row
         db.execute("PRAGMA foreign_keys=ON")
         db.execute("PRAGMA busy_timeout=10000")
