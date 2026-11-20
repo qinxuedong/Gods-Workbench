@@ -37,6 +37,30 @@ If no running instance is discovered on the network, the client automatically la
 - **Single Instance**: Arbitrated via atomic exclusive lock file creation (`create_new`). Concurrent or subsequent launches wake and focus the existing desktop window (even if hidden in the system tray) and cleanly exit without spawning duplicate client processes or duplicate backends.
 - **Lifecycle**: Backends launched by the desktop client terminate when the user chooses "Quit" from the tray menu. Backends launched externally (such as via `start.bat`) are never stopped by the desktop client.
 
+## Windows standard installer (QIN-626)
+
+The Windows NSIS installer ships the desktop shell, a private CPython 3.11.9 embeddable runtime, the `gw/` backend source tree, `web/`, `run.py`, hash-locked wheels, and `bundle-manifest.json` under `backend/`. It defaults to a `currentUser` install (usually without administrator rights; this is not a guarantee for every component). The install directory must not contain, or be contained by, the production data root `%LOCALAPPDATA%\GodsWorkbench`; the installer and the desktop both verify this relationship.
+
+The desktop and the bundled backend are built from the same release version. Release tags drive the product version; the About/status panel shows the desktop version, bundled backend version, the connected backend version and its provenance, the capability-contract profile/digest, and the trusted-local status. Missing or legacy `0.1.0` values are shown as unknown and never treated as compatible. Remote NAS connections are judged by the [`gw-compat-v1` capability contract](../../docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md), not by exact version equality.
+
+Upgrades back up the previous program files and the client configuration, write a journal (`prepare` → `backed_up` → `installing` → `installed` → `verified` → `committed`), run `run.py --self-check --expect-version <version>` after install, and restore the backup on failure. The journal is committed only after the first successful version/capability handshake; a failed install or first launch must not be reported as success. Uninstall removes program files and shortcuts but keeps the data root and upgrade backups.
+
+**Unsigned test builds:** the first test packages may be unsigned. Windows may therefore show a warning or block the installer. Download only from a trusted source and verify the published SHA-256 (or other published digest) before running. Do not disable Defender/SmartScreen, weaken security policy, or bypass an organization's controls; this project does not provide instructions for doing so. An unsigned test build is not a formal release authorization.
+
+Security boundaries for the installed client:
+
+- The trusted-local one-time ticket is issued only for a loopback backend whose installed manifest matches, is delivered only in the URL fragment, is read from child-process memory, and is never written to disk, logs, or a remote host.
+- Before trusted-local entry the desktop verifies the Windows ACL of the account directory and device-key files (current user, SYSTEM, and Administrators only); failure closes automatic entry and keeps password login available without changing the ACL.
+- Remote/NAS connections never receive a local trusted ticket.
+- The desktop and QIN-630 backend implement this path together. Installing QIN-626 without the QIN-630 backend does not make desktop passwordless entry complete; joint acceptance is required before claiming it.
+
+To build the payload and installer from the repository root:
+
+```powershell
+python clients/desktop/packaging/build_release.py --version <X.Y.Z> --build-id <build-id> --output build/desktop-release --download-wheels
+cargo tauri build --config build/desktop-release/tauri.release.conf.json --bundles nsis --ci -- --locked
+```
+
 ## Directory bridge commands (QIN-432)
 
 The client registers `tauri-plugin-dialog` and exposes five bridge commands: `pick_client_folder`, `pick_client_upload_files`, `read_client_file`, `get_client_setting`, and `set_client_setting`. They let the connected server page open the **client's own** native folder dialog and persist the client-side upload source directory next to the saved server URL in the OS application settings directory (`client.json`). Client settings never leave the device: they are not submitted to the server and are not validated against server allowed roots.

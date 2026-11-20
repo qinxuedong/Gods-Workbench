@@ -12,9 +12,10 @@
   <main class="panel">
     <header class="brand">
       <div class="mark" aria-hidden="true">GW</div>
-      <div><p class="eyebrow">LOCAL NAS COMPANION</p><h1>连接工作台</h1></div>
+      <div><p class="eyebrow">LOCAL FIRST COMPANION</p><h1>连接工作台</h1></div>
     </header>
-    <p class="intro">自动搜索当前局域网内的神工坊 NAS。客户端仅保存服务器地址，不保存模型 API 密钥。</p>
+    <p class="intro">自动搜索当前局域网内的神工坊服务，并验证身份、版本与能力契约。客户端仅保存服务器地址，不保存模型 API 密钥、设备密钥或本机票据。</p>
+    <p id="launch-notice" class="notice" role="alert" aria-live="assertive" hidden></p>
     <section aria-labelledby="discovery-title">
       <div class="section-heading"><h2 id="discovery-title">局域网发现</h2><button id="rescan" class="quiet" type="button">重新扫描</button></div>
       <p id="scan-status" class="status" role="status" aria-live="polite">准备扫描局域网……</p>
@@ -22,9 +23,18 @@
     </section>
     <form id="manual-form" class="manual-form">
       <label for="server-url">手动连接</label>
-      <div class="form-row"><input id="server-url" name="server-url" type="url" placeholder="http://192.168.0.10:2077" autocomplete="url" required><button type="submit">连接</button></div>
+      <div class="form-row"><input id="server-url" name="server-url" type="url" placeholder="http://gw-nas.local:2077" autocomplete="url" required><button type="submit">连接</button></div>
     </form>
-    <footer>NAS 服务需要开放端口 2077 和健康检查路径 /healthz。</footer>
+    <section class="about" aria-labelledby="about-title">
+      <div class="section-heading"><h2 id="about-title">关于与连接状态</h2><button id="about-refresh" class="quiet" type="button">刷新状态</button></div>
+      <dl id="about-body" class="about-grid"></dl>
+      <div class="claim-note">
+        <h3>已有本地账户？</h3>
+        <p>桌面端不会自动接管或创建第二个所有者。若提示需要人工认领，请在受控终端使用 <code>python -m gw.core.local_accounts_cli --mode prod trusted-claim</code>，通过原账户或管理员认证完成认领；密码登录始终可用。</p>
+        <p class="muted">受信本机自动进入要求账户目录与设备密钥仅限当前用户、SYSTEM 与 Administrators 访问。权限不合格时只会关闭自动进入，不会放宽权限，也不会导出密钥。</p>
+      </div>
+    </section>
+    <footer>NAS 服务需要开放端口 2077。远程连接只按能力契约放行，且永不注入本机一次性票据。</footer>
   </main>
 </body>
 </html>

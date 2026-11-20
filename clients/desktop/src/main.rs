@@ -1,5 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod compat;
+mod sha256;
+mod trusted;
+
+use compat::{BundleManifest, HandshakeReport, TrustedStatus};
 use futures_util::future::join_all;
 use if_addrs::{get_if_addrs, IfAddr};
 use reqwest::{Client, Url};
@@ -16,7 +21,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, State, WebviewWindow, WindowEvent,
+    AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -40,6 +45,42 @@ struct ClientConfig {
 
 /// 会话级白名单：只允许读取本轮通过对话框明确选中的文件。
 struct ClientSessionState(Mutex<HashSet<PathBuf>>);
+
+#[derive(Debug, Clone, Serialize)]
+struct LaunchResult {
+    destination: String,
+    auto_login: bool,
+    notice: String,
+}
+
+#[derive(Default)]
+struct DiagnosticsInner {
+    handshake: Option<HandshakeReport>,
+    trusted: TrustedStatus,
+    bundled_backend_version: String,
+    manifest_error: String,
+    program_data_non_overlapping: Option<bool>,
+    notice: String,
+    last_error: String,
+}
+
+#[derive(Default)]
+struct ClientDiagnostics(Mutex<DiagnosticsInner>);
+
+#[derive(Debug, Serialize)]
+struct DiagnosticsView {
+    desktop_version: String,
+    build_mode: String,
+    bundled_backend_version: String,
+    capability_profile: String,
+    capability_digest: String,
+    manifest_error: String,
+    handshake: Option<HandshakeReport>,
+    trusted: TrustedStatus,
+    program_data_non_overlapping: Option<bool>,
+    notice: String,
+    last_error: String,
+}
 
 /// 托管的本地后端子进程生命周期阶段。
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
@@ -694,6 +735,7 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
 
     #[cfg(windows)]
     let venv_candidates = [
+        backend_root.join("python").join("python.exe"),
         backend_root
             .join(".venv")
             .join("Scripts")
@@ -702,6 +744,7 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
     ];
     #[cfg(not(windows))]
     let venv_candidates = [
+        backend_root.join("python").join("bin").join("python3"),
         backend_root.join(".venv").join("bin").join("python"),
         backend_root.join("venv").join("bin").join("python"),
     ];
@@ -734,18 +777,46 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
     )
 }
 
+fn looks_like_backend_root(path: &Path) -> bool {
+    path.join("run.py").is_file() && path.join("gw").is_dir()
+}
+
+fn installed_backend_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("backend"));
+            candidates.push(exe_dir.join("resources").join("backend"));
+            candidates.push(
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("Resources")
+                    .join("backend"),
+            );
+        }
+    }
+    candidates
+}
+
 fn find_backend_root() -> Result<PathBuf, String> {
     for var in ["GW_BACKEND_ROOT", "GW_ROOT_DIR"] {
         if let Ok(dir_str) = std::env::var(var) {
             let p = PathBuf::from(dir_str.trim());
-            if p.join("run.py").is_file() && p.join("gw").is_dir() {
+            if looks_like_backend_root(&p) {
                 return Ok(p);
             }
         }
     }
 
+    for candidate in installed_backend_candidates() {
+        if looks_like_backend_root(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
     if let Ok(cwd) = std::env::current_dir() {
-        if cwd.join("run.py").is_file() && cwd.join("gw").is_dir() {
+        if looks_like_backend_root(&cwd) {
             return Ok(cwd);
         }
     }
@@ -754,7 +825,7 @@ fn find_backend_root() -> Result<PathBuf, String> {
         let mut current = exe_path.parent();
         for _ in 0..6 {
             if let Some(dir) = current {
-                if dir.join("run.py").is_file() && dir.join("gw").is_dir() {
+                if looks_like_backend_root(dir) {
                     return Ok(dir.to_path_buf());
                 }
                 current = dir.parent();
@@ -765,9 +836,318 @@ fn find_backend_root() -> Result<PathBuf, String> {
     }
 
     Err(
-        "未找到神工坊后端源码根目录（未发现 run.py 与 gw 目录）。请配置 GW_BACKEND_ROOT 环境变量。"
+        "未找到神工坊后端根目录（未发现 run.py 与 gw 目录）。请配置 GW_BACKEND_ROOT 环境变量。"
             .into(),
     )
+}
+
+fn load_installed_manifest() -> Result<Option<BundleManifest>, String> {
+    for candidate in installed_backend_candidates() {
+        if compat::manifest_path(&candidate).exists() {
+            return compat::load_bundle_manifest(&candidate);
+        }
+    }
+    match find_backend_root() {
+        Ok(root) => compat::load_bundle_manifest(&root),
+        Err(_) => Ok(None),
+    }
+}
+
+fn production_data_root() -> Result<PathBuf, String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())?;
+    Ok(base.join("GodsWorkbench"))
+}
+
+fn install_directory() -> Result<PathBuf, String> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .ok_or_else(|| "无法确定桌面端安装目录".to_string())
+}
+
+#[cfg(windows)]
+const PATH_SEPARATOR: char = '\\';
+#[cfg(not(windows))]
+const PATH_SEPARATOR: char = '/';
+
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix(r"UNC\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+fn canonicalize_with_missing(path: &Path) -> PathBuf {
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut current = path.to_path_buf();
+    loop {
+        if let Ok(resolved) = fs::canonicalize(&current) {
+            let mut result = strip_verbatim_prefix(&resolved);
+            for part in missing.iter().rev() {
+                result.push(part);
+            }
+            return result;
+        }
+        let Some(name) = current.file_name().map(|name| name.to_os_string()) else {
+            return path.to_path_buf();
+        };
+        missing.push(name);
+        if !current.pop() {
+            return path.to_path_buf();
+        }
+    }
+}
+
+fn comparison_key(path: &Path) -> String {
+    let canonical = strip_verbatim_prefix(path);
+    let separator = PATH_SEPARATOR.to_string();
+    let normalized = canonical.to_string_lossy().replace(['/', '\\'], &separator);
+    let trimmed = normalized.trim_end_matches(PATH_SEPARATOR);
+    let value = if trimmed.is_empty() {
+        normalized.as_str()
+    } else {
+        trimmed
+    };
+    #[cfg(windows)]
+    {
+        value.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        value.to_string()
+    }
+}
+
+fn path_is_within(child: &Path, parent: &Path) -> bool {
+    let child_key = comparison_key(child);
+    let parent_key = comparison_key(parent);
+    if child_key == parent_key {
+        return true;
+    }
+    let prefix = if parent_key.ends_with(PATH_SEPARATOR) {
+        parent_key
+    } else {
+        format!("{parent_key}{PATH_SEPARATOR}")
+    };
+    child_key.starts_with(&prefix)
+}
+
+fn paths_non_overlapping(left: &Path, right: &Path) -> bool {
+    !path_is_within(left, right) && !path_is_within(right, left)
+}
+
+fn program_data_non_overlapping() -> Result<bool, String> {
+    let install = canonicalize_with_missing(&install_directory()?);
+    let data = canonicalize_with_missing(&production_data_root()?);
+    Ok(paths_non_overlapping(&install, &data))
+}
+
+fn upgrade_journal_path() -> Option<PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())?;
+    Some(
+        base.join("ai.godsworkbench.desktop")
+            .join("upgrade")
+            .join("journal.txt"),
+    )
+}
+
+fn commit_upgrade_journal_at(journal: &Path) {
+    let Ok(state) = fs::read_to_string(journal) else {
+        return;
+    };
+    if matches!(state.trim(), "installed" | "verified") {
+        let _ = fs::write(journal, "committed");
+    }
+}
+
+fn commit_upgrade_journal() {
+    if let Some(journal) = upgrade_journal_path() {
+        commit_upgrade_journal_at(&journal);
+    }
+}
+
+fn new_handshake_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .no_proxy()
+        .build()
+        .map_err(|error| format!("无法创建本机握手客户端: {error}"))
+}
+
+fn update_diagnostics(diagnostics: &ClientDiagnostics, update: impl FnOnce(&mut DiagnosticsInner)) {
+    if let Ok(mut guard) = diagnostics.0.lock() {
+        update(&mut guard);
+    }
+}
+
+fn record_manifest_result(
+    diagnostics: &ClientDiagnostics,
+    result: &Result<Option<BundleManifest>, String>,
+) {
+    update_diagnostics(diagnostics, |inner| match result {
+        Ok(Some(manifest)) => {
+            inner.bundled_backend_version = manifest.app_version();
+            inner.manifest_error.clear();
+        }
+        Ok(None) => {
+            inner.bundled_backend_version = "unknown".into();
+            inner.manifest_error.clear();
+        }
+        Err(error) => {
+            inner.bundled_backend_version = "unknown".into();
+            inner.manifest_error = error.clone();
+        }
+    });
+}
+
+fn record_handshake(diagnostics: &ClientDiagnostics, report: &HandshakeReport) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.handshake = Some(report.clone());
+        inner.notice.clear();
+        inner.last_error.clear();
+    });
+}
+
+fn record_trusted(diagnostics: &ClientDiagnostics, status: &TrustedStatus) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.trusted = status.clone();
+    });
+}
+
+fn record_notice(diagnostics: &ClientDiagnostics, notice: &str) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.notice = notice.to_string();
+    });
+}
+
+fn record_error(diagnostics: &ClientDiagnostics, error: &str) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.last_error = error.to_string();
+        inner.notice.clear();
+    });
+}
+
+struct TrustedAttempt {
+    status: TrustedStatus,
+    ticket: Option<String>,
+}
+
+fn trusted_unavailable(reason: impl Into<String>) -> TrustedAttempt {
+    TrustedAttempt {
+        status: TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+        ticket: None,
+    }
+}
+
+fn attempt_trusted_entry(
+    report: &HandshakeReport,
+    manifest: Option<&BundleManifest>,
+    non_overlap: bool,
+) -> TrustedAttempt {
+    if !report.local {
+        return trusted_unavailable("仅 loopback 本机后端支持受信登录");
+    }
+    if manifest.is_none() {
+        return trusted_unavailable("开发源构建不签发本机票据");
+    }
+    if !report.verified {
+        let summary = report.failure_summary();
+        return trusted_unavailable(if summary.is_empty() {
+            "本机后端未通过版本与能力验证".to_string()
+        } else {
+            format!("本机后端未通过版本与能力验证：{summary}")
+        });
+    }
+    if !report.trusted_bootstrap_available {
+        return trusted_unavailable("后端未提供受信本机兑换接口（QIN-630 未部署）");
+    }
+    if !non_overlap {
+        return trusted_unavailable("安装目录与数据根存在包含关系");
+    }
+    let backend_root = match find_backend_root() {
+        Ok(root) => root,
+        Err(error) => return trusted_unavailable(error),
+    };
+    let python = match find_python_executable(&backend_root) {
+        Ok(python) => python,
+        Err(error) => return trusted_unavailable(error),
+    };
+    let auth_dir = match production_data_root() {
+        Ok(root) => root.join("auth"),
+        Err(error) => return trusted_unavailable(error),
+    };
+    match trusted::verify_acl(&python, &backend_root, &auth_dir) {
+        Ok(acl) if acl.ok => {}
+        Ok(acl) => return trusted_unavailable(acl.reason),
+        Err(error) => return trusted_unavailable(error),
+    }
+    match trusted::issue_ticket(&python, &backend_root, "127.0.0.1", 2077) {
+        Ok(ticket) => TrustedAttempt {
+            status: TrustedStatus {
+                available: true,
+                auto_login: true,
+                reason: String::new(),
+            },
+            ticket: Some(ticket),
+        },
+        Err(error) => trusted_unavailable(error),
+    }
+}
+
+async fn trusted_attempt_for(
+    report: &HandshakeReport,
+    manifest: Option<BundleManifest>,
+    non_overlap: bool,
+) -> Result<TrustedAttempt, String> {
+    let report = report.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        attempt_trusted_entry(&report, manifest.as_ref(), non_overlap)
+    })
+    .await
+    .map_err(|error| format!("受信本机预检任务失败: {error}"))
+}
+
+fn local_notice_for(report: &HandshakeReport, manifest_present: bool) -> String {
+    if report.verified {
+        return String::new();
+    }
+    let summary = report.failure_summary();
+    let prefix = if manifest_present {
+        "本机后端为未验证实例，安装版不以兼容名义放行"
+    } else {
+        "开发源构建，仅用于本机开发"
+    };
+    if summary.is_empty() {
+        format!("{prefix}，请使用密码登录。")
+    } else {
+        format!("{prefix}：{summary}。请使用密码登录或修复安装。")
+    }
+}
+
+fn remote_failure_message(report: &HandshakeReport) -> String {
+    let summary = report.failure_summary();
+    if summary.is_empty() {
+        "无法验证服务器兼容性。请升级服务器或改用匹配的桌面安装版。".to_string()
+    } else {
+        format!("无法验证服务器兼容性：{summary}。请升级服务器或改用匹配的桌面安装版。")
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -809,6 +1189,8 @@ fn spawn_backend_process(
         .arg("--prod")
         .env("GW_HOST", "127.0.0.1")
         .env("GW_PORT", "2077")
+        // 安装目录只读使用：避免运行期把 __pycache__ 写进程序目录并导致卸载残留。
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -870,13 +1252,14 @@ fn drain_process_output(child: &mut std::process::Child) -> ProcessOutputTracker
     ProcessOutputTracker { recent_stderr }
 }
 
+#[cfg(test)]
 async fn wait_for_backend_ready(
     client: &Client,
     child: &mut std::process::Child,
     tracker: &ProcessOutputTracker,
+    base: &Url,
     timeout: Duration,
 ) -> Result<(), String> {
-    let local_base = Url::parse("http://127.0.0.1:2077/").unwrap();
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout {
@@ -890,7 +1273,7 @@ async fn wait_for_backend_ready(
             return Err(err_msg);
         }
 
-        if check_health(client, &local_base).await.is_ok() {
+        if check_health(client, base).await.is_ok() {
             return Ok(());
         }
 
@@ -1334,31 +1717,174 @@ fn last_server(app: AppHandle, window: WebviewWindow) -> Result<Option<String>, 
 async fn connect_to_server(
     app: AppHandle,
     window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
     server_url: String,
-) -> Result<String, String> {
-    ensure_local_ui(&window)?;
-    let base = normalize_server_url(&server_url)?;
-    let client = new_http_client()?;
-    check_health(&client, &base).await?;
-    save_server_url(&app, base.as_str())?;
-    let mut destination = base;
-    destination.set_path("/static/pages/index.html");
-    Ok(destination.to_string())
+) -> Result<LaunchResult, String> {
+    let result = connect_to_server_inner(&app, &window, &diagnostics, &server_url).await;
+    if let Err(error) = &result {
+        record_error(&diagnostics, error);
+    }
+    result
+}
+
+async fn connect_to_server_inner(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    diagnostics: &ClientDiagnostics,
+    server_url: &str,
+) -> Result<LaunchResult, String> {
+    ensure_local_ui(window)?;
+    let base = normalize_server_url(server_url)?;
+    let manifest_result = load_installed_manifest();
+    record_manifest_result(diagnostics, &manifest_result);
+    let manifest = manifest_result?;
+    let non_overlap = match manifest.as_ref() {
+        Some(_) => {
+            let ok = program_data_non_overlapping()?;
+            update_diagnostics(diagnostics, |inner| {
+                inner.program_data_non_overlapping = Some(ok);
+            });
+            if !ok {
+                return Err(
+                    "安装目录与数据根存在包含关系，已拒绝连接。请卸载后重新安装到独立目录。".into(),
+                );
+            }
+            true
+        }
+        None => false,
+    };
+
+    let client = new_handshake_client()?;
+    let report = compat::evaluate(&client, &base, manifest.as_ref()).await?;
+    record_handshake(diagnostics, &report);
+
+    if !report.verified {
+        if !report.local {
+            return Err(remote_failure_message(&report));
+        }
+        let notice = local_notice_for(&report, manifest.is_some());
+        record_trusted(
+            diagnostics,
+            &TrustedStatus {
+                available: false,
+                auto_login: false,
+                reason: "本机后端未验证，不签发受信票据".into(),
+            },
+        );
+        record_notice(diagnostics, &notice);
+        save_server_url(app, base.as_str())?;
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    if report.local {
+        commit_upgrade_journal();
+    }
+
+    save_server_url(app, base.as_str())?;
+
+    if report.local && manifest.is_some() && report.trusted_bootstrap_available {
+        let attempt = trusted_attempt_for(&report, manifest.clone(), non_overlap).await?;
+        record_trusted(diagnostics, &attempt.status);
+        if let Some(ticket) = attempt.ticket {
+            let destination = trusted::destination_with_ticket(&base, &ticket)?;
+            let notice = "已通过受信本机一次性票据自动进入。".to_string();
+            record_notice(diagnostics, &notice);
+            return Ok(LaunchResult {
+                destination,
+                auto_login: true,
+                notice,
+            });
+        }
+        let notice = format!(
+            "自动进入不可用：{}。请使用密码登录。",
+            attempt.status.reason
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    let reason = if !report.local {
+        "远程/NAS 连接永不注入本机票据"
+    } else if manifest.is_none() {
+        "开发源构建不签发本机票据"
+    } else {
+        "后端未提供受信本机兑换接口"
+    };
+    record_trusted(
+        diagnostics,
+        &TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+    );
+    let notice = if report.local {
+        format!("{reason}，请使用密码登录。")
+    } else {
+        String::new()
+    };
+    record_notice(diagnostics, &notice);
+    Ok(LaunchResult {
+        destination: trusted::destination_without_ticket(&base),
+        auto_login: false,
+        notice,
+    })
 }
 
 #[tauri::command]
 async fn launch_local_backend(
     app: AppHandle,
     window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
     backend_state: State<'_, ManagedBackendState>,
-) -> Result<String, String> {
-    ensure_local_ui(&window)?;
+) -> Result<LaunchResult, String> {
+    let result = launch_local_backend_inner(&app, &window, &diagnostics, &backend_state).await;
+    if let Err(error) = &result {
+        record_error(&diagnostics, error);
+    }
+    result
+}
+
+async fn launch_local_backend_inner(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    diagnostics: &ClientDiagnostics,
+    backend_state: &ManagedBackendState,
+) -> Result<LaunchResult, String> {
+    ensure_local_ui(window)?;
+    let manifest_result = load_installed_manifest();
+    record_manifest_result(diagnostics, &manifest_result);
+    let manifest = manifest_result?;
+    let non_overlap = match manifest.as_ref() {
+        Some(_) => {
+            let ok = program_data_non_overlapping()?;
+            update_diagnostics(diagnostics, |inner| {
+                inner.program_data_non_overlapping = Some(ok);
+            });
+            if !ok {
+                return Err(
+                    "安装目录与数据根存在包含关系，已拒绝启动。请卸载后重新安装到独立目录。".into(),
+                );
+            }
+            true
+        }
+        None => false,
+    };
+
     let client = new_http_client()?;
 
     match check_local_port_2077(&client).await {
         LocalPortStatus::HealthyInstance => {
-            save_server_url(&app, "http://127.0.0.1:2077")?;
-            return Ok("http://127.0.0.1:2077/static/pages/index.html".to_string());
+            return finalize_local_connection(app, diagnostics, manifest.as_ref(), non_overlap)
+                .await;
         }
         LocalPortStatus::OccupiedForeign => {
             return Err("端口 2077 已被其他程序占用，无法启动本机后端。请先检查并关闭占用 2077 端口的程序。".into());
@@ -1557,8 +2083,131 @@ async fn launch_local_backend(
         }
     }
 
-    save_server_url(&app, "http://127.0.0.1:2077")?;
-    Ok("http://127.0.0.1:2077/static/pages/index.html".to_string())
+    finalize_local_connection(app, diagnostics, manifest.as_ref(), non_overlap).await
+}
+
+async fn finalize_local_connection(
+    app: &AppHandle,
+    diagnostics: &ClientDiagnostics,
+    manifest: Option<&BundleManifest>,
+    non_overlap: bool,
+) -> Result<LaunchResult, String> {
+    let base = Url::parse("http://127.0.0.1:2077/").map_err(|_| "本机后端地址无效".to_string())?;
+    let client = new_handshake_client()?;
+    let report = compat::evaluate(&client, &base, manifest).await?;
+    record_handshake(diagnostics, &report);
+    save_server_url(app, "http://127.0.0.1:2077")?;
+
+    if !report.verified {
+        let notice = local_notice_for(&report, manifest.is_some());
+        record_trusted(
+            diagnostics,
+            &TrustedStatus {
+                available: false,
+                auto_login: false,
+                reason: "本机后端未验证，不签发受信票据".into(),
+            },
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    commit_upgrade_journal();
+
+    if manifest.is_some() && report.trusted_bootstrap_available {
+        let attempt = trusted_attempt_for(&report, manifest.cloned(), non_overlap).await?;
+        record_trusted(diagnostics, &attempt.status);
+        if let Some(ticket) = attempt.ticket {
+            let destination = trusted::destination_with_ticket(&base, &ticket)?;
+            let notice = "已通过受信本机一次性票据自动进入。".to_string();
+            record_notice(diagnostics, &notice);
+            return Ok(LaunchResult {
+                destination,
+                auto_login: true,
+                notice,
+            });
+        }
+        let notice = format!(
+            "自动进入不可用：{}。请使用密码登录。",
+            attempt.status.reason
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    let reason = if manifest.is_none() {
+        "开发源构建不签发本机票据"
+    } else {
+        "后端未提供受信本机兑换接口"
+    };
+    record_trusted(
+        diagnostics,
+        &TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+    );
+    let notice = format!("{reason}，请使用密码登录。");
+    record_notice(diagnostics, &notice);
+    Ok(LaunchResult {
+        destination: trusted::destination_without_ticket(&base),
+        auto_login: false,
+        notice,
+    })
+}
+
+#[tauri::command]
+fn get_diagnostics(
+    app: AppHandle,
+    window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
+) -> Result<DiagnosticsView, String> {
+    ensure_local_ui(&window)?;
+    let needs_manifest = {
+        let guard = diagnostics
+            .0
+            .lock()
+            .map_err(|_| "客户端诊断状态不可用".to_string())?;
+        guard.bundled_backend_version.is_empty() && guard.manifest_error.is_empty()
+    };
+    if needs_manifest {
+        let manifest_result = load_installed_manifest();
+        record_manifest_result(&diagnostics, &manifest_result);
+    }
+    let guard = diagnostics
+        .0
+        .lock()
+        .map_err(|_| "客户端诊断状态不可用".to_string())?;
+    Ok(DiagnosticsView {
+        desktop_version: app.package_info().version.to_string(),
+        build_mode: if cfg!(debug_assertions) {
+            "debug".into()
+        } else {
+            "release".into()
+        },
+        bundled_backend_version: if guard.bundled_backend_version.is_empty() {
+            "unknown".into()
+        } else {
+            guard.bundled_backend_version.clone()
+        },
+        capability_profile: compat::CAPABILITY_PROFILE.into(),
+        capability_digest: compat::capability_digest(),
+        manifest_error: guard.manifest_error.clone(),
+        handshake: guard.handshake.clone(),
+        trusted: guard.trusted.clone(),
+        program_data_non_overlapping: guard.program_data_non_overlapping,
+        notice: guard.notice.clone(),
+        last_error: guard.last_error.clone(),
+    })
 }
 
 fn make_tray_icon() -> Image<'static> {
@@ -1616,15 +2265,19 @@ fn main() {
             }
         };
 
+    let run_lock_path = active_lock_path.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ClientSessionState(Mutex::new(HashSet::new())))
         .manage(ManagedBackendState::default())
+        .manage(ClientDiagnostics::default())
         .invoke_handler(tauri::generate_handler![
             discover_lan,
             last_server,
             connect_to_server,
             launch_local_backend,
+            get_diagnostics,
             pick_client_folder,
             pick_client_upload_files,
             read_client_file,
@@ -1674,13 +2327,7 @@ fn main() {
                         }
                     }
                     "quit" => {
-                        if let Ok(content) = fs::read(&active_lock_path) {
-                            if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
-                                if lock.pid == std::process::id() {
-                                    let _ = fs::remove_file(&active_lock_path);
-                                }
-                            }
-                        }
+                        release_own_instance_lock(&active_lock_path);
                         let state = app.state::<ManagedBackendState>();
                         stop_managed_backend(&state);
                         app.exit(0);
@@ -1690,8 +2337,25 @@ fn main() {
                 .build(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Failed to launch Gods Workbench desktop client");
+        .build(tauri::generate_context!())
+        .expect("Failed to launch Gods Workbench desktop client")
+        .run(move |app, event| {
+            if let RunEvent::ExitRequested { .. } = event {
+                release_own_instance_lock(&run_lock_path);
+                let state = app.state::<ManagedBackendState>();
+                stop_managed_backend(&state);
+            }
+        });
+}
+
+fn release_own_instance_lock(path: &Path) {
+    if let Ok(content) = fs::read(path) {
+        if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+            if lock.pid == std::process::id() {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1879,8 +2543,8 @@ mod tests {
 
     #[test]
     fn server_urls_default_to_nas_port_and_reject_non_local_hosts() {
-        let url = normalize_server_url("http://192.168.0.10").unwrap();
-        assert_eq!(url.as_str(), "http://192.168.0.10:2077/");
+        let url = normalize_server_url("http://gw-nas.local").unwrap();
+        assert_eq!(url.as_str(), "http://gw-nas.local:2077/");
         let secure_url = normalize_server_url("https://nas.local/").unwrap();
         assert_eq!(secure_url.as_str(), "https://nas.local/");
         assert!(normalize_server_url("https://nas.local:8443/").is_ok());
@@ -2334,11 +2998,13 @@ mod tests {
         let tracker = drain_process_output(&mut child);
         let client = reqwest::Client::new();
 
-        // 传入 150 毫秒的超短超时
+        // 指向本机关闭端口，避免真实 2077 服务干扰超时判定
+        let closed = Url::parse("http://127.0.0.1:9/").unwrap();
         let res = tauri::async_runtime::block_on(wait_for_backend_ready(
             &client,
             &mut child,
             &tracker,
+            &closed,
             Duration::from_millis(150),
         ));
 
@@ -2349,6 +3015,38 @@ mod tests {
             exit_status.is_some(),
             "Child should be killed after timeout"
         );
+    }
+
+    #[test]
+    fn upgrade_journal_commits_only_after_verified_install() {
+        let temp = std::env::temp_dir().join(format!(
+            "gw_journal_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp).unwrap();
+        let journal = temp.join("journal.txt");
+
+        for state in ["installed", "verified"] {
+            fs::write(&journal, state).unwrap();
+            commit_upgrade_journal_at(&journal);
+            assert_eq!(fs::read_to_string(&journal).unwrap(), "committed");
+        }
+
+        for state in ["prepare", "backed_up", "rolled_back", "committed"] {
+            fs::write(&journal, state).unwrap();
+            commit_upgrade_journal_at(&journal);
+            assert_eq!(fs::read_to_string(&journal).unwrap(), state);
+        }
+
+        fs::remove_file(&journal).unwrap();
+        commit_upgrade_journal_at(&journal);
+        assert!(!journal.exists());
+
+        let _ = fs::remove_dir_all(&temp);
     }
 
     #[test]
