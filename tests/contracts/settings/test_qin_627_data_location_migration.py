@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import errno
+import hashlib
 import json
 import os
 import sqlite3
@@ -454,6 +455,50 @@ def test_rollback_returns_pointer_to_previous_location(prod_home, tmp_path):
 # ---------------------------------------------------------------------------
 
 
+def _write_recovery_files(root: Path, files: dict[str, bytes]) -> None:
+    for relative, data in files.items():
+        path = root / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(data)
+
+
+def _recovery_manifest(migration_id: str, files: dict[str, bytes]) -> dict:
+    entries = []
+    for relative, data in sorted(files.items()):
+        entries.append(
+            {
+                "path": relative,
+                "size": len(data),
+                "sha256": hashlib.sha256(data).hexdigest(),
+                "category": "cache" if relative.startswith("video/") else "user_data",
+            }
+        )
+    return {
+        "format": service.MIGRATION_FORMAT,
+        "migration_id": migration_id,
+        "created_at": service._now(),
+        "freeze_token": "recovery-token",
+        "total_bytes": sum(len(data) for data in files.values()),
+        "files": entries,
+        "excluded": [],
+        "verified_bytes": sum(len(data) for data in files.values()),
+    }
+
+
+def _write_promoting_journal(target: Path, migration_id: str) -> None:
+    service._write_journal(
+        {
+            "schema_version": service.JOURNAL_SCHEMA_VERSION,
+            "migration_id": migration_id,
+            "status": "promoting",
+            "phase": "promoting",
+            "target": str(target),
+            "base_revision": 1,
+            "created_at": service._now(),
+        }
+    )
+
+
 def test_recovery_cleans_stage_for_copying_journal(prod_home, tmp_path):
     target = tmp_path / "target-recover"
     stage = target / (service.STAGE_PREFIX + "abc123")
@@ -502,26 +547,228 @@ def test_recovery_marks_completed_when_pointer_advanced(prod_home, tmp_path):
     assert service.read_journal()["status"] == "completed"
 
 
-def test_recovery_removes_final_when_pointer_not_advanced(prod_home, tmp_path):
-    target = tmp_path / "target-unpromoted"
+def test_recovery_removes_only_owned_files_and_preserves_target_user_file(prod_home, tmp_path):
+    migration_id = "promo-preserve"
+    target = tmp_path / "target-preserve"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {
+        "data/projects.json": b'{"projects": []}',
+        "auth/auth.sqlite3": b"auth-store",
+    }
+    _write_recovery_files(target, {"data/projects.json": files["data/projects.json"]})
+    _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    user_file = target / "user-file.txt"
+    user_file.write_text("user-owned", encoding="utf-8")
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "removed_owned_preserved_unrelated"
+    assert result["preserved"] == 1
+    assert not (target / "data" / "projects.json").exists()
+    assert user_file.read_text(encoding="utf-8") == "user-owned"
+    assert not stage.exists()
+    assert not (target / "manifest.json").exists()
+    journal = service.read_journal()
+    assert journal["status"] == "failed"
+    assert journal["error_code"] == "SWITCH_FAILED"
+    assert "保留" in journal["message"]
+
+
+def test_recovery_preserves_unrelated_file_inside_promoted_directory(prod_home, tmp_path):
+    migration_id = "promo-nested"
+    target = tmp_path / "target-nested"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {
+        "data/projects.json": b'{"projects": []}',
+        "auth/auth.sqlite3": b"auth-store",
+    }
+    _write_recovery_files(target, {"data/projects.json": files["data/projects.json"]})
+    _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    nested_user_file = target / "data" / "notes.txt"
+    nested_user_file.write_text("do not delete", encoding="utf-8")
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "removed_owned_preserved_unrelated"
+    assert not (target / "data" / "projects.json").exists()
+    assert nested_user_file.read_text(encoding="utf-8") == "do not delete"
+    assert (target / "data").is_dir()
+    assert not stage.exists()
+
+
+def test_recovery_preserves_modified_manifest_path_when_hash_does_not_match(prod_home, tmp_path):
+    migration_id = "promo-modified"
+    target = tmp_path / "target-modified"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {
+        "data/projects.json": b'{"projects": []}',
+        "auth/auth.sqlite3": b"auth-store",
+    }
+    _write_recovery_files(target, {"data/projects.json": b'{"projects": ["user-edit"]}'})
+    _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "removed_owned_preserved_unrelated"
+    assert (target / "data" / "projects.json").read_text(encoding="utf-8") == '{"projects": ["user-edit"]}'
+    assert not (target / "auth").exists()
+    assert not stage.exists()
+
+
+def test_recovery_uses_stage_manifest_when_target_manifest_is_missing(prod_home, tmp_path):
+    migration_id = "promo-stage-manifest"
+    target = tmp_path / "target-stage-manifest"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {
+        "data/projects.json": b'{"projects": []}',
+        "auth/auth.sqlite3": b"auth-store",
+    }
+    _write_recovery_files(target, {"data/projects.json": files["data/projects.json"]})
+    _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    user_file = target / "user-file.txt"
+    user_file.write_text("user-owned", encoding="utf-8")
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "removed_owned_preserved_unrelated"
+    assert not (target / "data" / "projects.json").exists()
+    assert user_file.read_text(encoding="utf-8") == "user-owned"
+    assert not stage.exists()
+
+
+def test_recovery_cleans_partial_promote_and_removes_empty_target(prod_home, tmp_path):
+    migration_id = "promo-partial"
+    target = tmp_path / "target-partial"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {
+        "data/projects.json": b'{"projects": []}',
+        "auth/auth.sqlite3": b"auth-store",
+    }
+    _write_recovery_files(target, {"data/projects.json": files["data/projects.json"]})
+    _write_recovery_files(stage, {"auth/auth.sqlite3": files["auth/auth.sqlite3"]})
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    service._atomic_write_json(stage / "manifest.json", manifest)
+    _write_promoting_journal(target, migration_id)
+
+    result = service.recover_on_startup()
+
+    assert result["action"] == "removed_final"
+    assert result["preserved"] == 0
+    assert not stage.exists()
+    assert not any(target.iterdir())
+
+
+def test_recovery_without_manifest_preserves_target_and_is_idempotent(prod_home, tmp_path):
+    migration_id = "promo-unknown"
+    target = tmp_path / "target-unknown"
     target.mkdir()
     (target / "data").mkdir()
-    (target / "data" / "projects.json").write_text("{}", encoding="utf-8")
-    service._write_journal(
-        {
-            "schema_version": service.JOURNAL_SCHEMA_VERSION,
-            "migration_id": "promo2",
-            "status": "promoting",
-            "phase": "promoting",
-            "target": str(target),
-            "base_revision": 1,
-            "created_at": service._now(),
-        }
-    )
+    owned_looking = target / "data" / "projects.json"
+    owned_looking.write_text("{}", encoding="utf-8")
+    _write_promoting_journal(target, migration_id)
+
     result = service.recover_on_startup()
-    assert result["action"] == "removed_final"
-    assert not (target / "data").exists()
+
+    assert result["action"] == "preserved_unverified"
+    assert owned_looking.is_file()
+    journal = service.read_journal()
+    assert journal["status"] == "failed"
+    assert journal["error_code"] == "RECOVERY_OWNERSHIP_UNKNOWN"
+
+    second = service.recover_on_startup()
+
+    assert second["action"] == "none"
+    assert owned_looking.is_file()
+
+
+def test_promote_refuses_to_overwrite_concurrent_target_file(prod_home, tmp_path):
+    migration_id = "promo-concurrent"
+    target = tmp_path / "target-concurrent"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    (stage / "data").mkdir(parents=True)
+    payload = b'{"projects": []}'
+    (stage / "data" / "projects.json").write_bytes(payload)
+    manifest = _recovery_manifest(migration_id, {"data/projects.json": payload})
+    (target / "data").mkdir()
+    user_file = target / "data" / "projects.json"
+    user_file.write_text("concurrent user content", encoding="utf-8")
+
+    with pytest.raises(CleanroomException) as exc:
+        service._promote(stage, target, manifest)
+
+    assert exc.value.code == "SWITCH_FAILED"
+    assert user_file.read_text(encoding="utf-8") == "concurrent user content"
+
+
+def test_promoted_target_scan_rejects_concurrent_new_file(prod_home, tmp_path):
+    migration_id = "promo-scan"
+    target = tmp_path / "target-scan"
+    target.mkdir()
+    stage = target / (service.STAGE_PREFIX + migration_id)
+    stage.mkdir()
+    files = {"data/projects.json": b'{"projects": []}'}
+    _write_recovery_files(target, files)
+    manifest = _recovery_manifest(migration_id, files)
+    service._atomic_write_json(target / "manifest.json", manifest)
+    (target / "user-file.txt").write_text("concurrent", encoding="utf-8")
+
+    with pytest.raises(CleanroomException) as exc:
+        service._verify_promoted_target(target, stage, manifest)
+
+    assert exc.value.code == "SWITCH_FAILED"
+    assert (target / "user-file.txt").read_text(encoding="utf-8") == "concurrent"
+
+
+def test_concurrent_target_file_aborts_switch_and_is_preserved(
+    prod_home, tmp_path, monkeypatch
+):
+    _seed(prod_home["runtime_root"])
+    target = tmp_path / "target-concurrent-live"
+    original_promote = service._promote
+
+    def promote_then_user_file(stage, destination, manifest):
+        original_promote(stage, destination, manifest)
+        (destination / "user-file.txt").write_text("concurrent", encoding="utf-8")
+
+    monkeypatch.setattr(service, "_promote", promote_then_user_file)
+    record = _start(target)
+    finished = _wait_status(record["migration_id"])
+
+    assert finished["status"] == "failed"
+    assert finished["error_code"] == "SWITCH_FAILED"
+    assert "保留" in finished["message"]
+    assert (target / "user-file.txt").read_text(encoding="utf-8") == "concurrent"
+    assert not (target / "data" / "projects.json").exists()
+    assert not (target / "manifest.json").exists()
     assert service.pointer_state()["revision"] == 1
+    assert get_write_window().state == STATE_OPEN
 
 
 # ---------------------------------------------------------------------------

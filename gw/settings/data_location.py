@@ -36,7 +36,7 @@ import stat
 import threading
 import time
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from gw.core.errors import CleanroomException
@@ -60,6 +60,7 @@ from gw.core.write_window import (
 POINTER_SCHEMA_VERSION = DATA_LOCATION_SCHEMA_VERSION
 JOURNAL_SCHEMA_VERSION = 1
 MIGRATION_FORMAT = "gods-workbench-data-location-v1"
+MANIFEST_NAME = "manifest.json"
 STAGE_PREFIX = ".gw-stage-"
 CATEGORY_USER_DATA = "user_data"
 CATEGORY_CACHE = "cache"
@@ -511,31 +512,458 @@ def _source_changed(files: list[dict[str, Any]]) -> bool:
     return False
 
 
-def _promote(stage: Path, target: Path) -> None:
-    target.mkdir(parents=True, exist_ok=True)
-    for child in sorted(stage.iterdir(), key=lambda item: item.name):
-        destination = target / child.name
-        if destination.exists():
-            raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目")
+def _write_json_exclusive(path: Path, payload: dict[str, Any]) -> None:
+    """独占创建 JSON 文件；已存在时绝不覆盖。"""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        descriptor = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+    except FileExistsError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目") from None
+    except OSError:
+        raise CleanroomException(409, "SWITCH_FAILED", "迁移归属记录无法写入") from None
+    try:
+        with os.fdopen(descriptor, "w", encoding="utf-8", newline="\n") as handle:
+            json.dump(payload, handle, ensure_ascii=False, indent=1, sort_keys=True)
+            handle.flush()
+            os.fsync(handle.fileno())
+    except Exception:
         try:
-            os.replace(child, destination)
+            path.unlink(missing_ok=True)
         except OSError:
-            if child.is_dir():
-                shutil.copytree(child, destination)
-                shutil.rmtree(child, ignore_errors=True)
-            else:
-                shutil.copy2(child, destination)
-                child.unlink()
+            pass
+        raise
+
+
+def _is_link(path: Path) -> bool:
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & _REPARSE_POINT
+    )
+
+
+def _copy_file_exclusive(
+    source: Path, destination: Path, entry: dict[str, Any]
+) -> None:
+    """不支持硬链接时的独占复制；复制后重新校验大小与 SHA-256。"""
+    descriptor: int | None = None
+    try:
+        descriptor = os.open(
+            destination, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600
+        )
+    except FileExistsError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目") from None
+    except OSError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标文件无法创建") from None
+    try:
+        with os.fdopen(descriptor, "wb") as target_handle:
+            descriptor = None
+            with open(source, "rb") as source_handle:
+                shutil.copyfileobj(source_handle, target_handle, 1024 * 1024)
+            target_handle.flush()
+            os.fsync(target_handle.fileno())
+        shutil.copystat(source, destination)
+        if (
+            destination.stat().st_size != int(entry["size"])
+            or _sha256(destination) != entry["sha256"]
+        ):
+            raise CleanroomException(409, "SWITCH_FAILED", "目标文件复制校验不一致")
+    except CleanroomException:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+    except OSError:
+        try:
+            destination.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise CleanroomException(409, "SWITCH_FAILED", "目标文件无法复制") from None
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
+
+
+def _move_file_exclusive(
+    source: Path, destination: Path, entry: dict[str, Any]
+) -> None:
+    """原子建立目标目录项且绝不覆盖既有文件；跨文件系统时退回独占复制。"""
+    try:
+        os.link(source, destination)
+    except FileExistsError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目") from None
+    except OSError:
+        _copy_file_exclusive(source, destination, entry)
+    try:
+        source.unlink()
+    except OSError:
+        raise CleanroomException(409, "SWITCH_FAILED", "切换后无法清理 stage 文件") from None
+
+
+def _promote_tree(
+    source: Path,
+    destination: Path,
+    expected: dict[str, dict[str, Any]],
+    prefix: str = "",
+) -> None:
+    """逐文件建立目标树；目标目录或文件已存在即失败，不覆盖并发内容。"""
+    try:
+        destination.mkdir()
+    except FileExistsError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标出现冲突条目") from None
+    except OSError:
+        raise CleanroomException(409, "SWITCH_FAILED", "目标目录无法创建") from None
+    for child in sorted(source.iterdir(), key=lambda item: item.name):
+        relative = f"{prefix}/{child.name}" if prefix else child.name
+        target_child = destination / child.name
+        if _is_link(child):
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移产物包含链接")
+        if child.is_dir():
+            _promote_tree(child, target_child, expected, relative)
+        elif child.is_file():
+            entry = expected.get(relative)
+            if entry is None:
+                raise CleanroomException(409, "SWITCH_FAILED", "stage 出现清单外文件")
+            _move_file_exclusive(child, target_child, entry)
+        else:
+            raise CleanroomException(409, "SWITCH_FAILED", "stage 包含特殊文件")
+    try:
+        source.rmdir()
+    except OSError:
+        raise CleanroomException(409, "SWITCH_FAILED", "stage 目录无法清理") from None
+
+
+def _promote(stage: Path, target: Path, manifest: dict[str, Any]) -> None:
+    """先把归属清单落到目标根，再逐项切换；清单本身不覆盖任何既有文件。"""
+    target.mkdir(parents=True, exist_ok=True)
+    _write_json_exclusive(target / MANIFEST_NAME, manifest)
+    expected = {entry["path"]: entry for entry in manifest["files"]}
+    for child in sorted(stage.iterdir(), key=lambda item: item.name):
+        if child.name == MANIFEST_NAME:
+            continue
+        destination = target / child.name
+        if _is_link(child):
+            raise CleanroomException(409, "SWITCH_FAILED", "迁移产物包含链接")
+        if child.is_dir():
+            _promote_tree(child, destination, expected, child.name)
+        elif child.is_file():
+            entry = expected.get(child.name)
+            if entry is None:
+                raise CleanroomException(409, "SWITCH_FAILED", "stage 出现清单外文件")
+            _move_file_exclusive(child, destination, entry)
+        else:
+            raise CleanroomException(409, "SWITCH_FAILED", "stage 包含特殊文件")
     try:
         stage.rmdir()
     except OSError:
+        # stage 里仍有归属清单；成功提交后由收尾步骤删除。
         pass
+
+
+def _verify_promoted_target(
+    target: Path, stage: Path, manifest: dict[str, Any]
+) -> None:
+    """指针提交前确认目标只含本次清单产物，并发新增条目会使切换失败。"""
+    expected = {entry["path"]: entry for entry in manifest["files"]}
+    expected_dirs = {""}
+    for relative in expected:
+        parts = PurePosixPath(relative).parts
+        for index in range(1, len(parts)):
+            expected_dirs.add(PurePosixPath(*parts[:index]).as_posix())
+    for current_text, directories, filenames in os.walk(target, followlinks=False):
+        current = Path(current_text)
+        if current == stage:
+            directories[:] = []
+            continue
+        relative_dir = current.relative_to(target).as_posix()
+        relative_dir = "" if relative_dir == "." else relative_dir
+        if relative_dir and relative_dir not in expected_dirs:
+            raise CleanroomException(409, "SWITCH_FAILED", "目标出现清单外目录")
+        kept: list[str] = []
+        for name in directories:
+            child = current / name
+            if child == stage:
+                continue
+            if _is_link(child):
+                raise CleanroomException(409, "SWITCH_FAILED", "目标出现链接目录")
+            kept.append(name)
+        directories[:] = kept
+        for name in filenames:
+            path = current / name
+            relative = path.relative_to(target).as_posix()
+            if relative == MANIFEST_NAME:
+                continue
+            entry = expected.get(relative)
+            if entry is None:
+                raise CleanroomException(409, "SWITCH_FAILED", "目标出现清单外文件")
+            try:
+                info = path.lstat()
+            except OSError:
+                raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不可读") from None
+            if not stat.S_ISREG(info.st_mode) or int(info.st_size) != int(entry["size"]):
+                raise CleanroomException(409, "SWITCH_FAILED", "目标清单文件不一致")
+    for relative in expected:
+        path = target.joinpath(*PurePosixPath(relative).parts)
+        if not path.is_file():
+            raise CleanroomException(409, "SWITCH_FAILED", "目标缺少清单内文件")
 
 
 def _remove_stage(target: Path, migration_id: str) -> None:
     stage = target / (STAGE_PREFIX + migration_id)
     if stage.is_dir():
         shutil.rmtree(stage, ignore_errors=True)
+
+
+# ---------------------------------------------------------------------------
+# 迁移归属清单与安全恢复
+# ---------------------------------------------------------------------------
+
+
+def _owned_relative_allowed(relative: str) -> bool:
+    if relative == "auth/auth.sqlite3" or relative == "video/video_tasks.sqlite3":
+        return True
+    if relative.startswith("data/"):
+        return True
+    return relative.startswith("video/artifacts/") or relative.startswith(
+        "video/proxies/"
+    )
+
+
+def _validated_manifest(
+    payload: dict[str, Any] | None, migration_id: str
+) -> dict[str, Any] | None:
+    """只接受本次迁移、允许根目录内、带 size + SHA-256 的严格清单。"""
+    if not isinstance(payload, dict):
+        return None
+    if payload.get("format") != MIGRATION_FORMAT:
+        return None
+    if str(payload.get("migration_id") or "") != migration_id:
+        return None
+    raw_files = payload.get("files")
+    if not isinstance(raw_files, list):
+        return None
+    entries: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for raw in raw_files:
+        if not isinstance(raw, dict):
+            return None
+        relative = raw.get("path")
+        if not isinstance(relative, str) or not relative or "\\" in relative:
+            return None
+        if "\x00" in relative:
+            return None
+        pure = PurePosixPath(relative)
+        if pure.as_posix() != relative or pure.is_absolute():
+            return None
+        if any(part in {"", ".", ".."} or ":" in part for part in pure.parts):
+            return None
+        if relative == MANIFEST_NAME or not _owned_relative_allowed(relative):
+            return None
+        if relative in seen:
+            return None
+        seen.add(relative)
+        size = raw.get("size")
+        digest = raw.get("sha256")
+        if not isinstance(size, int) or isinstance(size, bool) or size < 0:
+            return None
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(char not in "0123456789abcdef" for char in digest.lower())
+        ):
+            return None
+        entries.append(
+            {"path": relative, "size": int(size), "sha256": digest.lower()}
+        )
+    return {"format": MIGRATION_FORMAT, "migration_id": migration_id, "files": entries}
+
+
+def _manifest_fingerprint(manifest: dict[str, Any]) -> tuple[tuple[str, int, str], ...]:
+    return tuple(
+        sorted(
+            (entry["path"], int(entry["size"]), str(entry["sha256"]))
+            for entry in manifest["files"]
+        )
+    )
+
+
+def _load_recovery_manifest(
+    target: Path, migration_id: str
+) -> tuple[dict[str, Any] | None, str]:
+    stage = target / (STAGE_PREFIX + migration_id)
+    found: list[dict[str, Any]] = []
+    for candidate in (target / MANIFEST_NAME, stage / MANIFEST_NAME):
+        valid = _validated_manifest(_read_json(candidate), migration_id)
+        if valid is not None:
+            found.append(valid)
+    if len(found) == 2 and _manifest_fingerprint(found[0]) != _manifest_fingerprint(
+        found[1]
+    ):
+        return None, "ambiguous_manifest"
+    if found:
+        return found[0], "ok"
+    return None, "missing_manifest"
+
+
+def _root_is_link_free(root: Path) -> bool:
+    try:
+        _reject_links(root)
+    except CleanroomException:
+        return False
+    return True
+
+
+def _safe_owned_path(root: Path, relative: str) -> Path | None:
+    parts = PurePosixPath(relative).parts
+    current = root
+    for part in parts[:-1]:
+        current = current / part
+        try:
+            info = current.lstat()
+        except FileNotFoundError:
+            return root.joinpath(*parts)
+        except OSError:
+            return None
+        if stat.S_ISLNK(info.st_mode) or bool(
+            getattr(info, "st_file_attributes", 0) & _REPARSE_POINT
+        ):
+            return None
+        if not stat.S_ISDIR(info.st_mode):
+            return None
+    return root.joinpath(*parts)
+
+
+def _owned_file_state(path: Path | None, entry: dict[str, Any]) -> str:
+    if path is None:
+        return "preserved"
+    try:
+        info = path.lstat()
+    except FileNotFoundError:
+        return "missing"
+    except OSError:
+        return "preserved"
+    if stat.S_ISLNK(info.st_mode) or bool(
+        getattr(info, "st_file_attributes", 0) & _REPARSE_POINT
+    ):
+        return "preserved"
+    if not stat.S_ISREG(info.st_mode) or int(info.st_size) != int(entry["size"]):
+        return "preserved"
+    try:
+        digest = _sha256(path)
+    except OSError:
+        return "preserved"
+    return "owned" if digest == entry["sha256"] else "preserved"
+
+
+def _prune_empty_parents(root: Path, path: Path) -> None:
+    parent = path.parent
+    while parent != root and _inside(parent, root):
+        try:
+            parent.rmdir()
+        except OSError:
+            break
+        parent = parent.parent
+
+
+def _remove_owned_from_root(root: Path, manifest: dict[str, Any]) -> dict[str, int]:
+    result = {"removed": 0, "preserved": 0, "missing": 0}
+    for entry in manifest["files"]:
+        path = _safe_owned_path(root, entry["path"])
+        state = _owned_file_state(path, entry)
+        if state == "missing":
+            result["missing"] += 1
+            continue
+        if state != "owned" or path is None:
+            result["preserved"] += 1
+            continue
+        try:
+            path.unlink()
+        except OSError:
+            result["preserved"] += 1
+            continue
+        result["removed"] += 1
+        _prune_empty_parents(root, path)
+    return result
+
+
+def _remove_manifest_from_root(root: Path, migration_id: str) -> bool:
+    path = root / MANIFEST_NAME
+    if _validated_manifest(_read_json(path), migration_id) is None:
+        return False
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def _prune_empty_stage(stage: Path) -> None:
+    for current_text, _directories, _filenames in os.walk(stage, topdown=False):
+        current = Path(current_text)
+        if current == stage:
+            continue
+        try:
+            current.rmdir()
+        except OSError:
+            pass
+
+
+def _clean_stage(stage: Path, manifest: dict[str, Any]) -> dict[str, int]:
+    if not stage.is_dir() or _is_link(stage):
+        return {"removed": 0, "preserved": 0, "missing": 0}
+    result = _remove_owned_from_root(stage, manifest)
+    _remove_manifest_from_root(stage, manifest["migration_id"])
+    _prune_empty_stage(stage)
+    try:
+        stage.rmdir()
+    except OSError:
+        pass
+    return result
+
+
+def _leftover_count(root: Path) -> int:
+    try:
+        return sum(1 for _ in root.iterdir())
+    except OSError:
+        return 0
+
+
+def _cleanup_uncommitted_promotion(
+    target: Path, migration_id: str
+) -> dict[str, Any]:
+    """仅清理本次迁移清单内且哈希匹配的产物，未知文件原地保留。"""
+    if not target.is_dir() or not _root_is_link_free(target):
+        return {
+            "action": "preserved_unverified",
+            "removed": 0,
+            "preserved": _leftover_count(target),
+            "reason": "unsafe_target",
+        }
+    manifest, reason = _load_recovery_manifest(target, migration_id)
+    if manifest is None:
+        return {
+            "action": "preserved_unverified",
+            "removed": 0,
+            "preserved": _leftover_count(target),
+            "reason": reason,
+        }
+    stage = target / (STAGE_PREFIX + migration_id)
+    target_result = _remove_owned_from_root(target, manifest)
+    _remove_manifest_from_root(target, migration_id)
+    stage_result = _clean_stage(stage, manifest)
+    remaining = _leftover_count(target)
+    return {
+        "removed": int(target_result["removed"]) + int(stage_result["removed"]),
+        "preserved": remaining,
+        "missing": int(target_result["missing"]) + int(stage_result["missing"]),
+        "reason": "ok",
+        "action": "removed_final"
+        if remaining == 0
+        else "removed_owned_preserved_unrelated",
+    }
 
 
 class _Cancelled(Exception):
@@ -774,11 +1202,14 @@ def _mark(
     error_code: str | None = None,
     message: str | None = None,
 ) -> None:
-    record["status"] = status
-    record["phase"] = phase or status
-    record["error_code"] = error_code
-    record["message"] = message
-    _write_journal(record)
+    next_record = dict(record)
+    next_record["status"] = status
+    next_record["phase"] = phase or status
+    next_record["error_code"] = error_code
+    next_record["message"] = message
+    # 先成功落盘再更新内存视图，避免测试或外部轮询在 journal 写完前观测到终态。
+    _write_journal(next_record)
+    record.update(next_record)
 
 
 def _run_migration(
@@ -868,7 +1299,8 @@ def _run_migration(
                 raise
         window.mark_switching()
         _mark(record, status="promoting", phase="promoting")
-        _promote(stage, target)
+        _promote(stage, target, manifest)
+        _verify_promoted_target(target, stage, manifest)
         pointer = pointer_state()
         _write_pointer(
             data_location=target,
@@ -890,23 +1322,44 @@ def _run_migration(
         # 先进入只读再落 completed，保证外部观察到 completed 时写窗口已经关闭。
         window.mark_read_only(reason="migration_completed")
         _mark(record, status="completed", phase="completed")
+        _clean_stage(stage, manifest)
     except _Cancelled:
         shutil.rmtree(stage, ignore_errors=True)
         window.reset_open(reason="cancelled")
         _mark(record, status="cancelled", phase="cancelled")
     except CleanroomException as exc:
-        shutil.rmtree(stage, ignore_errors=True)
+        cleanup = None
+        if not pointer_committed and record.get("phase") == "promoting":
+            cleanup = _cleanup_uncommitted_promotion(target, migration_id)
+        else:
+            shutil.rmtree(stage, ignore_errors=True)
         if not pointer_committed:
             window.reset_open(reason="migration_failed")
-            _mark(record, status="failed", error_code=exc.code, message=exc.message)
+            message = exc.message
+            if cleanup is not None and cleanup.get("action") == "removed_owned_preserved_unrelated":
+                message = (
+                    f"{message}；目标中 {cleanup['preserved']} 个无法证明归属的条目已保留"
+                )
+            elif cleanup is not None and cleanup.get("action") == "preserved_unverified":
+                message = f"{message}；未能核验迁移归属，目标目录未删除任何内容"
+            _mark(record, status="failed", error_code=exc.code, message=message)
         else:  # pragma: no cover - 指针已提交后只可能停在只读
             window.mark_read_only(reason="pointer_committed")
             _mark(record, status="completed", phase="completed")
     except Exception:  # pragma: no cover - 兜底不吞掉状态
-        shutil.rmtree(stage, ignore_errors=True)
+        cleanup = None
+        if not pointer_committed and record.get("phase") == "promoting":
+            cleanup = _cleanup_uncommitted_promotion(target, migration_id)
+        else:
+            shutil.rmtree(stage, ignore_errors=True)
         if not pointer_committed:
             window.reset_open(reason="unexpected")
-            _mark(record, status="failed", error_code="SWITCH_FAILED", message="迁移发生未预期错误")
+            message = "迁移发生未预期错误"
+            if cleanup is not None and cleanup.get("action") == "removed_owned_preserved_unrelated":
+                message = (
+                    f"{message}；目标中 {cleanup['preserved']} 个无法证明归属的条目已保留"
+                )
+            _mark(record, status="failed", error_code="SWITCH_FAILED", message=message)
         else:
             window.mark_read_only(reason="pointer_committed")
             _mark(record, status="completed", phase="completed")
@@ -1012,16 +1465,57 @@ def recover_on_startup() -> dict[str, Any]:
             journal.update({"status": "completed", "phase": "completed"})
             _write_journal(journal)
             return {"action": "marked_completed", "migration_id": migration_id}
-        if target is not None and target.is_dir():
-            for child in sorted(target.iterdir(), key=lambda item: item.name):
-                shutil.rmtree(child, ignore_errors=True) if child.is_dir() else child.unlink(
-                    missing_ok=True
-                )
-        journal.update({"status": "failed", "phase": "failed", "error_code": "SWITCH_FAILED"})
+        if target is None or not migration_id:
+            journal.update(
+                {
+                    "status": "failed",
+                    "phase": "failed",
+                    "error_code": "SWITCH_FAILED",
+                    "message": "切换中断且缺少目标或迁移标识，未删除任何内容",
+                }
+            )
+            _write_journal(journal)
+            return {
+                "action": "preserved_unverified",
+                "preserved": 0,
+                "reason": "missing_target",
+                "migration_id": migration_id,
+            }
+        cleanup = _cleanup_uncommitted_promotion(target, migration_id)
+        action = str(cleanup["action"])
+        if action == "preserved_unverified":
+            code = "RECOVERY_OWNERSHIP_UNKNOWN"
+            message = "未能核验迁移归属，目标目录未删除任何内容"
+        elif action == "removed_owned_preserved_unrelated":
+            code = "SWITCH_FAILED"
+            message = (
+                f"切换中断；已清理本次迁移产物，保留 {int(cleanup['preserved'])} 个无关条目"
+            )
+        else:
+            code = "SWITCH_FAILED"
+            message = "切换中断；已清理本次迁移产物"
+        journal.update(
+            {
+                "status": "failed",
+                "phase": "failed",
+                "error_code": code,
+                "message": message,
+            }
+        )
         _write_journal(journal)
-        return {"action": "removed_final", "migration_id": migration_id}
+        cleanup["migration_id"] = migration_id
+        return cleanup
     if status == "failed" and target is not None and migration_id:
-        _remove_stage(target, migration_id)
+        manifest, _reason = _load_recovery_manifest(target, migration_id)
+        if manifest is not None:
+            cleanup = _cleanup_uncommitted_promotion(target, migration_id)
+            cleanup["action"] = (
+                cleanup.get("action")
+                if cleanup.get("action") == "removed_final"
+                else "cleaned_failed_promotion"
+            )
+            cleanup["migration_id"] = migration_id
+            return cleanup
     return result
 
 
