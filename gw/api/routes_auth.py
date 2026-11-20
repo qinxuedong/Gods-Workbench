@@ -192,6 +192,47 @@ def _clear_cookie(response: Response, name: str) -> None:
 # ---------------------------------------------------------------------------
 
 
+def _trusted_local_status() -> dict:
+    """返回受信本机状态摘要。
+
+    只暴露布尔状态与模式；**不**泄露设备密钥、票据、文件路径或账户名。
+    存储不可用时如实降级为 ``unavailable``，绝不伪造身份或绑定状态。
+    """
+    from gw.core import trusted_local
+
+    enabled = trusted_local.trusted_local_enabled()
+    summary = {
+        "enabled": enabled,
+        "established": False,
+        "needs_manual_claim": False,
+        "mode": "disabled",
+    }
+    if not enabled:
+        return summary
+    try:
+        with local_accounts.database() as db:
+            binding = local_accounts.trusted_local_owner(db)
+            has_accounts = (
+                db.execute("SELECT 1 FROM local_users LIMIT 1").fetchone() is not None
+            )
+    except Exception:  # noqa: BLE001 - 存储不可用时如实降级
+        return {
+            "enabled": True,
+            "established": False,
+            "needs_manual_claim": False,
+            "mode": "unavailable",
+        }
+    if binding is not None:
+        summary["established"] = True
+        summary["mode"] = "trusted_local"
+    elif has_accounts:
+        summary["needs_manual_claim"] = True
+        summary["mode"] = "needs_manual_claim"
+    else:
+        summary["mode"] = "uninitialized"
+    return summary
+
+
 @router.get("/status", summary="认证与会话状态", status_code=status.HTTP_200_OK)
 def auth_status(request: Request):
     """如实返回当前认证状态；未认证时 ``principal`` 必须为 null。"""
@@ -210,6 +251,7 @@ def auth_status(request: Request):
                 "logout_available": principal is not None,
                 "reason": "",
                 "release_authorized": False,
+                "trusted_local": _trusted_local_status(),
             },
             headers={"Cache-Control": "no-store"},
         )

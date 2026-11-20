@@ -848,7 +848,17 @@
       loaded: false,
       // 显式降级标记：'ok' | 'not_integrated' | 'unavailable'（禁止用假身份兜底）
       degradation: 'ok',
-      degradationStatus: 0
+      degradationStatus: 0,
+      // 受信本机状态（QIN-630）：只含布尔与模式，绝不含票据 / 密钥 / 路径 / 主体名。
+      // bootstrap_state 是前端兑换状态机，与服务端 mode 互不覆盖。
+      trusted_local: {
+        enabled: false,
+        established: false,
+        needs_manual_claim: false,
+        mode: 'disabled',
+        bootstrap_state: 'idle',
+        message: ''
+      }
     },
 
     syncAuth: async function({quiet = false} = {}) {
@@ -879,6 +889,14 @@
           this.authState.degradation = 'ok';
           this.authState.degradationStatus = res.status;
           this.authState.loaded = true;
+          // 受信本机块是纯增量字段：旧后端缺失时保持默认「未启用」，前端回落密码登录。
+          if (data.trusted_local && typeof data.trusted_local === 'object') {
+            const trusted = data.trusted_local;
+            this.authState.trusted_local.enabled = Boolean(trusted.enabled);
+            this.authState.trusted_local.established = Boolean(trusted.established);
+            this.authState.trusted_local.needs_manual_claim = Boolean(trusted.needs_manual_claim);
+            this.authState.trusted_local.mode = String(trusted.mode || 'disabled');
+          }
           authGate.loaded = true;
           authGate.authenticated = authenticated;
           authGate.status = res.status;
@@ -903,6 +921,26 @@
       return this.authState;
       })();
       try { return await authGate.inFlight; } finally { authGate.inFlight = null; }
+    },
+
+    /**
+     * 受信本机首启：等待一次性启动票据的兑换结果（QIN-630）。
+     *
+     * 兑换未决前**不**发起状态同步，避免 `setup_required` 在本机所有者建立前
+     * 误弹「创建管理员」弹窗。超时或失败一律回落既有密码登录路径，绝不伪造身份。
+     */
+    awaitTrustedLocal: async function() {
+      const trusted = window.GWTrustedLocal;
+      if (!trusted || typeof trusted.ready?.then !== 'function') return null;
+      // 上限略高于引导侧的超时阈值：引导已自行兜底，这里只防引导脚本异常不落地。
+      const guard = new Promise(resolve => {
+        window.setTimeout(() => resolve(null), 8000);
+      });
+      const detail = await Promise.race([trusted.ready, guard]);
+      const state = String(detail?.state || trusted.state || 'idle');
+      this.authState.trusted_local.bootstrap_state = state;
+      this.authState.trusted_local.message = String(detail?.message || '');
+      return detail;
     },
 
     /**
@@ -1196,6 +1234,7 @@
               <div class="flex justify-between"><span>会话鉴权方式</span><span class="text-emerald-400">服务端会话 Cookie（HttpOnly）</span></div>
               <div class="flex justify-between"><span>角色来源</span><span class="text-slate-200">${this.authState.auth_mode === 'local_account' ? '本地账户数据库' : 'IdP 组声明映射'}</span></div>
               <div class="flex justify-between"><span>认证模式</span><span class="text-cyan-300">${escapeHtml(this.authState.auth_mode)}</span></div>
+              <div class="flex justify-between"><span>本机身份</span><span class="${this.authState.trusted_local?.established ? 'text-emerald-400' : 'text-slate-400'}" data-gw-trusted-local="established">${this.authState.trusted_local?.established ? '本机所有者已建立' : '未建立本机所有者'}</span></div>
               <div class="flex justify-between"><span>状态端点</span><span class="text-slate-300">GET /api/asset-auth/status</span></div>
             </div>
 
@@ -1249,14 +1288,73 @@
       if (window.lucide) window.lucide.createIcons();
     },
 
+    // 受信本机在认证中心弹窗的四种可见状态（QIN-630）：本机所有者已建立 / 需人工认领 /
+    // 兑换失败 / 回落密码登录。只描述状态，不回显票据、密钥、路径或主体名。
+    renderTrustedLocalNotice: function() {
+      const trusted = this.authState.trusted_local || {};
+      const mode = String(trusted.mode || 'disabled');
+      const bootstrap = String(trusted.bootstrap_state || 'idle');
+      const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
+      let tone = 'text-slate-400';
+      let border = 'border-white/10';
+      let title = '';
+      let body = '';
+      let marker = bootstrap;
+      if (bootstrap === 'bootstrapping') {
+        tone = 'text-cyan-200';
+        border = 'border-cyan-500/30';
+        title = '正在进入本机…';
+        body = '本机一次性启动票据正在兑换，尚未进入主界面。';
+      } else if (trusted.established) {
+        tone = 'text-emerald-200';
+        border = 'border-emerald-500/30';
+        title = '本机所有者已建立';
+        body = '本机身份已绑定当前账户；权限仍按既有角色判定，未新增任何权限。';
+        marker = 'established';
+      } else if (trusted.needs_manual_claim || mode === 'needs_manual_claim' || bootstrap === 'needs_claim') {
+        tone = 'text-amber-200';
+        border = 'border-amber-500/30';
+        title = '需人工认领';
+        body = '本机已存在本地账户，需由管理员认证后显式认领（命令行 trusted-claim）；不会自动接管既有账户。';
+        marker = 'needs_manual_claim';
+      } else if (mode === 'unavailable') {
+        tone = 'text-amber-200';
+        border = 'border-amber-500/30';
+        title = '本机身份状态暂不可用';
+        body = '无法读取本机绑定状态，请稍后重试或用密码登录。';
+        marker = 'unavailable';
+      } else if (bootstrap === 'failed') {
+        tone = 'text-red-300';
+        border = 'border-red-500/30';
+        title = '本机自动进入失败';
+        body = '一次性启动票据兑换失败，请用下方账号密码登录。';
+        marker = 'failed';
+      } else if (bootstrap === 'fallback_password' || bootstrap === 'remote_rejected') {
+        tone = 'text-amber-200';
+        border = 'border-amber-500/30';
+        title = bootstrap === 'remote_rejected' ? '非本机来源，已忽略启动票据' : '本机自动进入超时';
+        body = '请用下方账号密码登录。';
+        marker = bootstrap;
+      } else {
+        return '';
+      }
+      return `
+        <div class="bay-inset p-3 rounded-xl border ${border} gw-type-body-sm font-mono ${tone}" role="status" data-gw-trusted-local="${escapeHtml(marker)}">
+          <span class="block">${escapeHtml(title)}</span>
+          <span class="block mt-1 gw-type-body-sm text-slate-500">${escapeHtml(body)}</span>
+        </div>`;
+    },
+
     // 本地数据库账户与外部 IdP 表单分离；密码不写入浏览器持久存储。
     renderLocalAccountForm: function(dialog) {
       const setup = this.authState.setup_required;
+      const trustedNotice = this.renderTrustedLocalNotice();
       dialog.innerHTML = `
         <div class="flex items-center justify-between pb-3 mb-3 border-b border-white/10">
           <h3 class="gw-type-section font-bold text-slate-100">${setup ? '首次设置 · 创建管理员' : '本地账户登录'}</h3>
           <button type="button" aria-label="关闭登录" class="hw-btn text-slate-400" onclick="HardwareDeck.closeModal('accountModal')">关闭</button>
         </div>
+        ${trustedNotice}
         <p class="mb-3 gw-type-body-sm text-slate-400">${setup ? '请设置你自己的管理员账户。没有默认密码；账户保存在本机数据库，重启后仍然有效。' : '使用本机数据库中的账号密码登录，无需外部认证服务。'}</p>
         <form id="localAccountForm" class="space-y-3" onsubmit="HardwareDeck.handleLocalAccountSubmit(event)">
           <label class="block gw-type-body-md text-slate-300" for="localUsername">账号</label>
@@ -1968,10 +2066,13 @@
       this.initClock();
       // 先同步认证，再启动受保护遥测；未认证时保留显式未知状态。
       this.consumeAuthError();
-      this.syncAuth().then(() => {
-        this.initVUMeters();
-        this.syncOnlineStatus();
-        this.syncStageProgress();
+      // 受信本机首启：等票据兑换有结论后再读状态，避免误弹设置弹窗。
+      this.awaitTrustedLocal().then(() => {
+        this.syncAuth().then(() => {
+          this.initVUMeters();
+          this.syncOnlineStatus();
+          this.syncStageProgress();
+        });
       });
 
       window.FloatingDismissal?.scan();

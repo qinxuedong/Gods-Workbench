@@ -28,6 +28,7 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
 from types import ModuleType
 from unittest.mock import MagicMock, patch
+from urllib.parse import urlsplit
 
 import pytest
 
@@ -123,7 +124,12 @@ def test_browser_host_adapted_when_binding_all_interfaces(
     assert exit_code == 0
     assert len(opened_urls) == 1
     browser_url, health_url = opened_urls[0]
-    assert browser_url == "http://127.0.0.1:3000/static/pages/index.html"
+    # QIN-630：受信本机模式会把一次性启动票据放进 URL **片段**；片段不进请求行。
+    assert browser_url.startswith("http://127.0.0.1:3000/static/pages/index.html")
+    fragment = urlsplit(browser_url).fragment
+    assert fragment == "" or fragment.startswith("gw_trusted=")
+    # 设备长期密钥永远不得出现在浏览器唤起地址里
+    assert "trusted_local.key" not in browser_url
     assert health_url == "http://127.0.0.1:3000/healthz"
 
 
@@ -429,9 +435,13 @@ def test_start_bat_full_pipeline_with_healthz_and_browser_dispatch(tmp_path: Pat
             time.sleep(0.2)
 
         expected_url = f"http://127.0.0.1:{free_port}/static/pages/index.html"
-        assert recorded_url == expected_url, (
+        assert recorded_url.startswith(expected_url), (
             f"浏览器分发地址不匹配：期望 {expected_url}，实际收到 {recorded_url}"
         )
+        # QIN-630：受信本机模式允许携带一次性启动票据片段，但不得携带设备密钥。
+        fragment = urlsplit(recorded_url).fragment
+        assert fragment == "" or fragment.startswith("gw_trusted=")
+        assert "trusted_local.key" not in recorded_url
     finally:
         _kill_process_tree(proc)
 

@@ -1,0 +1,38 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 765,
+  "authorization_basis": "GitHub Issue #765, 2026-11-20",
+  "files": [
+    "gw/api/routes_auth.py",
+    "gw/api/routes_local_accounts.py",
+    "gw/core/local_accounts.py",
+    "gw/core/local_accounts_cli.py",
+    "gw/core/trusted_local.py",
+    "run.py",
+    "tests/contracts/auth/test_qin_630_trusted_local_owner.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-630-trusted-local.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-765.json",
+    "tests/runtime/test_run_entrypoint.py",
+    "web/js/core/hardware-telemetry.js",
+    "web/js/modules/asset-auth/api.js",
+    "web/js/modules/trusted-local/bootstrap.js",
+    "web/pages/index.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/auth/test_qin_630_trusted_local_owner.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #765, 2026-11-20",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-630-trusted-local.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #765, 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-630 (#765)：受信本机首启。新增 gw/core/trusted_local.py 承担设备密钥与一次性票据；local_accounts 增加所有者绑定与票据表；新增 POST /api/asset-auth/local/trusted-bootstrap 与 /status 的 trusted_local 增量块；local_accounts_cli 增加 trusted-open / trusted-claim / trusted-unclaim；run.py 仅做回环唤起 URL 的票据片段接线；前端新增 trusted-local/bootstrap.js 并在 index.html、hardware-telemetry.js、asset-auth/api.js 做最小接线。tests/runtime/test_run_entrypoint.py 的两处旧断言按新行为更新（本票 AC 使浏览器唤起 URL 合法携带一次性票据片段，断言改为校验片段形态并断言设备密钥不得出现），未删除、未 skip。未改 gw/core/auth.py、gw/core/session.py、gw/api/app.py、gw/core/audit.py 与 clients/desktop/。"
+}
