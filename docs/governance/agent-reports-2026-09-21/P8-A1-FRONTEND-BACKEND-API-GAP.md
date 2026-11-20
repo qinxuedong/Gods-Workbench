@@ -34,3 +34,17 @@ QIN-553 新增预置 LUT 包的幂等登记能力。后端实现与前端 LUT �
 
 - 本地首跑守卫在两个集合断言中发现上述新增路径未登记；登记后 `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -v`，7 passed。
 - 完整 CI 将随 QIN-553 提交重新运行；本报告记录基线变更，不提前宣称全量门禁通过。
+
+## 2026-11-20：QIN-630 / GitHub #765
+
+QIN-630 为受信本机启动新增以下已实现接口；该路径已登记在 `tests/contracts/projects/test_phase8_frontend_backend_api_gap.py` 的 `KNOWN_IMPLEMENTED` 与 `KNOWN_BACKEND_PATHS`：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/asset-auth/local/trusted-bootstrap` | 使用有效一次性本机票据原子建立或复用本机所有者并兑换本机会话；成功返回 200 与 HttpOnly 会话 Cookie。 |
+
+既有 `GET /api/asset-auth/status` 在本地账户模式的响应增加只读 `trusted_local` 摘要，含 `enabled`、`established`、`needs_manual_claim` 布尔值与 `mode`；不泄露设备密钥、票据、路径或账户名。此为既有路径的响应增量，不新增路径基线。
+
+### 验证
+
+- 补充接口事实后运行 `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -q`，7 passed。冻结的 `KNOWN_*` 集合、断言与未实现路径集合未改。

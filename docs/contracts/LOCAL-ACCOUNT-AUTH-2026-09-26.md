@@ -16,9 +16,10 @@
 
 ## 接口
 
-- `GET /api/asset-auth/status`：本地账户模式返回 `setup_required`、`authenticated`、`principal`、`login_available`，响应禁止缓存。
+- `GET /api/asset-auth/status`：本地账户模式返回 `setup_required`、`authenticated`、`principal`、`login_available`，并追加只读 `trusted_local` 摘要块（`enabled`、`established`、`needs_manual_claim` 为布尔值；`mode` 为 `disabled` / `unavailable` / `uninitialized` / `needs_manual_claim` / `trusted_local`），响应禁止缓存。该摘要不含设备密钥、票据、路径或账户名。
 - `POST /api/asset-auth/local/setup`：仅数据库无账户时、仅回环客户端、同源浏览器请求创建首位管理员。事务锁确保只能创建一次；重复返回 409。请求仅 `username`、`password`。
 - `POST /api/asset-auth/local/login`：验证账号与密码，成功轮换会话、设置 HttpOnly/SameSite=Strict Cookie；错误统一 401，不泄漏账户是否存在；有持久化限速。
+- `POST /api/asset-auth/local/trusted-bootstrap`：请求仅含一次性 `ticket`（字符串 8–2048 字符），local_account 模式、受信本机启用且回环客户端与 Host 才受理；有效票据兑换本机会话，成功返回 200 并设置 HttpOnly/SameSite=Strict Cookie。票据消费、本机所有者建立与会话签发在同一事务内完成，失败整体回滚。
 - `POST /api/asset-auth/logout`：删除本地服务端会话并清除 Cookie。
 - 账号 3–64 位 ASCII 字母/数字/下划线/点/短横线；创建密码 8–128 字符，至少包含一个英文字母和一个数字，不强制特殊符号；登录不重新施加创建策略，以兼容已有账户；无默认账号或默认密码。
 - 密码使用独立随机盐与 scrypt 派生；会话随机生成，数据库仅存 SHA-256 摘要，8 小时到期。每次请求重新读取数据库权限。
