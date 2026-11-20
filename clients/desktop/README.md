@@ -18,7 +18,7 @@ cargo tauri build
 
 The initial screen checks the local host and each active private IPv4 subnet, capped to a `/24`. It sends concurrent unauthenticated `GET /healthz` probes to port `2077`; it does not submit API keys or other credentials. Manual connections must use a private IP, `localhost`, a single-label LAN hostname, or a `.local` hostname. Only the normalized server URL is saved in the operating-system application settings directory.
 
-Closing the window hides it in the system tray. The tray menu can reopen the Workbench, return to NAS discovery, or quit the client.
+Closing the window hides it in the system tray. The tray menu can reopen the Workbench, return to NAS discovery, or quit the client. For scripted checks, `gods-workbench-desktop.exe --quit` uses the same cleanup path as the tray quit action, and `gods-workbench-desktop.exe --diagnostics <file>` writes a version/handshake/trusted/backend snapshot without starting a second client. Both commands authenticate over a loopback control channel protected by the per-instance lock token and never accept remote callers.
 
 ## Local backend discovery and automatic launch (QIN-593)
 
@@ -60,6 +60,14 @@ To build the payload and installer from the repository root:
 python clients/desktop/packaging/build_release.py --version <X.Y.Z> --build-id <build-id> --output build/desktop-release --download-wheels
 cargo tauri build --config build/desktop-release/tauri.release.conf.json --bundles nsis --ci -- --locked
 ```
+
+### Automated install acceptance
+
+[`packaging/acceptance/run_install_acceptance.ps1`](packaging/acceptance/run_install_acceptance.ps1) is the repeatable black-box entry for the installed product. It verifies the installer SHA-256/version/commit, runs a fresh install, opens the real desktop window, checks cold/hot start and 2077 single-instance behavior, injects stale and live-unresponsive locks, holds port 2077 with a foreign process, rotates two upgrade generations, forces a failed third upgrade to prove rollback to the immediately preceding generation, and uninstalls while checking that user data and upgrade backups remain. Evidence is written to `acceptance.json` and `acceptance.md` with installer exit codes, journal states, generation markers, PIDs, listeners and diagnostics; local paths are replaced by placeholders.
+
+On a shared machine that already owns `%LOCALAPPDATA%\GodsWorkbench`, pass `-LocalAppDataOverride` with a fresh `gw-qin626-accept-*` directory so the desktop and backend use isolated data while the real data root is never touched. The installer's postinstall self-check is read-only against the real data root. The real `%LOCALAPPDATA%\ai.godsworkbench.desktop` journal/backups are still exercised; `-Reset` only removes them when they carry the acceptance marker written by this script, and a default run removes the acceptance-owned state after writing evidence. See [`packaging/acceptance/README.md`](packaging/acceptance/README.md) for the full command and scenario list.
+
+The acceptance entry records trusted-ticket availability but does not require it: QIN-626 is not a claim that desktop passwordless entry is complete until QIN-630 is merged and jointly accepted.
 
 ## Directory bridge commands (QIN-432)
 

@@ -80,6 +80,8 @@ struct DiagnosticsView {
     program_data_non_overlapping: Option<bool>,
     notice: String,
     last_error: String,
+    backend_phase: String,
+    backend_pid: Option<u32>,
 }
 
 /// 托管的本地后端子进程生命周期阶段。
@@ -89,6 +91,17 @@ enum BackendPhase {
     Launching,
     Running,
     Failed,
+}
+
+impl BackendPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Launching => "launching",
+            Self::Running => "running",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 struct BackendStateInner {
@@ -126,17 +139,21 @@ fn instance_lock_path() -> PathBuf {
     std::env::temp_dir().join("ai.godsworkbench.desktop.instance.json")
 }
 
-/// 唤醒状态共享结构：允许在 Tauri 窗口尚未完成初始化前安全捕获唤醒通知。
+/// 唤醒状态共享结构：允许在 Tauri 窗口尚未完成初始化前安全捕获唤醒、退出与诊断请求。
 struct WakeupState {
     app_handle: Mutex<Option<AppHandle>>,
     pending_wakeups: std::sync::atomic::AtomicUsize,
+    pending_quit: std::sync::atomic::AtomicBool,
+    lock_path: PathBuf,
 }
 
 impl WakeupState {
-    fn new() -> Self {
+    fn new(lock_path: PathBuf) -> Self {
         Self {
             app_handle: Mutex::new(None),
             pending_wakeups: std::sync::atomic::AtomicUsize::new(0),
+            pending_quit: std::sync::atomic::AtomicBool::new(false),
+            lock_path,
         }
     }
 
@@ -155,7 +172,43 @@ impl WakeupState {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
+    fn trigger_quit(&self) {
+        let app = self.app_handle.lock().ok().and_then(|guard| guard.clone());
+        if let Some(app) = app {
+            release_own_instance_lock(&self.lock_path);
+            let backend = app.state::<ManagedBackendState>();
+            stop_managed_backend(&backend);
+            app.exit(0);
+            return;
+        }
+        self.pending_quit
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn status_json(&self) -> Option<String> {
+        let app = self
+            .app_handle
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())?;
+        let diagnostics = app.state::<ClientDiagnostics>();
+        let backend = app.state::<ManagedBackendState>();
+        let view = diagnostics_view(&app, &diagnostics, &backend).ok()?;
+        serde_json::to_string(&view).ok()
+    }
+
     fn attach_app(&self, app: AppHandle) {
+        let pending_quit = self
+            .pending_quit
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
+        if pending_quit {
+            release_own_instance_lock(&self.lock_path);
+            let backend = app.state::<ManagedBackendState>();
+            stop_managed_backend(&backend);
+            app.exit(0);
+            return;
+        }
+
         let pending = self
             .pending_wakeups
             .swap(0, std::sync::atomic::Ordering::SeqCst);
@@ -488,25 +541,43 @@ fn report_fatal_error(message: &str) {
     eprintln!("神工坊桌面端启动错误: {message}");
 }
 
-fn try_wake_existing_instance(port: u16, token: &str) -> bool {
+fn try_instance_command(port: u16, token: &str, command: &str) -> Option<String> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
+    let mut stream =
+        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(1500)));
     use std::io::{BufRead, BufReader, Write};
-    if writeln!(stream, "WAKEUP {}", token).is_err() {
-        return false;
-    }
+    writeln!(stream, "{command} {token}").ok()?;
     let _ = stream.flush();
     let mut reader = BufReader::new(&mut stream);
     let mut reply = String::new();
-    if reader.read_line(&mut reply).is_ok() && reply.trim() == "WAKEN" {
-        return true;
+    reader.read_line(&mut reply).ok()?;
+    Some(reply.trim().to_string())
+}
+
+fn try_wake_existing_instance(port: u16, token: &str) -> bool {
+    matches!(
+        try_instance_command(port, token, "WAKEUP").as_deref(),
+        Some("WAKEN")
+    )
+}
+
+fn try_request_existing_quit(port: u16, token: &str) -> Result<(), String> {
+    match try_instance_command(port, token, "QUIT").as_deref() {
+        Some("BYE") => Ok(()),
+        Some(other) => Err(format!("桌面端拒绝了退出请求（应答: {other}）")),
+        None => Err("桌面端未响应退出请求".into()),
     }
-    false
+}
+
+fn try_request_existing_status(port: u16, token: &str) -> Result<String, String> {
+    match try_instance_command(port, token, "STATUS") {
+        Some(reply) if reply.starts_with("STATUS ") => Ok(reply["STATUS ".len()..].to_string()),
+        Some(reply) if reply == "STATUS-UNAVAILABLE" => Err("桌面端诊断状态尚未就绪".into()),
+        Some(other) => Err(format!("桌面端返回了无法识别的诊断应答: {other}")),
+        None => Err("桌面端未响应诊断请求".into()),
+    }
 }
 
 fn initialize_primary_listener(
@@ -544,7 +615,7 @@ fn initialize_primary_listener(
         .try_clone()
         .map_err(|e| format!("Cannot clone listener socket for wakeup thread: {e}"))?;
 
-    let wakeup_state = Arc::new(WakeupState::new());
+    let wakeup_state = Arc::new(WakeupState::new(lock_path.to_path_buf()));
     let wakeup_clone = wakeup_state.clone();
     let expected_token = token.clone();
 
@@ -558,11 +629,29 @@ fn initialize_primary_listener(
                 let mut line = String::new();
                 if reader.read_line(&mut line).is_ok() {
                     let parts: Vec<&str> = line.trim().split_whitespace().collect();
-                    if parts.len() == 2 && parts[0] == "WAKEUP" && parts[1] == expected_token {
-                        // 优先写回 WAKEN 并 flush，让发起方立即收到应答完成唤醒退出，不依赖 UI 或主线程状态
-                        let _ = writeln!(stream, "WAKEN");
-                        let _ = stream.flush();
-                        wakeup_clone.trigger_wakeup();
+                    if parts.len() == 2 && parts[1] == expected_token {
+                        match parts[0] {
+                            "WAKEUP" => {
+                                // 优先写回应答并 flush，让发起方立即完成，不依赖 UI 或主线程状态
+                                let _ = writeln!(stream, "WAKEN");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_wakeup();
+                            }
+                            "QUIT" => {
+                                let _ = writeln!(stream, "BYE");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_quit();
+                            }
+                            "STATUS" => {
+                                let reply = match wakeup_clone.status_json() {
+                                    Some(json) => format!("STATUS {json}"),
+                                    None => "STATUS-UNAVAILABLE".to_string(),
+                                };
+                                let _ = writeln!(stream, "{reply}");
+                                let _ = stream.flush();
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -2165,13 +2254,11 @@ async fn finalize_local_connection(
     })
 }
 
-#[tauri::command]
-fn get_diagnostics(
-    app: AppHandle,
-    window: WebviewWindow,
-    diagnostics: State<'_, ClientDiagnostics>,
+fn diagnostics_view(
+    app: &AppHandle,
+    diagnostics: &ClientDiagnostics,
+    backend: &ManagedBackendState,
 ) -> Result<DiagnosticsView, String> {
-    ensure_local_ui(&window)?;
     let needs_manifest = {
         let guard = diagnostics
             .0
@@ -2181,12 +2268,22 @@ fn get_diagnostics(
     };
     if needs_manifest {
         let manifest_result = load_installed_manifest();
-        record_manifest_result(&diagnostics, &manifest_result);
+        record_manifest_result(diagnostics, &manifest_result);
     }
     let guard = diagnostics
         .0
         .lock()
         .map_err(|_| "客户端诊断状态不可用".to_string())?;
+    let (backend_phase, backend_pid) = backend
+        .0
+        .lock()
+        .map(|state| {
+            (
+                state.phase.as_str().to_string(),
+                state.child.as_ref().map(|child| child.id()),
+            )
+        })
+        .unwrap_or_else(|_| ("unknown".into(), None));
     Ok(DiagnosticsView {
         desktop_version: app.package_info().version.to_string(),
         build_mode: if cfg!(debug_assertions) {
@@ -2207,7 +2304,159 @@ fn get_diagnostics(
         program_data_non_overlapping: guard.program_data_non_overlapping,
         notice: guard.notice.clone(),
         last_error: guard.last_error.clone(),
+        backend_phase,
+        backend_pid,
     })
+}
+
+#[tauri::command]
+fn get_diagnostics(
+    app: AppHandle,
+    window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
+    backend: State<'_, ManagedBackendState>,
+) -> Result<DiagnosticsView, String> {
+    ensure_local_ui(&window)?;
+    diagnostics_view(&app, &diagnostics, &backend)
+}
+
+enum CliCommand {
+    Run,
+    Quit,
+    Diagnostics(PathBuf),
+    Invalid(String),
+}
+
+fn parse_cli_command<I>(args: I) -> CliCommand
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args = args.into_iter();
+    let Some(first) = args.next() else {
+        return CliCommand::Run;
+    };
+    match first.as_str() {
+        "--quit" => {
+            if args.next().is_some() {
+                CliCommand::Invalid("--quit 不接受额外参数".into())
+            } else {
+                CliCommand::Quit
+            }
+        }
+        "--diagnostics" => match args.next() {
+            Some(path) if !path.trim().is_empty() => {
+                if args.next().is_some() {
+                    CliCommand::Invalid("--diagnostics 只接受一个输出路径".into())
+                } else {
+                    CliCommand::Diagnostics(PathBuf::from(path))
+                }
+            }
+            _ => CliCommand::Invalid("--diagnostics 需要输出路径".into()),
+        },
+        other => CliCommand::Invalid(format!("未知的命令行参数: {other}")),
+    }
+}
+
+fn write_control_json(path: &Path, value: serde_json::Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(&value)
+        .map_err(|error| format!("无法序列化诊断结果: {error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("无法写入诊断结果: {error}"))
+}
+
+fn run_quit_command() -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return 0,
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("桌面端实例锁无法解析: {error}");
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        return 0;
+    }
+    if let Err(error) = try_request_existing_quit(lock.port, &lock.token) {
+        eprintln!("{error}");
+        return 1;
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        if !is_process_alive(lock.pid) && !lock_path.exists() {
+            return 0;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    eprintln!("桌面端在退出请求后仍未完成清理");
+    1
+}
+
+fn run_diagnostics_command(path: &Path) -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let payload = serde_json::json!({ "running": false });
+            return match write_control_json(path, payload) {
+                Ok(()) => 0,
+                Err(error) => {
+                    eprintln!("{error}");
+                    1
+                }
+            };
+        }
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            let payload = serde_json::json!({
+                "running": false,
+                "invalid_lock": true,
+                "error": error.to_string(),
+            });
+            let _ = write_control_json(path, payload);
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        let payload = serde_json::json!({ "running": false, "stale_lock": true });
+        return match write_control_json(path, payload) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("{error}");
+                1
+            }
+        };
+    }
+    let status = match try_request_existing_status(lock.port, &lock.token) {
+        Ok(status) => status,
+        Err(error) => {
+            let payload = serde_json::json!({ "running": true, "error": error });
+            let _ = write_control_json(path, payload);
+            return 1;
+        }
+    };
+    let diagnostics: serde_json::Value =
+        serde_json::from_str(&status).unwrap_or(serde_json::Value::Null);
+    let payload = serde_json::json!({ "running": true, "diagnostics": diagnostics });
+    match write_control_json(path, payload) {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("{error}");
+            1
+        }
+    }
 }
 
 fn make_tray_icon() -> Image<'static> {
@@ -2247,6 +2496,16 @@ fn make_tray_icon() -> Image<'static> {
 }
 
 fn main() {
+    match parse_cli_command(std::env::args().skip(1)) {
+        CliCommand::Quit => std::process::exit(run_quit_command()),
+        CliCommand::Diagnostics(path) => std::process::exit(run_diagnostics_command(&path)),
+        CliCommand::Invalid(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+        CliCommand::Run => {}
+    }
+
     let lock_path = instance_lock_path();
     let (_listener, _token, wakeup_state, active_lock_path) =
         match arbitrate_single_instance(&lock_path) {
@@ -2696,6 +2955,80 @@ mod tests {
         assert!(woken, "Instance should be successfully woken");
         let server_verified = handle.join().expect("join server thread");
         assert!(server_verified, "Server thread verified wakeup command");
+    }
+
+    #[test]
+    fn test_cli_control_commands_are_parsed_strictly() {
+        assert!(matches!(
+            parse_cli_command(std::iter::empty::<String>()),
+            CliCommand::Run
+        ));
+        assert!(matches!(
+            parse_cli_command(["--quit".to_string()]),
+            CliCommand::Quit
+        ));
+        match parse_cli_command(["--diagnostics".to_string(), "status.json".to_string()]) {
+            CliCommand::Diagnostics(path) => assert_eq!(path, PathBuf::from("status.json")),
+            _ => panic!("diagnostics command should be recognized"),
+        }
+        assert!(matches!(
+            parse_cli_command(["--diagnostics".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--quit".to_string(), "extra".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--unknown".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+    }
+
+    #[test]
+    fn test_instance_control_quit_and_status_protocol() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let token = "test_control_token_789".to_string();
+        let expected_token = token.clone();
+
+        let handle = std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader, Write};
+            let mut commands = Vec::new();
+            for (index, stream) in listener.incoming().enumerate() {
+                let Ok(mut stream) = stream else { break };
+                let mut reader = BufReader::new(&mut stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() {
+                    break;
+                }
+                commands.push(line.trim().to_string());
+                let parts: Vec<&str> = line.trim().split_whitespace().collect();
+                if parts.len() != 2 || parts[1] != expected_token {
+                    break;
+                }
+                let reply = match parts[0] {
+                    "QUIT" => "BYE",
+                    "STATUS" => "STATUS {\"backend_phase\":\"running\"}",
+                    _ => break,
+                };
+                let _ = writeln!(stream, "{reply}");
+                let _ = stream.flush();
+                if index == 1 {
+                    break;
+                }
+            }
+            commands
+        });
+
+        try_request_existing_quit(port, &token).expect("quit request");
+        let status = try_request_existing_status(port, &token).expect("status request");
+        assert_eq!(status, "{\"backend_phase\":\"running\"}");
+        let commands = handle.join().expect("join control server");
+        assert_eq!(
+            commands,
+            vec![format!("QUIT {token}"), format!("STATUS {token}")]
+        );
     }
 
     #[test]

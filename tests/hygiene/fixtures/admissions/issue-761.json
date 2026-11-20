@@ -6,6 +6,8 @@
     ".github/workflows/release-desktop.yml",
     "THIRD_PARTY_NOTICES.md",
     "clients/desktop/README.md",
+    "clients/desktop/packaging/acceptance/README.md",
+    "clients/desktop/packaging/acceptance/run_install_acceptance.ps1",
     "clients/desktop/packaging/build_release.py",
     "clients/desktop/packaging/compat_contract.py",
     "clients/desktop/packaging/nsis/hooks.nsh",
