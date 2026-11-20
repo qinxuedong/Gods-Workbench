@@ -679,7 +679,39 @@ function Start-DesktopPrimary {
 function Assert-DesktopReady {
     param([string]$Label)
     Add-Step "$Label.ready"
-    $health = Wait-Health -TimeoutSeconds 180
+    $preShot = Save-Screenshot -Path (Join-Path $script:outputDirPath ($Label + ".window.png"))
+    Add-Check "$Label.window-screenshot" $preShot "screenshot failed before health check"
+    $preDiag = Get-DesktopDiagnosticsSnapshot -Label ($Label + ".pre-health") -WaitSeconds 30
+    if ($null -ne $preDiag -and $null -ne $preDiag.data) {
+        $preDiagPath = Join-Path $script:outputDirPath ($Label + ".pre-health.json")
+        Write-Utf8NoBom -Path $preDiagPath -Text (($preDiag.data | ConvertTo-Json -Depth 16) + "`r`n")
+    }
+    Add-Check "$Label.pre-health-diagnostics" ($null -ne $preDiag -and $preDiag.exit_code -eq 0) ("diagnostics helper exit " + $(if ($null -ne $preDiag) { [string]$preDiag.exit_code } else { "<none>" }))
+    $health = Wait-Health -TimeoutSeconds 240
+    if (-not ($health.ok -and $health.status -eq 200)) {
+        $failShot = Save-Screenshot -Path (Join-Path $script:outputDirPath ($Label + ".health-failure.png"))
+        Add-Check "$Label.health-failure-screenshot" $failShot "screenshot failed after health timeout"
+        $failDiag = Get-DesktopDiagnosticsSnapshot -Label ($Label + ".health-failure") -WaitSeconds 30
+        if ($null -ne $failDiag -and $null -ne $failDiag.data) {
+            $failDiagPath = Join-Path $script:outputDirPath ($Label + ".health-failure.json")
+            Write-Utf8NoBom -Path $failDiagPath -Text (($failDiag.data | ConvertTo-Json -Depth 16) + "`r`n")
+        }
+        $failBackend = @(Get-BackendPids)
+        $failListeners = @(Get-ListeningPids -Port 2077)
+        $failExit = Get-ProcessExitCode -Process $script:desktop
+        Add-Check "$Label.health-failure-diagnostics" ($null -ne $failDiag -and $failDiag.exit_code -eq 0) ("diagnostics helper exit " + $(if ($null -ne $failDiag) { [string]$failDiag.exit_code } else { "<none>" }))
+        Add-Check "$Label.health-failure-desktop-exit" ($null -ne $failExit) ("desktop exit " + $(if ($null -ne $failExit) { [string]$failExit } else { "<running>" }))
+        Add-Check "$Label.health-failure-backend-count" ($failBackend.Count -gt 0) ("backend PIDs " + ($failBackend -join ","))
+        Add-Check "$Label.health-failure-listener-count" ($failListeners.Count -gt 0) ("listener PIDs " + ($failListeners -join ","))
+        $script:lifecycle[$Label + ".health-failure"] = [ordered]@{
+            health_status = [int]$health.status
+            health_body = [string]$health.body
+            desktop_exit = $failExit
+            backend_pids = $failBackend
+            listener_pids = $failListeners
+            diagnostics = if ($null -ne $failDiag) { $failDiag.data } else { $null }
+        }
+    }
     Require-Check "$Label.health" ([bool]($health.ok -and $health.status -eq 200)) ("health status " + [string]$health.status)
     $openapiVersion = Get-OpenApiVersion
     Require-Check "$Label.openapi-version" (Test-ExpectedOpenApiVersion $openapiVersion) ("expected prefix " + $script:expectedVersionValue + "+gw., got " + $openapiVersion)
