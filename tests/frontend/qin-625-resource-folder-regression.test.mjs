@@ -211,12 +211,13 @@ function confirmHarness({ reindexResult, selectedId = 'source-1', sourcePath = '
 function failedScanWaitHarness(scanJob, status) {
   const calls = { polls: [], indexStates: [], renders: 0 };
   const wait = new Function(
-    'apiJsonResponse', 'assetManagerApi', 'markIndexState', 'refreshRegistryAssets', 'refreshRegistryFacetData',
+    'apiJsonResponse', 'assetManagerApi', 'setWorkspaceTaskContext', 'markIndexState', 'refreshRegistryAssets', 'refreshRegistryFacetData',
     'activeTab', 'assetBoardById', 'render', 'setStatus', 'loadAssetAllowedRootPaths',
     `${waitSource}\nreturn waitForAssetIndexJob;`,
   )(
     async response => response,
     { getWorkspaceJob: jobId => { calls.polls.push(jobId); return Promise.resolve({ job: scanJob }); } },
+    () => {},
     value => calls.indexStates.push(value),
     async () => null,
     async () => null,
