@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import shutil
 from pathlib import Path
 
@@ -346,3 +347,51 @@ def test_index_job_binds_context_and_rechecks_mapping_before_queue(workspace_run
             workspace_context.reset_client_instance_id(token)
             index_jobs.shutdown()
             index_jobs_module._default = None
+
+
+def test_workspace_json_state_fails_closed_on_corrupt_or_unreadable_state(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """工作区状态只能把「文件不存在」视为空态，读失败不得覆盖原文件。"""
+    state = workspace_context.json_state(tmp_path, "qin628_recovery", lambda: {"items": []})
+    path = tmp_path / "qin628_recovery.json"
+
+    # 不存在 → 合法空态；首次写入正常创建文件。
+    assert state.read() == {"items": []}
+    state.mutate(lambda data: data["items"].append("created"))
+    assert json.loads(path.read_text(encoding="utf-8")) == {"items": ["created"]}
+
+    # 损坏 JSON → mutate / 直接 write 都必须拒绝，且原文件字节不变。
+    corrupt = '{"items": ['
+    path.write_text(corrupt, encoding="utf-8")
+    corrupt_bytes = path.read_bytes()
+    with pytest.raises(CleanroomException) as excinfo:
+        state.mutate(lambda data: data["items"].append("should-not-write"))
+    assert excinfo.value.code == "WORKSPACE_STATE_READ_FAILED"
+    with pytest.raises(CleanroomException) as excinfo:
+        state.write({"items": ["overwrite"]})
+    assert excinfo.value.code == "WORKSPACE_STATE_READ_FAILED"
+    assert path.read_bytes() == corrupt_bytes
+
+    # 读取权限错误 → 同样 fail closed；恢复权限后冷读与写入继续可用。
+    kept = {"items": ["kept"]}
+    path.write_text(json.dumps(kept), encoding="utf-8")
+    kept_bytes = path.read_bytes()
+    real_open = Path.open
+
+    def denied_open(self: Path, *args, **kwargs):
+        if self == path:
+            raise PermissionError("simulated read permission denied")
+        return real_open(self, *args, **kwargs)
+
+    with monkeypatch.context() as patcher:
+        patcher.setattr(Path, "open", denied_open)
+        with pytest.raises(CleanroomException) as excinfo:
+            state.mutate(lambda data: data["items"].append("should-not-write"))
+        assert excinfo.value.code == "WORKSPACE_STATE_READ_FAILED"
+        with open(path, "rb") as handle:
+            assert handle.read() == kept_bytes
+
+    assert state.read() == kept
+    state.mutate(lambda data: data["items"].append("after-recovery"))
+    assert state.read() == {"items": ["kept", "after-recovery"]}

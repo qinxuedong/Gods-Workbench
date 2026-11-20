@@ -146,17 +146,35 @@ class WorkspaceJsonState(storage.JsonState):
         return self._root / _safe_filename(self.namespace)
 
     def read(self) -> Any:
+        """读取状态；仅文件不存在返回空态，读取失败一律 fail closed。
+
+        损坏 JSON、编码错误、权限错误等都不能被当成空状态：否则后续
+        ``mutate`` 会用默认值覆盖原文件，造成既有数据丢失。调用方需要
+        先修复或恢复文件，再继续写入。
+        """
         path = self._path()
-        if not path.exists():
-            return self._default_factory()
         try:
             with path.open("r", encoding="utf-8") as handle:
                 value = json.load(handle)
-        except (OSError, UnicodeError, json.JSONDecodeError):
+        except FileNotFoundError:
             return self._default_factory()
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise CleanroomException(
+                409,
+                "WORKSPACE_STATE_READ_FAILED",
+                "工作区状态读取失败，已拒绝写入并保留原文件",
+            ) from exc
+        if value is None:
+            raise CleanroomException(
+                409,
+                "WORKSPACE_STATE_READ_FAILED",
+                "工作区状态内容为空或不可解析，已拒绝写入并保留原文件",
+            )
         return value
 
     def write(self, payload: Any) -> None:
+        # 直接写入也必须拒绝覆盖损坏或不可读的既有状态。
+        self.read()
         path = self._path()
         path.parent.mkdir(parents=True, exist_ok=True)
         temporary = path.with_name(path.name + ".tmp")
