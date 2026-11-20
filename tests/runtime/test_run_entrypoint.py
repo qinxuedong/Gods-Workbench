@@ -268,6 +268,32 @@ def test_start_bat_local_auth_refusal() -> None:
     assert "GW_AUTH_MODE=local 仅允许绑定" in res.stderr
 
 
+def _kill_process_tree(proc: subprocess.Popen) -> tuple[str, str]:
+    """在 Windows 或类 Unix 系统下彻底杀掉进程及其子进程树，防止管道挂起并返回 stdout/stderr。"""
+    stdout = ""
+    stderr = ""
+    if sys.platform == "win32":
+        try:
+            subprocess.run(
+                ["taskkill", "/F", "/T", "/PID", str(proc.pid)],
+                capture_output=True,
+                check=False,
+            )
+        except Exception:
+            pass
+    try:
+        proc.kill()
+    except Exception:
+        pass
+    try:
+        out, err = proc.communicate(timeout=2.0)
+        stdout = out or ""
+        stderr = err or ""
+    except Exception:
+        pass
+    return stdout, stderr
+
+
 def test_real_subprocess_cold_start_and_healthz(tmp_path: Path) -> None:
     """AC2/AC3: 真实子进程冷启动测试：绑定 0.0.0.0，向 127.0.0.1:{port}/healthz 请求得到 200，并验证局域网提示。"""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
@@ -282,6 +308,9 @@ def test_real_subprocess_cold_start_and_healthz(tmp_path: Path) -> None:
         "GW_LOCAL_AUTH_DB": str(tmp_path / "auth.sqlite3"),
         "GW_VIDEO_DATA_DIR": str(tmp_path / "video"),
         "GW_DISABLE_AGENT_INTEGRATION": "1",
+        "PYTHONUTF8": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
     }
 
     proc = subprocess.Popen(
@@ -300,8 +329,10 @@ def test_real_subprocess_cold_start_and_healthz(tmp_path: Path) -> None:
         stderr=subprocess.PIPE,
         text=True,
         encoding="utf-8",
+        errors="replace",
     )
 
+    stdout = ""
     try:
         health_url = f"http://127.0.0.1:{free_port}/healthz"
         deadline = time.monotonic() + 15.0
@@ -319,23 +350,107 @@ def test_real_subprocess_cold_start_and_healthz(tmp_path: Path) -> None:
 
         assert healthy, f"服务未在时限内健康就绪；进程退出码: {proc.poll()}"
     finally:
-        proc.terminate()
-        stdout, _stderr = proc.communicate(timeout=5.0)
+        stdout, _ = _kill_process_tree(proc)
 
     assert f"服务地址: http://0.0.0.0:{free_port}" in stdout
-    # 只要成功绑定 0.0.0.0，局域网探测逻辑必定执行；若能探测到则输出「局域网访问地址:」
-    # 即使在纯隔离/离线环境中降级，也保证服务成功运行并通过健康检查
 
 
-def test_mutation_proof_bat_without_wildcard_arguments_fails() -> None:
-    """反证 A: 若批处理脚本未包含 %*，传参无法到达入口。"""
-    bat_text = (ROOT_DIR / "start.bat").read_text(encoding="utf-8")
-    mutated_bat = bat_text.replace("%*", "")
-    assert "%*" not in mutated_bat
-    assert "python run.py --prod --open-browser %*" in bat_text
+@pytest.mark.skipif(sys.platform != "win32", reason="仅在 Windows 下验证 start.bat 真实命令调用")
+def test_start_bat_full_pipeline_with_healthz_and_browser_dispatch(tmp_path: Path) -> None:
+    """AC3/AC4 闭环: 正常账户模式下实际通过 start.bat 启动，验证产品健康检查与回环浏览器分发在同一流程闭环。"""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.bind(("127.0.0.1", 0))
+        free_port = s.getsockname()[1]
+
+    appdata_dir = tmp_path / "appdata"
+    appdata_dir.mkdir(parents=True, exist_ok=True)
+    record_file = tmp_path / "browser_open_url.txt"
+    helper_script = tmp_path / "record_url.py"
+    helper_script.write_text(
+        "import sys, pathlib\npathlib.Path(sys.argv[1]).write_text(sys.argv[2], encoding='utf-8')\n",
+        encoding="utf-8",
+    )
+
+    env = {k: v for k, v in os.environ.items() if not k.startswith("GW_")}
+    env.update({
+        "LOCALAPPDATA": str(appdata_dir),
+        "GW_AUTH_MODE": "local_account",
+        "GW_DISABLE_AGENT_INTEGRATION": "1",
+        "PYTHONUTF8": "1",
+        "PYTHONUNBUFFERED": "1",
+        "PYTHONIOENCODING": "utf-8",
+        "BROWSER": f'"{sys.executable}" "{helper_script}" "{record_file}" %s',
+    })
+
+    proc = subprocess.Popen(
+        ["cmd.exe", "/c", "start.bat", "--host", "0.0.0.0", "--port", str(free_port)],
+        cwd=str(ROOT_DIR),
+        env=env,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+    try:
+        health_url = f"http://127.0.0.1:{free_port}/healthz"
+        deadline = time.monotonic() + 15.0
+        healthy = False
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                break
+            try:
+                with urllib.request.urlopen(health_url, timeout=1.0) as resp:
+                    if resp.status == 200:
+                        healthy = True
+                        break
+            except Exception:
+                time.sleep(0.3)
+
+        assert healthy, (
+            f"start.bat 启动后产品服务未在时限内健康就绪；进程退出码: {proc.poll()};\n"
+            f"STDOUT:\n{proc.stdout.read() if proc.stdout else ''}\n"
+            f"STDERR:\n{proc.stderr.read() if proc.stderr else ''}"
+        )
+
+        recorded_url = None
+        browser_deadline = time.monotonic() + 5.0
+        while time.monotonic() < browser_deadline:
+            if record_file.exists():
+                recorded_url = record_file.read_text(encoding="utf-8").strip()
+                if recorded_url:
+                    break
+            time.sleep(0.2)
+
+        expected_url = f"http://127.0.0.1:{free_port}/static/pages/index.html"
+        assert recorded_url == expected_url, (
+            f"浏览器分发地址不匹配：期望 {expected_url}，实际收到 {recorded_url}"
+        )
+    finally:
+        _kill_process_tree(proc)
 
 
-def test_mutation_proof_omitting_browser_host_adaptation_fails() -> None:
+@pytest.mark.skipif(sys.platform != "win32", reason="仅在 Windows 下验证批处理行为反证")
+def test_negative_proof_bat_without_args_fails_forwarding(tmp_path: Path) -> None:
+    """反证 A: 实际断开批处理接线（移除 %*），验证参数透传失败（无法解析 --help）。"""
+    mutated_bat = tmp_path / "mutated_start.bat"
+    mutated_bat.write_text(
+        '@echo off\nsetlocal\ncd /d "%~dp0"\npython run.py --prod --open-browser\nexit /b %errorlevel%\n',
+        encoding="utf-8",
+    )
+    res = subprocess.run(
+        ["cmd.exe", "/c", str(mutated_bat), "--help"],
+        cwd=str(ROOT_DIR),
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    )
+    assert "--host HOST" not in res.stdout, "断线反证失败：未带 %* 的批处理本应无法转发参数"
+
+
+def test_negative_proof_omitting_browser_host_adaptation_fails() -> None:
     """反证 B: 若未将 host == '0.0.0.0' 转换为 '127.0.0.1'，直接使用 0.0.0.0 无法通过 AC3 的回环要求。"""
     host = "0.0.0.0"
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host

@@ -26,6 +26,7 @@ import json
 import os
 import shutil
 import stat
+import sys
 import threading
 import time
 import uuid
@@ -36,6 +37,13 @@ from pathlib import Path
 from urllib.request import urlopen
 
 import uvicorn
+
+if sys.platform == "win32" and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 from gw.core.runtime_paths import (
     MODE_DEV,
@@ -401,18 +409,18 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
     browser_url = f"http://{browser_host}:{port}/static/pages/index.html"
-    print("=" * 60)
-    print("  Gods' Workbench Cleanroom")
-    print(f"  运行态: {mode}")
-    print(f"  数据根: {paths.data_root}")
-    print(f"  账户库: {paths.auth_db}")
-    print(f"  视频根: {paths.video_root}")
-    print(f"  服务地址: http://{host}:{port}")
+    print("=" * 60, flush=True)
+    print("  Gods' Workbench Cleanroom", flush=True)
+    print(f"  运行态: {mode}", flush=True)
+    print(f"  数据根: {paths.data_root}", flush=True)
+    print(f"  账户库: {paths.auth_db}", flush=True)
+    print(f"  视频根: {paths.video_root}", flush=True)
+    print(f"  服务地址: http://{host}:{port}", flush=True)
     if host == "0.0.0.0":
         lan_ip = _get_lan_ip()
         if lan_ip:
-            print(f"  局域网访问地址: http://{lan_ip}:{port}")
-    print("=" * 60)
+            print(f"  局域网访问地址: http://{lan_ip}:{port}", flush=True)
+    print("=" * 60, flush=True)
     if args.open_browser:
         _open_browser_when_ready(browser_url, f"http://{browser_host}:{port}/healthz")
     uvicorn.run(app, host=host, port=port, workers=1, reload=False)
