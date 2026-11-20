@@ -16,6 +16,7 @@
 
 import argparse
 import getpass
+import ipaddress
 import os
 import time
 
@@ -32,6 +33,29 @@ def _apply_runtime_mode(mode: str | None) -> None:
         os.environ["GW_RUNTIME_MODE"] = mode
 
 
+def _trusted_open_url_host(value: str | None) -> str | None:
+    """只接受回环 IP 字面量；主机名和 URL authority 一律拒绝。"""
+    raw = "127.0.0.1" if value is None else value
+    if not raw or raw != raw.strip():
+        return None
+    bracketed = raw.startswith("[") or raw.endswith("]")
+    if bracketed:
+        if not (raw.startswith("[") and raw.endswith("]")):
+            return None
+        raw = raw[1:-1]
+    elif "[" in raw or "]" in raw:
+        return None
+    try:
+        address = ipaddress.ip_address(raw)
+    except ValueError:
+        return None
+    if not address.is_loopback or getattr(address, "scope_id", None):
+        return None
+    if isinstance(address, ipaddress.IPv6Address):
+        return f"[{address.compressed}]"
+    return address.compressed
+
+
 def _trusted_open(args) -> int:
     """打印一次性本机进入链接（受信本机模式）。
 
@@ -40,6 +64,20 @@ def _trusted_open(args) -> int:
     """
     from gw.core import trusted_local
 
+    host = _trusted_open_url_host(args.host)
+    if host is None:
+        print("trusted-open 仅接受回环 IPv4/IPv6 地址；主机名及远程地址已拒绝。")
+        return 1
+    try:
+        port = args.port
+        if port is None:
+            port = int(os.environ.get("GW_PORT") or "2077")
+    except ValueError:
+        print("本机服务端口无效，未读取或签发启动票据。")
+        return 1
+    if not 1 <= port <= 65535:
+        print("本机服务端口无效，未读取或签发启动票据。")
+        return 1
     if not trusted_local.trusted_local_enabled():
         print("受信本机模式未启用（GW_TRUSTED_LOCAL=0 或当前不是本地账户模式）。")
         return 1
@@ -50,8 +88,6 @@ def _trusted_open(args) -> int:
     except CleanroomException as exc:
         print(exc.message)
         return 1
-    host = args.host or "127.0.0.1"
-    port = args.port or int(os.environ.get("GW_PORT") or "2077")
     print("请在本机浏览器打开以下一次性链接（票据短时有效，用过即失效）：")
     print(f"http://{host}:{port}/static/pages/index.html#gw_trusted={ticket}")
     return 0

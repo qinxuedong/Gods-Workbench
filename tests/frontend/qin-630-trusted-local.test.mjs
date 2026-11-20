@@ -217,6 +217,20 @@ test('非回环来源丢弃票据且不向远程端转发', async () => {
     assert.deepEqual(h.replaced, ['/static/pages/index.html']);
 });
 
+test('伪造 localhost 主机名与非规范 IP 也丢弃票据且不发请求', async () => {
+    for (const hostname of ['localhost.evil.invalid', '127.0.0.1.evil', '127.1', '2130706433']) {
+        const h = bootstrapHarness();
+        h.context.location.hostname = hostname;
+        h.context.location.hash = `#gw_trusted=${TICKET}`;
+        const instance = startExchange(h.context);
+        const detail = await instance.start();
+        assert.equal(detail.state, 'remote_rejected', hostname);
+        assert.equal(instance.ticket, '', hostname);
+        assert.deepEqual(h.requests, [], hostname);
+        assert.deepEqual(h.replaced, ['/static/pages/index.html'], hostname);
+    }
+});
+
 test('回环判定覆盖 localhost、127.0.0.0/8 与 ::1', () => {
     const h = bootstrapHarness();
     const isLoopback = h.instance.isLoopbackHost;

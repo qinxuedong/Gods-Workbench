@@ -63,9 +63,10 @@ _WINDOWS_SYSTEM_SID = "S-1-5-18"
 _WINDOWS_ADMINISTRATORS_SID = "S-1-5-32-544"
 
 # icacls /save 写出的 SDDL 对已知主体使用**别名**而非完整 SID；
-# 这里只登记本票授权的两个别名，其余别名一律按「不受控」失败关闭。
+# 解析 icacls 常见别名；BU 会映射到 Users SID，但仍不在允许集合内。
 _WINDOWS_SDDL_ALIASES = {
     "BA": _WINDOWS_ADMINISTRATORS_SID,  # BUILTIN\Administrators
+    "BU": "S-1-5-32-545",  # BUILTIN\Users（解析为已知 SID，但仍不属于允许集合）
     "SY": _WINDOWS_SYSTEM_SID,  # NT AUTHORITY\SYSTEM
 }
 
@@ -262,7 +263,7 @@ def verify_file_permissions(path: Path) -> None:
 
 
 def _write_restricted_file(path: Path, payload: bytes) -> None:
-    """原子写入受控文件并立即收敛权限。"""
+    """先保护并验证空临时文件，再写入秘密并原子替换目标。"""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle = tempfile.NamedTemporaryFile(
         dir=str(path.parent), prefix=f"{path.name}.", suffix=".tmp", delete=False
@@ -270,12 +271,19 @@ def _write_restricted_file(path: Path, payload: bytes) -> None:
     temp_path = Path(handle.name)
     try:
         with handle:
+            # 临时文件可能继承宽松父目录 ACL；先在空文件上切断继承并验证，
+            # 再写入票据，避免秘密在 ACL 收敛前短暂暴露。
+            restrict_file_permissions(temp_path)
+            verify_file_permissions(temp_path)
             handle.write(payload)
             handle.flush()
             os.fsync(handle.fileno())
-        restrict_file_permissions(temp_path)
         os.replace(temp_path, path)
-        restrict_file_permissions(path)
+        try:
+            verify_file_permissions(path)
+        except BaseException:
+            path.unlink(missing_ok=True)
+            raise
     finally:
         temp_path.unlink(missing_ok=True)
 
@@ -333,14 +341,21 @@ def load_or_create_device_key() -> bytes:
         ) from exc
     try:
         with os.fdopen(descriptor, "wb") as stream:
+            # Windows 的 0600 创建参数不提供 ACL 保护。先对空文件施加并回读
+            # 受限 DACL；Unix 同样先固定 0600，再写入设备密钥。
+            restrict_file_permissions(path)
+            verify_file_permissions(path)
             stream.write(secrets.token_bytes(DEVICE_KEY_BYTES))
             stream.flush()
             os.fsync(stream.fileno())
     except BaseException:
         path.unlink(missing_ok=True)
         raise
-    restrict_file_permissions(path)
-    verify_file_permissions(path)
+    try:
+        verify_file_permissions(path)
+    except BaseException:
+        path.unlink(missing_ok=True)
+        raise
     return _read_device_key(path)
 
 
