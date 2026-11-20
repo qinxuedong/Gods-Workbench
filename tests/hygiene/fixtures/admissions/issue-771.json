@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 771,
+  "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20 (comment 7043461010)",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-631-native-select-pilot.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-771.json",
+    "web/css/components/gw-native-select.css",
+    "web/js/core/gw-native-select.js",
+    "web/js/core/gw-native-select.md",
+    "web/pages/agents.html",
+    "web/pages/projects.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-631-native-select-pilot.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-631：交付原生公共下拉组件（GWNativeSelect 与 .gw-select-shell），在 projects.html（#newProjectTypeSelect）与 agents.html（#agentProviderSelect）两页试点复用，配套新增违规 CI 必失败与旧基线只减不增门禁；仅写本票分片，基础卫生账本不动。"
+}
