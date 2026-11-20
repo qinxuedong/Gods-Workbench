@@ -131,6 +131,11 @@ KNOWN_IMPLEMENTED = frozenset(
         # 2026-10-26 QIN-394：恢复码密码重置与当前密码验证后的恢复码轮换。
         "/api/asset-auth/local/reset-password",
         "/api/asset-auth/local/recovery-codes/regenerate",
+        # 2026-11-20 QIN-630：受信本机一次性票据兑换端点，由 gw/api/routes_local_accounts.py
+        # 真实实现，前端 web/js/modules/trusted-local/bootstrap.js 在首启时调用。
+        # 契约目录（LOCAL-ACCOUNT / AUTH 接口目录）与 P8-A1 治理报告当前被洁净室准入账本
+        # 钉死 sha256，按票面要求「只识别记录」，同步另开债票处理，本守卫仅登记路径。
+        "/api/asset-auth/local/trusted-bootstrap",
         "/api/asset-auth/logout",
         "/api/asset-auth/status",
         "/api/asset-registry/governance/projects/{p}/restore",
@@ -431,6 +436,8 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-auth/login",
         "/api/asset-auth/logout",
         "/api/asset-auth/status",
+        # 2026-11-20 QIN-630：受信本机一次性票据兑换端点（后端真实实现）。
+        "/api/asset-auth/local/trusted-bootstrap",
         "/api/asset-registry/governance/projects/{p}/restore",
         "/api/asset-registry/projects",
         "/api/asset-registry/projects/{p}",
