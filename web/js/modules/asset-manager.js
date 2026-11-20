@@ -256,6 +256,47 @@ let registryRegisteredFolders = [];
 let registryIndexedFolders = [];
 let registryRegisteredFoldersLoaded = false;
 let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:'', saving:false, generation:0};
+let workspaceContext = null;
+let workspaceTaskContext = null;
+function setWorkspaceContext(snapshot){
+    workspaceContext = snapshot || null;
+    if(workspaceTaskContext && workspaceContext && workspaceTaskContext.workspace_id !== workspaceContext.active_workspace_id){
+        workspaceTaskContext = null;
+    }
+    renderWorkspaceIndicator();
+}
+function setWorkspaceTaskContext(job){
+    if(!job || !job.workspace_id) return;
+    workspaceTaskContext = {
+        workspace_id:String(job.workspace_id || ''),
+        job_id:String(job.job_id || ''),
+        execution_machine_id:String(job.execution_machine_id || ''),
+        result_root_label:String(job.result_root_label || ''),
+    };
+    renderWorkspaceIndicator();
+}
+function renderWorkspaceIndicator(){
+    const host = document.querySelector('[data-workspace-indicator]');
+    if(!host) return;
+    const basis = workspaceTaskContext || workspaceContext;
+    if(!basis){ host.hidden = true; return; }
+    const workspaceId = basis.workspace_id || workspaceContext?.active_workspace_id || 'ws_local_01';
+    const modeLabel = workspaceId === 'ws_nas_01' ? '连接 NAS 工作区' : '独立本机工作区';
+    const compatible = workspaceContext?.compatibility?.status === 'compatible';
+    const execution = workspaceTaskContext?.execution_machine_id || workspaceContext?.execution_machine_id || 'machine_local_01';
+    const result = workspaceTaskContext?.result_root_label || workspaceContext?.result_root_label || modeLabel;
+    const task = workspaceTaskContext?.job_id ? ` · 任务 ${workspaceTaskContext.job_id}` : '';
+    host.hidden = false;
+    host.innerHTML = `<i data-lucide="${compatible ? 'hard-drive' : 'shield-alert'}"></i><span class="workspace-indicator-mode">${escapeHtml(modeLabel)}</span><span class="workspace-indicator-detail">执行：${escapeHtml(execution)} · 结果：${escapeHtml(result)}${escapeHtml(task)}</span>`;
+    refreshIcons?.();
+}
+async function loadWorkspaceContext(){
+    try {
+        const snapshot = await apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'}));
+        setWorkspaceContext(snapshot);
+    } catch(_) { setWorkspaceContext(null); }
+}
+document.addEventListener('gw-workspace-changed', event => setWorkspaceContext(event.detail));
 let boardFolderCreateState = {open:false, boardId:'', rootId:'', parent:'', name:'新文件夹', saving:false, error:''};
 let boardMigrationState = {running:false, blockedBoards:[], failedMessage:'', completed:false, dismissed:false};
 let boardMigrationSeq = 0;
@@ -1171,6 +1212,7 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
         try {
             const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
             const job = data?.job || {};
+            setWorkspaceTaskContext(job);
             if(job.status === 'succeeded'){
                 markIndexState('indexed');
                 await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
@@ -1347,7 +1389,7 @@ async function loadGlobalDirectorySettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageProjectWorkspaceSettings()) throw new Error('仅管理员可查看和修改目录设置');
-        const [storage, thumbnail, status, roots, facets] = await Promise.all([
+        const [storage, thumbnail, status, roots, facets, workspace] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerApi.getThumbnailSettings()),
             apiJsonResponse(assetManagerApi.getRegistryStatus()),
@@ -1355,9 +1397,11 @@ async function loadGlobalDirectorySettings(){
                 ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}))
                 : Promise.resolve(null),
             apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'})).catch(() => null),
         ]);
         gwCall('settings', 'applyStorageSettingsData', storage);
         if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(workspace) gwCall('settings', 'applyWorkspaceSnapshot', workspace);
         if(facets) registryFacets = {
             kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
             categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -1381,13 +1425,15 @@ async function loadPermissionsAllowedRootsSettings(){
     try {
         await loadRegistryPrincipal();
         if(!canManageAllowedRoots()) throw new Error('仅管理员可查看和修改允许根权限');
-        const [storage, roots, facets] = await Promise.all([
+        const [storage, roots, facets, workspace] = await Promise.all([
             apiJsonResponse(assetManagerApi.getStorageSettings()),
             apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'})),
             apiJsonResponse(assetManagerApi.getRegistryFacets()).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin'})).catch(() => null),
         ]);
         gwCall('settings', 'applyStorageSettingsData', storage);
         if(roots) gwCall('settings', 'applyAllowedRootSettingsData', roots);
+        if(workspace) gwCall('settings', 'applyWorkspaceSnapshot', workspace);
         if(facets) registryFacets = {
             kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
             categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
@@ -1477,7 +1523,8 @@ async function saveAllowedRootPurge(rootId, options={}){
 document.addEventListener('click', event => {
     const target = event.target?.closest?.(
         '[data-storage-root-add],[data-storage-root-delete],[data-storage-root-alias-confirm],' +
-        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm],[data-resource-folder-remove]'
+        '[data-storage-root-restore],[data-storage-root-purge-prompt],[data-purge-cancel],[data-purge-confirm],[data-resource-folder-remove],' +
+        '[data-workspace-mode],[data-workspace-switch],[data-workspace-map-verify],[data-workspace-map-add]'
     );
     if(!target){
         if(event.target?.getAttribute?.('data-modal-backdrop') === 'purge-confirm'){
@@ -1498,6 +1545,24 @@ document.addEventListener('click', event => {
         const purgePath = target.getAttribute('data-root-path') || '';
         pendingPurgeRoot = {id: purgePromptId, path: purgePath};
         gwCall('settings', 'renderGlobalDirectorySettings');
+        return;
+    }
+    const workspaceModeId = target.getAttribute('data-workspace-mode');
+    if(workspaceModeId){
+        void gwCall('settings', 'selectWorkspaceTarget', workspaceModeId);
+        return;
+    }
+    const workspaceSwitchId = target.getAttribute('data-workspace-switch');
+    if(workspaceSwitchId){
+        void gwCall('settings', 'switchWorkspace', workspaceSwitchId);
+        return;
+    }
+    if(target.hasAttribute('data-workspace-map-verify')){
+        void gwCall('settings', 'verifyWorkspaceMapping');
+        return;
+    }
+    if(target.hasAttribute('data-workspace-map-add')){
+        void gwCall('settings', 'addWorkspaceMapping');
         return;
     }
     if(allowedRootSettingsState.saving) return;
@@ -11373,6 +11438,9 @@ function scheduleDeferredBootRequests(){
         // 会抢在它前面；治理建议还会被 pending 闸门挡下，之后再无人补取。执行时按当前代际
         // 再确认一次（wait 内部会循环等新一代落地），两条链路最终都仍会补齐。
         await waitRegistryBootstrapSettled();
+        // 【QIN-628 AC5】工作区指示器只展示执行端与结果落点；与治理建议同属首屏后读取，
+        // 不在列表在途时再发一条非首屏请求。夹具未加载该域函数时安全跳过。
+        if(typeof loadWorkspaceContext === 'function') void loadWorkspaceContext();
         // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
         if(!inboxLoaded){
             void gwLoad('inbox').then(m => m.loadAssetInbox()).then(() => {
@@ -11404,6 +11472,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 【QIN-573 AC2】优先从会话快照恢复首屏渲染，隐藏骨架屏
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
+    // 【QIN-628 AC5】工作区上下文移入 scheduleDeferredBootRequests，首屏列表落地后再读取。
     // 【QIN-585 AC2】治理建议的启动期意图仍在此声明；loadGovernanceSuggestions 会在
     // 首屏列表落地前把自己排队（见该函数内的闸门），不再与列表争服务端资源。
     gwCall('governance', 'loadGovernanceSuggestions');
@@ -12433,6 +12502,8 @@ export {
     setSelectedWorkflowId,
     setSelectedWorkflowIds,
     setServerDirectoryBrowserState,
+    setWorkspaceContext,
+    setWorkspaceTaskContext,
     setSharedFolders,
     setStatus,
     setThumbnailCacheSwitchState,

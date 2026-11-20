@@ -1,0 +1,37 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 763,
+  "authorization_basis": "GitHub Issue #763, PM design approval 2026-11-20; PM R2 scope authorization comment 7038963149",
+  "files": [
+    "gw/api/app.py",
+    "gw/api/routes_settings.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/god_workflow/video_executor.py",
+    "gw/projects_hub/service.py",
+    "gw/workspaces/context.py",
+    "gw/workspaces/model.py",
+    "gw/workspaces/service.py",
+    "gw/workspaces/verification.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-628-workspace-mapping-form.test.mjs",
+    "tests/frontend/qin-628-workspace-task-context.test.mjs",
+    "tests/contracts/settings/test_qin_628_workspace_mapping.py",
+    "tests/hygiene/fixtures/admissions/issue-763.json",
+    "web/css/pages/asset-manager.css",
+    "web/embeds/asset-manager.html",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/settings/test_qin_628_workspace_mapping.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #763, 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-628：独立本机/连接 NAS 双工作区、共享路径映射、执行端权限核验与 QIN-626 兼容检查接缝；R2 按 PM 裁决接入真实项目/索引/视频任务写入、租约与执行前映射重核验；R4 按 QA 反馈修复映射表单重绘前捕获与服务端核验宿主；同步 P8-A1 前端 API 防漂移基线；仅写本票分片，未改基础账本与已准入报告正文。"
+}

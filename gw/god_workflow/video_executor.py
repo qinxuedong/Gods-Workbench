@@ -15,6 +15,7 @@ from typing import Any, Protocol
 
 from gw.core.errors import CleanroomException
 from gw.media.duration_fitting import build_i2v_payload
+from gw.workspaces.service import default_workspace_service
 
 _GNS_ID = re.compile(r"^[A-Z]{2}\d{2}$")
 _GNS_SHOT = re.compile(r"^SH\d{3}$")
@@ -116,6 +117,8 @@ class VideoJobExecutor:
         fixture_id: Any = None,
         variant: str = "raw",
     ) -> dict[str, Any]:
+        # QIN-628：提交前先解析当前工作区/租约并实时核验执行端映射。
+        execution_context = default_workspace_service.build_execution_context()
         payload = build_i2v_payload(
             shot_id=shot_id,
             image_asset_id=image_asset_id,
@@ -128,6 +131,7 @@ class VideoJobExecutor:
         filename = build_video_filename(
             episode, scene, shot_id, version, variant=variant
         )
+        result_path = f"{execution_context['result_root_label']}/{filename}"
         job_id = str(uuid.uuid4())
         remote = await _call(self.provider.submit, payload)
         remote_id = (
@@ -149,6 +153,11 @@ class VideoJobExecutor:
             "version": f"v{int(version):03d}" if isinstance(version, int) else version,
             "filename": filename,
             "path": build_storage_path(job_id, root=self.storage_root),
+            "result_path": result_path,
+            "workspace_id": execution_context["workspace_id"],
+            "execution_machine_id": execution_context["execution_machine_id"],
+            "result_root_label": execution_context["result_root_label"],
+            "result_root": execution_context["result_root"],
             "payload": payload,
         }
         self._jobs[job_id] = job
@@ -174,6 +183,7 @@ class VideoJobExecutor:
                 "job_id": job["job_id"],
                 "filename": job["filename"],
                 "path": job["path"],
+                "result_path": job.get("result_path", job["path"]),
                 "content_type": "video/mp4",
                 "source_shot_id": job["shot_id"],
                 "source_version": job["version"],

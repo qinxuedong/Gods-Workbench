@@ -39,6 +39,8 @@ from gw.core.runtime_paths import (
     RUNTIME_MODE_ENV,
     VIDEO_DATA_DIR_ENV,
 )
+from gw.workspaces import context as workspace_context
+from gw.workspaces.service import default_workspace_service
 
 MAX_ACTIVE = 16
 MAX_JOBS = 1000
@@ -1169,16 +1171,28 @@ class IndexJobs:
             _error(404, "WORKSPACE_JOB_NOT_FOUND", "工作区任务不存在")
         return self._committed_truth(job)
 
-    def _committed_truth(self, job):
-        """业务提交收据高于任务快照；写状态失败也绝不开放取消或重试。"""
+    def _receipt_from_registry(self, job):
+        """按任务记录的工作区落点读取业务收据；不重新核验，避免失败读被门禁误伤。"""
         from gw.asset_registry import repository as repo
 
-        receipt = (
-            repo.state()
-            .read()
-            .get("index_job_receipts", {})
-            .get(f"{job['job_id']}:{job['attempt']}")
+        stored = workspace_context.context_from_job(job)
+        token = (
+            workspace_context.set_execution_context(stored) if stored is not None else None
         )
+        try:
+            return (
+                repo.state()
+                .read()
+                .get("index_job_receipts", {})
+                .get(f"{job['job_id']}:{job['attempt']}")
+            )
+        finally:
+            if token is not None:
+                workspace_context.reset_execution_context(token)
+
+    def _committed_truth(self, job):
+        """业务提交收据高于任务快照；写状态失败也绝不开放取消或重试。"""
+        receipt = self._receipt_from_registry(job)
         if receipt is not None and job["status"] != "succeeded":
             job.update(
                 status="succeeded",
@@ -1311,6 +1325,9 @@ class IndexJobs:
             )
         actor = _actor(auth)
         _admission(actor)
+        # QIN-628：真实索引任务提交时必须解析当前工作区/租约与执行端映射；
+        # 失败即拒绝入队，不留下任务与半注册。
+        execution_context = default_workspace_service.build_execution_context()
         canonical, aliases = _roots()
         selected = payload.get("roots")
         if selected is not None and (
@@ -1424,6 +1441,15 @@ class IndexJobs:
                 "_fingerprint": fingerprint,
                 "_request": request,
                 "_request_digest": request_digest,
+                "workspace_id": execution_context["workspace_id"],
+                "workspace_mode": execution_context["workspace_mode"],
+                "data_namespace": execution_context["data_namespace"],
+                "execution_machine_id": execution_context["execution_machine_id"],
+                "result_root_label": execution_context["result_root_label"],
+                "result_root": execution_context["result_root"],
+                "logical_source_id": execution_context.get("logical_source_id"),
+                "mapping_id": execution_context.get("mapping_id"),
+                "client_instance_id": execution_context["client_instance_id"],
             }
             raw["jobs"][job_id] = job
             raw["keys"][key_digest] = job_id
@@ -1519,6 +1545,17 @@ class IndexJobs:
                     return job
                 self.condition.wait(0.2)
 
+    def _reverify_workspace_context(self, job):
+        """执行时刻重新核验映射，历史 verified 标记不作为放行依据。"""
+        stored = workspace_context.context_from_job(job)
+        if not stored:
+            return None
+        return default_workspace_service.build_execution_context(
+            client_instance_id=stored.get("client_instance_id"),
+            execution_machine_id=stored.get("execution_machine_id"),
+            logical_source_id=stored.get("logical_source_id"),
+        )
+
     def _run(self, job_id, attempt):
         try:
             with self.condition:
@@ -1531,6 +1568,7 @@ class IndexJobs:
                     job["version"] += 1
                     self._save(job)
             job = self._checkpoint(job_id, attempt)
+            self._reverify_workspace_context(job)
             roots = self._check(job)
             files = self._scan(job_id, attempt, roots, job["_request"])
             generation_stats = getattr(files, "generation_stats", None)
@@ -1567,14 +1605,7 @@ class IndexJobs:
                 if not job or job["attempt"] != attempt or job["status"] in TERMINAL:
                     return
                 # 注册表已提交而任务状态落盘失败时，以同事务收据为准。
-                from gw.asset_registry import repository as repo
-
-                receipt = (
-                    repo.state()
-                    .read()
-                    .get("index_job_receipts", {})
-                    .get(f"{job_id}:{attempt}")
-                )
+                receipt = self._receipt_from_registry(job)
                 job.update(
                     status="succeeded"
                     if receipt
@@ -2216,7 +2247,18 @@ class IndexJobs:
             receipts[receipt_id] = result
             return result
 
-        return repo.state().mutate(commit)
+        # 提交前最后一次实时核验；令牌只包裹注册表写入，避免跨任务泄漏。
+        execution_context = self._reverify_workspace_context(job)
+        context_token = (
+            workspace_context.set_execution_context(execution_context)
+            if execution_context
+            else None
+        )
+        try:
+            return repo.state().mutate(commit)
+        finally:
+            if context_token is not None:
+                workspace_context.reset_execution_context(context_token)
 
 
 class _ScanFiles(list):

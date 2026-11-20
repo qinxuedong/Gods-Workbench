@@ -388,6 +388,11 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-reviews/sessions/{p}/comments",
         "/api/asset-reviews/sessions/{p}/delivery",
         "/api/asset-reviews/shares",
+        # 2026-11-20 QIN-628：本机/NAS 工作区快照与共享路径映射读写入口，前端引用且后端已实现。
+        "/api/workspaces",
+        "/api/workspaces/mappings",
+        "/api/workspaces/switch",
+        "/api/workspaces/verify",
     ]
 )
 
@@ -571,6 +576,11 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/local-assets/folders/open",
         "/api/local-assets/organize/version",
         "/api/local-assets/undo",
+        # 2026-11-20 QIN-628：工作区快照、路径核验、映射登记与切换路由已真实注册。
+        "/api/workspaces",
+        "/api/workspaces/mappings",
+        "/api/workspaces/switch",
+        "/api/workspaces/verify",
     ]
 )
 
