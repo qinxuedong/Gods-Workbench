@@ -132,6 +132,7 @@ tests/frontend/qin-619-dedup-full-sha.test.mjs
 tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs
 tests/frontend/qin-621-lut-library-import-delete-preview.test.mjs
 tests/frontend/qin-622-topbar-height-center-collapse.test.mjs
+tests/frontend/qin-628-workspace-task-context.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

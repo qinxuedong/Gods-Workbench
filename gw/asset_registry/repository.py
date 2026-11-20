@@ -55,6 +55,9 @@ from gw.asset_registry import media_probe
 from gw.asset_registry.models import CinematographyAssetFilters
 from gw.asset_registry.service import normalize_asset_query, parse_utc_datetime
 from gw.core.errors import CleanroomException
+from gw.workspaces import context as workspace_context
+from gw.workspaces.model import MODE_NAS
+from gw.workspaces.service import default_workspace_service
 
 NS_REGISTRY = "asset_registry"
 ASSET_SEARCH_INDEX_FILENAME = "asset_registry_search.sqlite3"
@@ -96,6 +99,12 @@ def _blank() -> Dict[str, Any]:
 
 def state() -> storage.JsonState:
     _recover_user_lut_import()
+    context = workspace_context.current_execution_context()
+    if context is None:
+        context = default_workspace_service.build_execution_context()
+    if context.get("workspace_mode") == MODE_NAS and context.get("result_root"):
+        # NAS 工作区的注册表写入落到映射后的结果根；本机工作区保持既有单一数据根。
+        return workspace_context.json_state(context["result_root"], NS_REGISTRY, _blank)
     return storage.JsonState(NS_REGISTRY, _blank)
 
 

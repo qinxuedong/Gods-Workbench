@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import Any
 
 from gw.core import storage
 from gw.core.errors import CleanroomException
+from gw.workspaces import context as workspace_context
 from gw.workspaces import model, verification
 
 
@@ -90,6 +92,89 @@ class WorkspaceService:
     def verify_path(self, payload: Any) -> dict[str, str]:
         """只探测不落盘，供前端在登记前给出明确可达/不可达结论。"""
         return verification.verify_executor_path(payload.access_path, payload.capability)
+
+    def build_execution_context(
+        self,
+        *,
+        client_instance_id: str | None = None,
+        execution_machine_id: str | None = None,
+        logical_source_id: str | None = None,
+        capability: str = model.CAPABILITY_READ_WRITE,
+    ) -> dict[str, Any]:
+        """为真实项目/索引写入构建执行上下文。
+
+        历史 ``verified`` 标记只作为映射存在性提示，不能代替执行前实时探测。
+        NAS 工作区每次真实写入前都重新核验执行端，并用该映射派生结果落点；
+        本机工作区保持既有数据根，避免迁移既有项目快照。
+        """
+        state = _normalize_state(self._state.read())
+        client_id = (
+            client_instance_id
+            or workspace_context.current_client_instance_id()
+            or "client_local"
+        )
+        self._check_writer_guard(state, client_id)
+        active = _active_workspace(state)
+        machine_id = execution_machine_id or model.LOCAL_EXECUTION_MACHINE_ID
+        base = {
+            "workspace_id": str(active["workspace_id"]),
+            "workspace_mode": str(active.get("mode", model.MODE_LOCAL)),
+            "data_namespace": str(active.get("data_namespace", "")),
+            "execution_machine_id": machine_id,
+            "client_instance_id": client_id,
+            "capability": capability,
+            "logical_source_id": logical_source_id,
+            "mapping_id": None,
+            "access_path": None,
+            "verification": None,
+            "compatibility": self.compatibility(),
+        }
+        if active.get("mode") != model.MODE_NAS:
+            return {
+                **base,
+                "result_root": str(storage.data_root().expanduser().resolve(strict=False)),
+                "result_root_label": str(active.get("display_name", "独立本机工作区")),
+            }
+
+        compatible = base["compatibility"]
+        if compatible["status"] != model.COMPATIBILITY_COMPATIBLE:
+            raise CleanroomException(
+                status_code=409,
+                code="WORKSPACE_INCOMPATIBLE",
+                message=compatible["detail"],
+            )
+        candidates = [
+            item
+            for item in state["mappings"]
+            if item.get("workspace_id") == active["workspace_id"]
+            and item.get("execution_machine_id") == machine_id
+            and (logical_source_id is None or item.get("logical_source_id") == logical_source_id)
+        ]
+        if not candidates:
+            raise CleanroomException(
+                status_code=409,
+                code="WORKSPACE_MAPPING_REQUIRED",
+                message="当前执行机器没有可用共享映射，项目/索引写入已拒绝，未产生半写入",
+            )
+        mapping = candidates[0]
+        live_verification = verification.verify_executor_path(
+            str(mapping["access_path"]), capability
+        )
+        access_path = str(mapping["access_path"])
+        return {
+            **base,
+            "logical_source_id": str(mapping["logical_source_id"]),
+            "mapping_id": str(mapping["mapping_id"]),
+            "access_path": access_path,
+            "verification": live_verification,
+            "result_root": str(
+                Path(access_path).expanduser().resolve(strict=False)
+                / str(active.get("data_namespace", "workspace_nas_01"))
+            ),
+            "result_root_label": (
+                f"{active.get('display_name', '连接 NAS 工作区')} · {machine_id}"
+            ),
+        }
 
     def _check_writer_guard(self, state: dict[str, Any], client_instance_id: str | None) -> None:
         guard = state.get("writer_guard")

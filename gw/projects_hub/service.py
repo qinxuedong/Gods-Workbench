@@ -37,6 +37,8 @@ from gw.projects_hub.models import (
     ProjectType,
     ProjectUpdateRequest,
 )
+from gw.workspaces import context as workspace_context
+from gw.workspaces.service import default_workspace_service
 
 _SCHEMA_VERSION = 1
 _PROJECTS_FILE = "projects.json"
@@ -99,9 +101,15 @@ def _blank_projects_state() -> dict[str, Any]:
 
 
 def _canonical_root() -> Path:
-    """返回规范化绝对数据根，不把该路径写入或回显到项目数据。"""
+    """返回当前工作区规范化的绝对数据根，不把该路径回显到项目数据。"""
     try:
-        root = storage.data_root().expanduser().resolve(strict=False)
+        # 后台任务会预先绑定执行上下文；普通请求在这里实时构建并核验。
+        execution_root = workspace_context.execution_root()
+        if execution_root is None:
+            execution_root = Path(
+                default_workspace_service.build_execution_context()["result_root"]
+            )
+        root = execution_root.expanduser().resolve(strict=False)
     except (OSError, RuntimeError, ValueError) as exc:
         raise CleanroomException(
             503, "PROJECT_STATE_UNAVAILABLE", "项目数据根目录不可用"

@@ -40,7 +40,7 @@ C16 路由只允许稳定 ``provider_id`` 与消息进入网关；Provider 密�
 import asyncio
 from typing import Any, Union
 
-from fastapi import APIRouter, Body, Header, Path, Query, Request, status
+from fastapi import APIRouter, Body, Header, Path, Query, Request, Response, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from gw.core.auth import require_authenticated, require_edit_access
@@ -70,7 +70,9 @@ from gw.settings.service import (
     default_storage_settings_service,
     register_root_cascade_hooks,
 )
+from gw.workspaces import context as workspace_context
 from gw.workspaces.model import (
+    LEASE_SECONDS,
     MappingCreateRequest,
     MappingVerifyRequest,
     WorkspaceSnapshot,
@@ -435,12 +437,24 @@ def add_workspace_mapping(
 )
 def switch_workspace(
     payload: WorkspaceSwitchRequest,
+    response: Response,
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     """兼容检查、执行端核验与 CAS 全部通过后才改变当前工作区。"""
     _require_storage_admin(authorization, x_user_role)
-    return default_workspace_service.switch_workspace(payload)
+    snapshot = default_workspace_service.switch_workspace(payload)
+    if payload.client_instance_id:
+        # 同一浏览器后续项目/索引写入自动携带该客户端身份，租约才会真正约束写入。
+        response.set_cookie(
+            workspace_context.CLIENT_COOKIE_NAME,
+            payload.client_instance_id,
+            max_age=LEASE_SECONDS,
+            httponly=True,
+            samesite="lax",
+            path="/",
+        )
+    return snapshot
 
 
 # ---------------------------------------------------------------------------

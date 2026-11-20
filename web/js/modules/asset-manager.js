@@ -257,15 +257,37 @@ let registryIndexedFolders = [];
 let registryRegisteredFoldersLoaded = false;
 let boardSourceState = {open:false, boardId:'', editor:'', existingId:'', name:'用户素材', path:'', saving:false, generation:0};
 let workspaceContext = null;
-function setWorkspaceContext(snapshot){ workspaceContext = snapshot || null; renderWorkspaceIndicator(); }
+let workspaceTaskContext = null;
+function setWorkspaceContext(snapshot){
+    workspaceContext = snapshot || null;
+    if(workspaceTaskContext && workspaceContext && workspaceTaskContext.workspace_id !== workspaceContext.active_workspace_id){
+        workspaceTaskContext = null;
+    }
+    renderWorkspaceIndicator();
+}
+function setWorkspaceTaskContext(job){
+    if(!job || !job.workspace_id) return;
+    workspaceTaskContext = {
+        workspace_id:String(job.workspace_id || ''),
+        job_id:String(job.job_id || ''),
+        execution_machine_id:String(job.execution_machine_id || ''),
+        result_root_label:String(job.result_root_label || ''),
+    };
+    renderWorkspaceIndicator();
+}
 function renderWorkspaceIndicator(){
     const host = document.querySelector('[data-workspace-indicator]');
     if(!host) return;
-    if(!workspaceContext){ host.hidden = true; return; }
-    const modeLabel = workspaceContext.active_workspace_id === 'ws_nas_01' ? '连接 NAS 工作区' : '独立本机工作区';
-    const compatible = workspaceContext.compatibility?.status === 'compatible';
+    const basis = workspaceTaskContext || workspaceContext;
+    if(!basis){ host.hidden = true; return; }
+    const workspaceId = basis.workspace_id || workspaceContext?.active_workspace_id || 'ws_local_01';
+    const modeLabel = workspaceId === 'ws_nas_01' ? '连接 NAS 工作区' : '独立本机工作区';
+    const compatible = workspaceContext?.compatibility?.status === 'compatible';
+    const execution = workspaceTaskContext?.execution_machine_id || workspaceContext?.execution_machine_id || 'machine_local_01';
+    const result = workspaceTaskContext?.result_root_label || workspaceContext?.result_root_label || modeLabel;
+    const task = workspaceTaskContext?.job_id ? ` · 任务 ${workspaceTaskContext.job_id}` : '';
     host.hidden = false;
-    host.innerHTML = `<i data-lucide="${compatible ? 'hard-drive' : 'shield-alert'}"></i><span class="workspace-indicator-mode">${escapeHtml(modeLabel)}</span><span class="workspace-indicator-detail">执行：${escapeHtml(workspaceContext.execution_machine_id || 'machine_local_01')} · 结果：${escapeHtml(workspaceContext.result_root_label || modeLabel)}</span>`;
+    host.innerHTML = `<i data-lucide="${compatible ? 'hard-drive' : 'shield-alert'}"></i><span class="workspace-indicator-mode">${escapeHtml(modeLabel)}</span><span class="workspace-indicator-detail">执行：${escapeHtml(execution)} · 结果：${escapeHtml(result)}${escapeHtml(task)}</span>`;
     refreshIcons?.();
 }
 async function loadWorkspaceContext(){
@@ -1190,6 +1212,7 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
         try {
             const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
             const job = data?.job || {};
+            setWorkspaceTaskContext(job);
             if(job.status === 'succeeded'){
                 markIndexState('indexed');
                 await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
@@ -12479,6 +12502,8 @@ export {
     setSelectedWorkflowId,
     setSelectedWorkflowIds,
     setServerDirectoryBrowserState,
+    setWorkspaceContext,
+    setWorkspaceTaskContext,
     setSharedFolders,
     setStatus,
     setThumbnailCacheSwitchState,

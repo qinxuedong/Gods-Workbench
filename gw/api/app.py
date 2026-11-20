@@ -69,6 +69,7 @@ from gw.core.platform import RELEASE_AUTHORIZED
 from gw.god_workflow.routes import router as god_workflow_router
 from gw.observability import telemetry as observability_telemetry
 from gw.video_tasks.routes import router as video_tasks_router
+from gw.workspaces import context as workspace_context
 
 # 同进程 Agent 领域错误处理是可选的：当运行期未提供 3.11+ StrEnum / 新版
 # jsonschema 等 agent 依赖时，工作流与其余既有接口必须仍可导入与提供。
@@ -409,9 +410,15 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
                     principal = dict(principal)
                     principal["session_id"] = session_id
                 token = session_store.set_current_principal(principal)
+        # QIN-628：工作区客户端身份跟随请求传播，真实项目/索引写入据此消费租约。
+        client_token = workspace_context.set_client_instance_id(
+            request.headers.get(workspace_context.CLIENT_HEADER_NAME)
+            or request.cookies.get(workspace_context.CLIENT_COOKIE_NAME)
+        )
         try:
             return await call_next(request)
         finally:
+            workspace_context.reset_client_instance_id(client_token)
             if token is not None:
                 session_store.reset_current_principal(token)
 
