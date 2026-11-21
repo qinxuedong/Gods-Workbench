@@ -1400,6 +1400,126 @@ def test_foreign_data_lock_with_corrupt_identity_fails_closed(tmp_path):
             process.kill()
 
 
+def test_owner_identity_claiming_current_pid_does_not_bypass_foreign_lock(tmp_path):
+    root = tmp_path / "lock-holder"
+    root.mkdir()
+    lock_path = root / ".gw-data.lock"
+    script = (
+        "import sys,time;"
+        "sys.path.insert(0, r'%s');"
+        "from pathlib import Path;"
+        "from gw.core.storage import _acquire_lock_file;"
+        "_lock = _acquire_lock_file(Path(sys.argv[1]), label='holder');"
+        "print('ready', flush=True);"
+        "time.sleep(8)"
+    ) % str(REPO_ROOT)
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(lock_path)],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert process.stdout.readline().strip() == "ready"
+        owner = Path(str(lock_path) + ".owner.json")
+        owner.write_text(
+            json.dumps(
+                {
+                    "host": storage._host_name(),
+                    "pid": os.getpid(),
+                    "pid_start_time": None,
+                    "boot_id": "",
+                    "started_at": "forged",
+                    "app_version": "0.1.0",
+                }
+            ),
+            encoding="utf-8",
+        )
+        assert storage.read_lock_identity(lock_path)["pid"] == os.getpid()
+        assert storage.data_dir_lock_held_by_foreign_process(root) is True
+    finally:
+        process.terminate()
+        try:
+            process.wait(timeout=5)
+        except subprocess.TimeoutExpired:  # pragma: no cover
+            process.kill()
+
+
+def test_local_account_reset_rejects_foreign_lock_with_owner_claiming_current_pid(
+    prod_home,
+):
+    storage._HELD_DATA_LOCKS.clear()
+    local_accounts.create_first_admin("admin", "OldPassw0rd")
+    auth_db = resolve_runtime_paths().auth_db
+    connection = sqlite3.connect(auth_db)
+    hash_before = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+
+    root = resolve_runtime_paths().data_root
+    lock_path = root / ".gw-data.lock"
+    holder_script = (
+        "import sys,time;"
+        "sys.path.insert(0, r'%s');"
+        "from pathlib import Path;"
+        "from gw.core.storage import _acquire_lock_file;"
+        "_lock = _acquire_lock_file(Path(sys.argv[1]), label='holder');"
+        "print('ready', flush=True);"
+        "time.sleep(8)"
+    ) % str(REPO_ROOT)
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_script, str(lock_path)],
+        cwd=str(REPO_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout.readline().strip() == "ready"
+        script = (
+            "import json, os, sys\n"
+            "sys.path.insert(0, r'%s')\n"
+            "from pathlib import Path\n"
+            "from gw.core.storage import _host_name\n"
+            "from gw.core.errors import CleanroomException\n"
+            "from gw.core.local_accounts import reset_password_local\n"
+            "owner = Path(sys.argv[1] + '.owner.json')\n"
+            "owner.write_text(json.dumps({'host': _host_name(), 'pid': os.getpid(), "
+            "'pid_start_time': None, 'started_at': 'forged'}), encoding='utf-8')\n"
+            "try:\n"
+            "    reset_password_local('admin', 'NewPassw0rd')\n"
+            "except CleanroomException as exc:\n"
+            "    print(exc.code)\n"
+            "    sys.exit(7)\n"
+            "print('written')\n"
+            "sys.exit(0)\n"
+        ) % str(REPO_ROOT)
+        probe = subprocess.run(
+            [sys.executable, "-c", script, str(lock_path)],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+        assert probe.returncode == 7, probe.stderr
+        assert probe.stdout.strip() == "DATA_LOCATION_QUIESCING"
+    finally:
+        holder.terminate()
+        try:
+            holder.wait(timeout=5)
+        except subprocess.TimeoutExpired:  # pragma: no cover
+            holder.kill()
+
+    connection = sqlite3.connect(auth_db)
+    hash_after = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+    assert hash_after == hash_before
+
+
 def test_local_account_reset_fails_closed_when_lock_identity_is_corrupt(prod_home):
     storage._HELD_DATA_LOCKS.clear()
     local_accounts.create_first_admin("admin", "OldPassw0rd")

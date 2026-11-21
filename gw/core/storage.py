@@ -2073,22 +2073,12 @@ def data_dir_lock_held_by_foreign_process(root: Path) -> bool:
     """判断某个数据根是否被本进程之外的存活宿主持有。
 
     本机写入口（如本机账户 CLI）在服务运行或迁移静默期间不能绕过跨进程
-    数据锁直接写库；同进程的 API/迁移自身仍可通过。锁身份旁文件可能损坏
-    或被截断，因此不能以身份可读作为放行条件：身份不可信时直接探测操作
-    系统锁，仍被占用、打不开或文件系统不支持锁均按外部持有处理（fail-closed）。
+    数据锁直接写库；同进程的 API/迁移自身仍可通过。锁身份旁文件与锁内
+    JSON 都可能被伪造或损坏，因此只有本进程实际登记持有该根锁时才放行；
+    其余情况一律探测操作系统的真实锁状态，仍被占用、打不开或文件系统不
+    支持锁均按外部持有处理（fail-closed）。
     """
     root = Path(root)
-    lock_path = root / ".gw-data.lock"
     if is_data_dir_lock_held(root):
         return False
-    identity = read_lock_identity(lock_path)
-    if identity:
-        try:
-            host = str(identity.get("host") or "")
-            pid = int(identity.get("pid") or 0)
-        except (TypeError, ValueError):
-            host = ""
-            pid = 0
-        if host == _host_name() and pid == os.getpid():
-            return False
-    return _lock_file_actively_held(lock_path)
+    return _lock_file_actively_held(root / ".gw-data.lock")
