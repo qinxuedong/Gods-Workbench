@@ -1,4 +1,4 @@
-#requires -Version 5.1
+﻿#requires -Version 5.1
 <#
 QIN-626 Windows installer acceptance entry.
 
@@ -76,6 +76,12 @@ $script:dataMode = "uninitialized"
 $script:installDirClaimed = $false
 $script:overrideClaimed = $false
 $script:stateClaimed = $false
+$script:lanAddress = ""
+$script:remoteLocalAppData = ""
+$script:remoteBackends = New-Object System.Collections.ArrayList
+$script:remoteBackendPids = New-Object System.Collections.ArrayList
+$script:remoteBackendEvidence = [ordered]@{}
+$script:ui = [ordered]@{}
 
 function Add-Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = "")
@@ -111,13 +117,15 @@ function Format-SafeText {
     $text = [string]$Value
     $pairs = @(
         @($script:outputDirPath, "<OUTPUT_DIR>"),
+        @($script:remoteLocalAppData, "<REMOTE_LOCALAPPDATA>"),
         @($script:processLocalAppData, "<PROCESS_LOCALAPPDATA>"),
         @($script:realLocalAppData, "<LOCALAPPDATA>"),
         @($script:installDirPath, "<INSTALL_DIR>"),
         @([Environment]::GetFolderPath("ApplicationData"), "<APPDATA>"),
         @([Environment]::GetFolderPath("LocalApplicationData"), "<LOCALAPPDATA>"),
         @($env:USERPROFILE, "<USERPROFILE>"),
-        @($env:TEMP, "<TEMP>")
+        @($env:TEMP, "<TEMP>"),
+        @($script:lanAddress, "<LAN_IP>")
     )
     foreach ($pair in $pairs) {
         $needle = [string]$pair[0]
@@ -241,24 +249,71 @@ function Test-PortOpen {
 
 function Get-HttpResult {
     param([string]$Url)
+    # HttpWebRequest avoids the machine proxy that Invoke-WebRequest applies to
+    # private LAN addresses; headers are required by the no-store fail-closed checks.
+    $request = $null
     try {
-        $response = Invoke-WebRequest -Uri $Url -UseBasicParsing -TimeoutSec 4
-        return [pscustomobject]@{ ok = $true; status = [int]$response.StatusCode; body = [string]$response.Content }
-    } catch {
-        $status = 0
-        if ($_.Exception.Response -and $_.Exception.Response.StatusCode) {
-            $status = [int]$_.Exception.Response.StatusCode
+        $request = [System.Net.HttpWebRequest]::Create($Url)
+        $request.Proxy = $null
+        $request.Timeout = 5000
+        $request.ReadWriteTimeout = 5000
+        $request.AllowAutoRedirect = $false
+        $response = $request.GetResponse()
+        try {
+            $stream = $response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+            $body = $reader.ReadToEnd()
+            $reader.Close()
+            $stream.Close()
+            $headers = @{}
+            foreach ($key in $response.Headers.AllKeys) { $headers[$key] = [string]$response.Headers[$key] }
+            return [pscustomobject]@{ ok = $true; status = [int]$response.StatusCode; body = $body; headers = $headers }
+        } finally {
+            $response.Close()
         }
-        return [pscustomobject]@{ ok = $false; status = $status; body = [string]$_.Exception.Message }
+    } catch [System.Net.WebException] {
+        $response = $_.Exception.Response
+        if ($null -eq $response) {
+            return [pscustomobject]@{ ok = $false; status = 0; body = [string]$_.Exception.Message; headers = @{} }
+        }
+        try {
+            $headers = @{}
+            foreach ($key in $response.Headers.AllKeys) { $headers[$key] = [string]$response.Headers[$key] }
+            $body = ""
+            try {
+                $stream = $response.GetResponseStream()
+                $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+                $body = $reader.ReadToEnd()
+                $reader.Close()
+                $stream.Close()
+            } catch {
+            }
+            $status = 0
+            try { $status = [int]$response.StatusCode } catch { }
+            return [pscustomobject]@{ ok = $false; status = $status; body = $body; headers = $headers }
+        } finally {
+            try { $response.Close() } catch { }
+        }
+    } catch {
+        return [pscustomobject]@{ ok = $false; status = 0; body = [string]$_.Exception.Message; headers = @{} }
     }
 }
 
+function Test-NoStoreHeaders {
+    param($Result)
+    if ($null -eq $Result) { return $false }
+    $cache = [string](Get-PropertyValue -Object $Result.headers -Name "Cache-Control")
+    $pragma = [string](Get-PropertyValue -Object $Result.headers -Name "Pragma")
+    $expires = [string](Get-PropertyValue -Object $Result.headers -Name "Expires")
+    return ($cache -match "(?i)no-store") -and ($pragma -match "(?i)no-cache") -and ($expires -match "(?i)^0$")
+}
+
 function Wait-Health {
-    param([int]$TimeoutSeconds = 150)
+    param([int]$TimeoutSeconds = 150, [string]$BaseUrl = "http://127.0.0.1:2077")
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $last = $null
     while ((Get-Date) -lt $deadline) {
-        $last = Get-HttpResult -Url "http://127.0.0.1:2077/healthz"
+        $last = Get-HttpResult -Url ($BaseUrl + "/healthz")
         if ($last.ok -and $last.status -eq 200) { return $last }
         Start-Sleep -Milliseconds 1000
     }
@@ -266,13 +321,103 @@ function Wait-Health {
 }
 
 function Get-OpenApiVersion {
-    $result = Get-HttpResult -Url "http://127.0.0.1:2077/openapi.json"
+    param([string]$BaseUrl = "http://127.0.0.1:2077")
+    $result = Get-HttpResult -Url ($BaseUrl + "/openapi.json")
     if (-not $result.ok) { return "" }
     try {
         return [string](($result.body | ConvertFrom-Json).info.version)
     } catch {
         return ""
     }
+}
+
+function Get-FreeTcpPort {
+    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Loopback, 0)
+    $listener.Start()
+    try {
+        return [int]$listener.LocalEndpoint.Port
+    } finally {
+        $listener.Stop()
+    }
+}
+
+function Get-FreeAddressPort {
+    param([string]$Address)
+    $listener = New-Object System.Net.Sockets.TcpListener([System.Net.IPAddress]::Parse($Address), 0)
+    $listener.Start()
+    try {
+        return [int]$listener.LocalEndpoint.Port
+    } finally {
+        $listener.Stop()
+    }
+}
+
+function Get-PrivateLanAddress {
+    $configs = @()
+    try { $configs = @(Get-NetIPConfiguration -ErrorAction Stop) } catch { }
+    foreach ($config in $configs) {
+        if ($null -eq (Get-PropertyValue -Object $config -Name "IPv4DefaultGateway")) { continue }
+        $addresses = @(Get-PropertyValue -Object $config -Name "IPv4Address")
+        foreach ($address in $addresses) {
+            $ip = [string](Get-PropertyValue -Object $address -Name "IPAddress")
+            if ($ip -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') { return $ip }
+        }
+    }
+    try {
+        $addresses = @(Get-NetIPAddress -AddressFamily IPv4 -ErrorAction Stop)
+    } catch {
+        return ""
+    }
+    foreach ($address in $addresses) {
+        $ip = [string](Get-PropertyValue -Object $address -Name "IPAddress")
+        if ($ip -match '^(10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)') { return $ip }
+    }
+    return ""
+}
+
+function Test-AddressPortOpen {
+    param([string]$Address, [int]$Port, [int]$TimeoutMs = 800)
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $async = $client.BeginConnect($Address, $Port, $null, $null)
+        if (-not $async.AsyncWaitHandle.WaitOne($TimeoutMs)) { return $false }
+        $client.EndConnect($async)
+        return $true
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
+
+function Wait-ForAddressPortFree {
+    param([string]$Address, [int]$Port, [int]$TimeoutSeconds = 30)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        if (-not (Test-AddressPortOpen -Address $Address -Port $Port -TimeoutMs 500)) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+    return $false
+}
+
+function ConvertTo-SafeObject {
+    param($Value)
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [string]) { return (Format-SafeText $Value) }
+    if ($Value -is [System.Collections.IDictionary]) {
+        $copy = [ordered]@{}
+        foreach ($key in $Value.Keys) { $copy[[string]$key] = ConvertTo-SafeObject -Value $Value[$key] }
+        return $copy
+    }
+    if ($Value -is [System.Management.Automation.PSCustomObject]) {
+        $copy = [ordered]@{}
+        foreach ($property in $Value.PSObject.Properties) { $copy[$property.Name] = ConvertTo-SafeObject -Value $property.Value }
+        return $copy
+    }
+    if ($Value -is [array]) {
+        return @($Value | ForEach-Object { ConvertTo-SafeObject -Value $_ })
+    }
+    return $Value
 }
 
 function Test-ExpectedOpenApiVersion {
@@ -302,6 +447,7 @@ function Get-BackendPids {
         return @()
     }
     foreach ($process in $processes) {
+        if ($script:remoteBackendPids -contains [int]$process.ProcessId) { continue }
         $command = [string]$process.CommandLine
         $path = [string]$process.ExecutablePath
         if ($command -like "*$script:installDirPath*" -and $command -like "*run.py*" -and ($command -like "*--prod*" -or $command -like "*--self-check*")) {
@@ -387,6 +533,181 @@ function Wait-ProcessExit {
     } catch {
         return $false
     }
+}
+
+function Get-CdpTargets {
+    param([int]$Port)
+    try {
+        $request = [System.Net.HttpWebRequest]::Create("http://127.0.0.1:$Port/json")
+        $request.Proxy = $null
+        $request.Timeout = 3000
+        $request.ReadWriteTimeout = 3000
+        $response = $request.GetResponse()
+        try {
+            $stream = $response.GetResponseStream()
+            $reader = New-Object System.IO.StreamReader($stream, [System.Text.Encoding]::UTF8)
+            $raw = $reader.ReadToEnd()
+            $reader.Close()
+            $stream.Close()
+        } finally {
+            $response.Close()
+        }
+        return @($raw | ConvertFrom-Json)
+    } catch {
+        return @()
+    }
+}
+
+function Get-CdpPageTarget {
+    param([int]$Port)
+    $fallback = $null
+    foreach ($target in @(Get-CdpTargets -Port $Port)) {
+        $type = [string](Get-PropertyValue -Object $target -Name "type")
+        $url = [string](Get-PropertyValue -Object $target -Name "url")
+        if ($type -ne "page" -or $url -like "devtools://*") { continue }
+        if ($url -like "http://tauri.localhost*") { return $target }
+        if ($null -eq $fallback) { $fallback = $target }
+    }
+    return $fallback
+}
+
+function Wait-CdpTargetUrl {
+    param([int]$Port, [string]$Prefix, [int]$TimeoutSeconds = 180)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $last = ""
+    while ((Get-Date) -lt $deadline) {
+        $target = Get-CdpPageTarget -Port $Port
+        if ($null -ne $target) {
+            $last = [string](Get-PropertyValue -Object $target -Name "url")
+            if ($last.StartsWith($Prefix, [StringComparison]::OrdinalIgnoreCase)) { return $last }
+        }
+        Start-Sleep -Milliseconds 500
+    }
+    return ""
+}
+
+function New-CdpConnection {
+    param([int]$Port, [int]$TimeoutSeconds = 60)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    $target = $null
+    while ((Get-Date) -lt $deadline) {
+        $target = Get-CdpPageTarget -Port $Port
+        if ($null -ne $target) { break }
+        Start-Sleep -Milliseconds 500
+    }
+    if ($null -eq $target) { throw ("CDP target not available on port " + $Port) }
+    $socket = New-Object System.Net.WebSockets.ClientWebSocket
+    $cts = New-Object System.Threading.CancellationTokenSource
+    $cts.CancelAfter(10000)
+    try {
+        $socket.ConnectAsync([Uri]([string](Get-PropertyValue -Object $target -Name "webSocketDebuggerUrl")), $cts.Token).GetAwaiter().GetResult()
+    } catch {
+        $socket.Dispose()
+        throw ("CDP websocket connect failed: " + $_.Exception.Message)
+    } finally {
+        $cts.Dispose()
+    }
+    return [pscustomobject]@{
+        socket = $socket
+        next_id = 0
+        port = $Port
+        target_url = [string](Get-PropertyValue -Object $target -Name "url")
+    }
+}
+
+function Receive-CdpMessage {
+    param($Connection, [int]$TimeoutMs = 5000)
+    $deadline = (Get-Date).AddMilliseconds([Math]::Max(1, $TimeoutMs))
+    $buffer = New-Object byte[] 65536
+    $memory = New-Object System.IO.MemoryStream
+    try {
+        while ((Get-Date) -lt $deadline) {
+            $remaining = [int]($deadline - (Get-Date)).TotalMilliseconds
+            if ($remaining -lt 1) { return $null }
+            $cts = New-Object System.Threading.CancellationTokenSource
+            $cts.CancelAfter($remaining)
+            try {
+                $segment = [System.ArraySegment[byte]]::new($buffer)
+                $received = $Connection.socket.ReceiveAsync($segment, $cts.Token).GetAwaiter().GetResult()
+            } catch {
+                return $null
+            } finally {
+                $cts.Dispose()
+            }
+            if ($received.MessageType -eq [System.Net.WebSockets.WebSocketMessageType]::Close) { return $null }
+            $memory.Write($buffer, 0, $received.Count)
+            if ($received.EndOfMessage) {
+                $text = [System.Text.Encoding]::UTF8.GetString($memory.ToArray())
+                $memory.SetLength(0)
+                try { return ($text | ConvertFrom-Json) } catch { return $null }
+            }
+        }
+        return $null
+    } finally {
+        $memory.Dispose()
+    }
+}
+
+function Invoke-CdpCommand {
+    param($Connection, [string]$Method, [hashtable]$Params = @{}, [int]$TimeoutMs = 5000)
+    $Connection.next_id = [int]$Connection.next_id + 1
+    $id = [int]$Connection.next_id
+    $payloadJson = ([ordered]@{ id = $id; method = $Method; params = $Params } | ConvertTo-Json -Compress -Depth 20)
+    $bytes = [System.Text.Encoding]::UTF8.GetBytes($payloadJson)
+    $cts = New-Object System.Threading.CancellationTokenSource
+    $cts.CancelAfter($TimeoutMs)
+    try {
+        $segment = [System.ArraySegment[byte]]::new($bytes)
+        $Connection.socket.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $cts.Token).GetAwaiter().GetResult()
+    } catch {
+        return $null
+    } finally {
+        $cts.Dispose()
+    }
+    $deadline = (Get-Date).AddMilliseconds($TimeoutMs)
+    while ((Get-Date) -lt $deadline) {
+        $remaining = [int]($deadline - (Get-Date)).TotalMilliseconds
+        if ($remaining -lt 1) { return $null }
+        $message = Receive-CdpMessage -Connection $Connection -TimeoutMs $remaining
+        if ($null -eq $message) { return $null }
+        if ([int](Get-PropertyValue -Object $message -Name "id") -eq $id) { return $message }
+    }
+    return $null
+}
+
+function Invoke-CdpExpression {
+    param($Connection, [string]$Expression, [int]$TimeoutMs = 8000)
+    $response = Invoke-CdpCommand -Connection $Connection -Method "Runtime.evaluate" -Params @{
+        expression = $Expression
+        returnByValue = $true
+        awaitPromise = $true
+    } -TimeoutMs $TimeoutMs
+    if ($null -eq $response) { throw "CDP Runtime.evaluate timed out" }
+    $result = Get-PropertyValue -Object $response -Name "result"
+    $exception = Get-PropertyValue -Object $result -Name "exceptionDetails"
+    if ($null -ne $exception) { throw ("CDP Runtime.evaluate failed: " + [string](Get-PropertyValue -Object $exception -Name "text")) }
+    $remoteObject = Get-PropertyValue -Object $result -Name "result"
+    return (Get-PropertyValue -Object $remoteObject -Name "value")
+}
+
+function Wait-CdpExpression {
+    param($Connection, [string]$Expression, [int]$TimeoutSeconds = 60)
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    while ((Get-Date) -lt $deadline) {
+        try {
+            $value = Invoke-CdpExpression -Connection $Connection -Expression $Expression -TimeoutMs 4000
+            if ($value -eq $true) { return $true }
+        } catch {
+        }
+        Start-Sleep -Milliseconds 400
+    }
+    return $false
+}
+
+function Close-CdpConnection {
+    param($Connection)
+    if ($null -eq $Connection) { return }
+    try { $Connection.socket.Dispose() } catch { }
 }
 
 function ConvertTo-NativeArgument {
@@ -479,7 +800,7 @@ function Start-GwProcess {
 }
 
 function Start-DesktopProcess {
-    param([string]$Label, [string[]]$Arguments = @(), [string]$WorkingDirectory = "")
+    param([string]$Label, [string[]]$Arguments = @(), [string]$WorkingDirectory = "", [int]$CdpPort = 0)
     if (-not $WorkingDirectory) { $WorkingDirectory = $script:installDirPath }
     $environment = @{
         LOCALAPPDATA = $script:processLocalAppData
@@ -488,6 +809,11 @@ function Start-DesktopProcess {
         GW_PYTHON = ""
         GW_BUNDLE_MANIFEST = ""
         GW_PRODUCT_VERSION = ""
+        WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS = ""
+        NO_PROXY = "*"
+    }
+    if ($CdpPort -gt 0) {
+        $environment["WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS"] = "--remote-debugging-port=$CdpPort --remote-allow-origins=*"
     }
     return (Start-GwProcess -FilePath $script:desktopExe -Arguments $Arguments -Label $Label -Environment $environment -WorkingDirectory $WorkingDirectory)
 }
@@ -637,8 +963,15 @@ while (`$true) {
 function Stop-TcpHolder {
     param($Holder)
     if ($null -eq $Holder) { return }
-    try { Stop-Process -Id $Holder.process.Id -Force -ErrorAction SilentlyContinue } catch { }
+    try {
+        $Holder.process.Refresh()
+        if (-not $Holder.process.HasExited) {
+            Stop-Process -Id $Holder.process.Id -Force -ErrorAction SilentlyContinue
+        }
+    } catch {
+    }
     try { $Holder.process.WaitForExit(10000) | Out-Null } catch { }
+    try { if ($script:holders.Contains($Holder)) { $script:holders.Remove($Holder) } } catch { }
 }
 
 function Stop-Holders {
@@ -715,8 +1048,8 @@ function Invoke-DesktopQuit {
 }
 
 function Start-DesktopPrimary {
-    param([string]$Label)
-    $launch = Start-DesktopProcess -Label $Label
+    param([string]$Label, [int]$CdpPort = 0)
+    $launch = Start-DesktopProcess -Label $Label -CdpPort $CdpPort
     $window = Wait-DesktopWindow -Process $launch.process -TimeoutSeconds 90
     if ($null -eq $window) {
         if ($launch.process.HasExited) {
@@ -767,8 +1100,14 @@ function Assert-DesktopReady {
         }
     }
     Require-Check "$Label.health" ([bool]($health.ok -and $health.status -eq 200)) ("health status " + [string]$health.status)
+    $healthCache = [string](Get-PropertyValue -Object $health.headers -Name "Cache-Control")
+    $healthPragma = [string](Get-PropertyValue -Object $health.headers -Name "Pragma")
+    Require-Check "$Label.health-no-store" (Test-NoStoreHeaders -Result $health) ("Cache-Control=" + $healthCache + "; Pragma=" + $healthPragma)
+    $openapiResult = Get-HttpResult -Url "http://127.0.0.1:2077/openapi.json"
     $openapiVersion = Get-OpenApiVersion
     Require-Check "$Label.openapi-version" (Test-ExpectedOpenApiVersion $openapiVersion) ("expected prefix " + $script:expectedVersionValue + "+gw., got " + $openapiVersion)
+    $openapiCache = [string](Get-PropertyValue -Object $openapiResult.headers -Name "Cache-Control")
+    Require-Check "$Label.openapi-no-store" (Test-NoStoreHeaders -Result $openapiResult) ("Cache-Control=" + $openapiCache)
     $manifest = Read-JsonFile -Path (Join-Path $script:installDirPath "backend\bundle-manifest.json")
     $manifestVersion = Get-PropertyValue -Object $manifest -Name "product_version"
     $manifestCommit = Get-PropertyValue -Object $manifest -Name "git_commit"
@@ -822,7 +1161,10 @@ function Assert-DesktopReady {
         lock_pid = if ($null -ne $lock) { [int]$lockPid } else { 0 }
         health_status = [int]$health.status
         health_pid = $healthPid
+        health_cache_control = $healthCache
+        health_pragma = $healthPragma
         openapi_version = $openapiVersion
+        openapi_cache_control = $openapiCache
         handshake = if ($null -ne $viewHandshake) { [bool](Get-PropertyValue -Object $viewHandshake -Name "verified") } else { $false }
         trusted = if ($null -ne $viewTrusted) { [bool](Get-PropertyValue -Object $viewTrusted -Name "available") } else { $false }
     }
@@ -878,6 +1220,264 @@ function Stop-DesktopGracefully {
     }
     $script:desktop = $null
     $script:desktopLaunch = $null
+}
+
+function Wait-ShellFailure {
+    param($Cdp, [int]$TimeoutSeconds = 120)
+    $expression = @"
+(() => {
+  const error = document.getElementById('local-error');
+  const title = document.getElementById('local-error-title');
+  const retry = document.getElementById('local-retry');
+  return !!(error && !error.hidden && title && title.textContent.trim().length > 0 && retry && !retry.disabled);
+})()
+"@
+    return (Wait-CdpExpression -Connection $Cdp -Expression $expression -TimeoutSeconds $TimeoutSeconds)
+}
+
+function Get-ShellFailureSnapshot {
+    param($Cdp)
+    return (Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const error = document.getElementById('local-error');
+  const home = document.getElementById('home-view');
+  const remote = document.getElementById('remote-view');
+  const retry = document.getElementById('local-retry');
+  return {
+    title: document.getElementById('local-error-title').textContent.trim(),
+    reason: document.getElementById('local-error-reason').textContent.trim(),
+    next: document.getElementById('local-error-next').textContent.trim(),
+    error_visible: !!(error && !error.hidden),
+    retry_visible: !!(retry && !retry.disabled && retry.offsetParent !== null),
+    home_visible: !!(home && !home.hidden),
+    remote_visible: !!(remote && !remote.hidden),
+    remote_entry_present: !!document.getElementById('remote-entry')
+  };
+})()
+"@)
+}
+
+function Set-ShellTheme {
+    param($Cdp, [string]$Theme)
+    return (Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const current = document.documentElement.dataset.theme === 'light' ? 'light' : 'dark';
+  if (current !== '$Theme') { document.getElementById('theme-toggle').click(); }
+  const style = getComputedStyle(document.documentElement);
+  return {
+    theme: document.documentElement.dataset.theme,
+    surface: style.getPropertyValue('--gw-surface-bg').trim(),
+    surface_card: style.getPropertyValue('--gw-surface-card').trim(),
+    text_main: style.getPropertyValue('--gw-text-main').trim(),
+    gold: style.getPropertyValue('--gold-primary').trim(),
+    stored: localStorage.getItem('gw.desktop.theme') || ''
+  };
+})()
+"@)
+}
+
+function Measure-ShellLayout {
+    param($Cdp, [int]$Width)
+    $null = Invoke-CdpCommand -Connection $Cdp -Method "Emulation.setDeviceMetricsOverride" -Params @{
+        width = $Width
+        height = 900
+        deviceScaleFactor = 1
+        mobile = $false
+    } -TimeoutMs 5000
+    Start-Sleep -Milliseconds 350
+    try {
+        $measurement = Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const steps = document.querySelector('.steps');
+  const card = document.querySelector('.launch-card');
+  const style = steps ? getComputedStyle(steps) : null;
+  const columns = style ? style.gridTemplateColumns.trim().split(/\s+/).filter(Boolean).length : 0;
+  const rect = card ? card.getBoundingClientRect() : { width: 0 };
+  return {
+    width: window.innerWidth,
+    height: window.innerHeight,
+    columns: columns,
+    grid: style ? style.gridTemplateColumns : '',
+    card_width: Math.round(rect.width),
+    body_font: getComputedStyle(document.body).fontSize,
+    overflow: document.documentElement.scrollWidth > window.innerWidth + 1
+  };
+})()
+"@
+    } finally {
+        $null = Invoke-CdpCommand -Connection $Cdp -Method "Emulation.clearDeviceMetricsOverride" -TimeoutMs 5000
+    }
+    if ($null -eq $measurement) { throw ("layout measurement failed at width " + $Width) }
+    return $measurement
+}
+
+function Open-ShellRemoteView {
+    param($Cdp)
+    return (Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  document.getElementById('remote-entry').click();
+  const remote = document.getElementById('remote-view');
+  const home = document.getElementById('home-view');
+  return { remote_visible: !!(remote && !remote.hidden), home_visible: !!(home && !home.hidden) };
+})()
+"@)
+}
+
+function Submit-ShellRemoteUrl {
+    param($Cdp, [string]$Url)
+    $escaped = $Url.Replace("\", "\\").Replace("'", "\'")
+    return (Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const input = document.getElementById('remote-url');
+  input.value = '$escaped';
+  document.getElementById('remote-submit').click();
+  return input.value;
+})()
+"@)
+}
+
+function Wait-ShellRemoteError {
+    param($Cdp, [int]$TimeoutSeconds = 120)
+    return (Wait-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const error = document.getElementById('remote-error');
+  const title = document.getElementById('remote-error-title');
+  return !!(error && !error.hidden && title && title.textContent.trim().length > 0);
+})()
+"@ -TimeoutSeconds $TimeoutSeconds)
+}
+
+function Get-ShellRemoteErrorSnapshot {
+    param($Cdp)
+    return (Invoke-CdpExpression -Connection $Cdp -Expression @"
+(() => {
+  const error = document.getElementById('remote-error');
+  const retry = document.getElementById('remote-retry');
+  return {
+    title: document.getElementById('remote-error-title').textContent.trim(),
+    reason: document.getElementById('remote-error-reason').textContent.trim(),
+    next: document.getElementById('remote-error-next').textContent.trim(),
+    error_visible: !!(error && !error.hidden),
+    retry_visible: !!(retry && !retry.disabled && retry.offsetParent !== null)
+  };
+})()
+"@)
+}
+
+function Start-FakeRemoteServer {
+    param([string]$Address, [int]$Port, [string]$Label, [string]$ModePath)
+    $ready = Join-Path $script:outputDirPath ($Label + ".port.txt")
+    $fakeScript = Join-Path $script:outputDirPath ($Label + ".server.ps1")
+    $code = @"
+`$listener = New-Object System.Net.Sockets.TcpListener -ArgumentList ([System.Net.IPAddress]::Parse('$Address')), $Port
+`$listener.Start()
+[IO.File]::WriteAllText('$ready', [string]$Port)
+while (`$true) {
+    try {
+        `$client = `$listener.AcceptTcpClient()
+        `$stream = `$client.GetStream()
+        `$reader = New-Object System.IO.StreamReader(`$stream, [System.Text.Encoding]::ASCII)
+        `$requestLine = `$reader.ReadLine()
+        while (`$true) { `$line = `$reader.ReadLine(); if (`$null -eq `$line -or `$line -eq '') { break } }
+        `$path = '/'
+        if (`$requestLine -match '^[A-Z]+ ([^ ?]+)') { `$path = `$Matches[1] }
+        `$mode = 'no-store'
+        try { `$mode = ([IO.File]::ReadAllText('$ModePath')).Trim() } catch { }
+        `$status = '200 OK'
+        `$extraHeaders = ''
+        `$body = '{}'
+        if (`$path -eq '/healthz') {
+            `$body = '{"status":"ok","mode":"cleanroom","auth_mode":"local","frozen_contracts":true,"oidc_ready":false,"release_authorized":true}'
+        } elseif (`$path -eq '/openapi.json') {
+            `$body = '{"info":{"title":"Gods-Workbench Cleanroom API","version":"0.1.0"},"paths":{"/api/asset-auth/status":{"get":{}},"/api/asset-auth/local/login":{"post":{}},"/api/asset-auth/local/setup":{"post":{}},"/api/asset-registry/projects":{"get":{},"post":{}},"/api/asset-registry/projects/{project_id}":{"patch":{}},"/api/canvases":{"get":{},"post":{}},"/api/canvases/{canvas_id}":{"patch":{}},"/healthz":{"get":{}}}}'
+        } elseif (`$path -eq '/api/asset-auth/status') {
+            `$body = '{"auth_mode":"local","authenticated":false,"login_available":true,"logout_available":false,"oidc_ready":false,"reason":"","release_authorized":true}'
+        } elseif (`$path -eq '/api/asset-registry/projects') {
+            `$status = '401 Unauthorized'
+            `$body = '{"detail":{"code":"UNAUTHORIZED","message":"unauthenticated"}}'
+        }
+        if (`$mode -eq 'no-version') {
+            `$extraHeaders = "Cache-Control: no-store, no-cache, must-revalidate`r`nPragma: no-cache`r`nExpires: 0`r`n"
+        }
+        `$bodyBytes = [System.Text.Encoding]::UTF8.GetBytes(`$body)
+        `$head = "HTTP/1.1 `$status`r`nContent-Type: application/json; charset=utf-8`r`nContent-Length: " + `$bodyBytes.Length + "`r`n" + `$extraHeaders + "Connection: close`r`n`r`n"
+        `$headBytes = [System.Text.Encoding]::ASCII.GetBytes(`$head)
+        `$stream.Write(`$headBytes, 0, `$headBytes.Length)
+        `$stream.Write(`$bodyBytes, 0, `$bodyBytes.Length)
+        `$stream.Flush()
+        `$client.Close()
+    } catch {
+        Start-Sleep -Milliseconds 200
+    }
+}
+"@
+    Write-Utf8NoBom -Path $fakeScript -Text $code
+    $started = Start-Process -FilePath $script:powershellPath -ArgumentList @("-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File", ('"' + $fakeScript + '"')) -WindowStyle Hidden -PassThru
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        if (Test-Path -LiteralPath $ready) {
+            $holder = [pscustomobject]@{ process = $started; port = $Port; script = $fakeScript; ready = $ready }
+            $null = $script:holders.Add($holder)
+            return $holder
+        }
+        if ($started.HasExited) { break }
+        Start-Sleep -Milliseconds 300
+    }
+    try { Stop-Process -Id $started.Id -Force -ErrorAction SilentlyContinue } catch { }
+    throw ("fake remote server failed to bind " + $Address + ":" + $Port)
+}
+
+function Set-FakeRemoteMode {
+    param([string]$ModePath, [string]$Mode)
+    Write-Utf8NoBom -Path $ModePath -Text ($Mode + "`r`n")
+}
+
+function Start-RemoteBackend {
+    param([string]$Label, [string]$Address, [int]$Port)
+    $python = Join-Path $script:installDirPath "backend\python\python.exe"
+    Require-Check "remote-backend.python" (Test-Path -LiteralPath $python) "bundled python missing"
+    $environment = @{
+        LOCALAPPDATA = $script:remoteLocalAppData
+        GW_BACKEND_ROOT = ""
+        GW_ROOT_DIR = ""
+        GW_PYTHON = ""
+        GW_BUNDLE_MANIFEST = ""
+        GW_PRODUCT_VERSION = ""
+        GW_HOST = ""
+        PYTHONDONTWRITEBYTECODE = "1"
+        GW_RUNTIME_MODE = "prod"
+    }
+    $launch = Start-GwProcess -FilePath $python -Arguments @($script:installedRunPy, "--prod", "--host", $Address, "--port", [string]$Port) -Label $Label -Environment $environment -WorkingDirectory (Join-Path $script:installDirPath "backend")
+    $null = $script:remoteBackends.Add($launch)
+    $null = $script:remoteBackendPids.Add([int]$launch.process.Id)
+    $baseUrl = "http://$Address`:$Port"
+    $health = Wait-Health -TimeoutSeconds 150 -BaseUrl $baseUrl
+    Require-Check "remote-backend.health" ([bool]($health.ok -and $health.status -eq 200)) ("remote health status " + [string]$health.status)
+    Require-Check "remote-backend.no-store" (Test-NoStoreHeaders -Result $health) ("Cache-Control=" + [string](Get-PropertyValue -Object $health.headers -Name "Cache-Control"))
+    $version = Get-OpenApiVersion -BaseUrl $baseUrl
+    Require-Check "remote-backend.version" (Test-ExpectedOpenApiVersion $version) ("remote openapi version " + $version)
+    return [pscustomobject]@{
+        launch = $launch
+        base_url = $baseUrl
+        version = $version
+        cache_control = [string](Get-PropertyValue -Object $health.headers -Name "Cache-Control")
+    }
+}
+
+function Stop-RemoteBackends {
+    foreach ($launch in @($script:remoteBackends)) {
+        try {
+            $launch.process.Refresh()
+            if (-not $launch.process.HasExited) {
+                Stop-Process -Id $launch.process.Id -Force -ErrorAction SilentlyContinue
+            }
+        } catch {
+        }
+        try { $launch.process.WaitForExit(15000) | Out-Null } catch { }
+        Complete-GwOutput -Launch $launch
+    }
+    $script:remoteBackends.Clear()
+    $script:remoteBackendPids.Clear()
 }
 
 function Wait-ForSingleDesktopWinner {
@@ -989,6 +1589,8 @@ function Save-Evidence {
         }
         installer = $installerResults
         lifecycle = $lifecycle
+        ui = ConvertTo-SafeObject -Value $script:ui
+        remote_backend = ConvertTo-SafeObject -Value $script:remoteBackendEvidence
         checks = $checks
         steps = $steps
         journal_final = (Get-JournalState)
@@ -1021,6 +1623,21 @@ function Save-Evidence {
     $null = $md.Add("## Installer transitions")
     foreach ($item in $installerResults) {
         $null = $md.Add(("- {0}: exit={1}, journal {2} -> {3}, backup {4} -> {5}, installed {6} -> {7}" -f $item.label, $item.exit_code, $item.journal_before, $item.journal_after, $item.backup_generation_before, $item.backup_generation_after, $item.installed_generation_before, $item.installed_generation_after))
+    }
+    $null = $md.Add("")
+    $null = $md.Add("## UI behavior")
+    $uiSafe = ConvertTo-SafeObject -Value $script:ui
+    if ($uiSafe.Keys.Count -eq 0) {
+        $null = $md.Add("- (no UI scenario recorded)")
+    } else {
+        foreach ($key in $uiSafe.Keys) {
+            $uiValue = $uiSafe[$key]
+            if ($uiValue -is [string] -or $uiValue -is [bool] -or $uiValue -is [ValueType]) {
+                $null = $md.Add(("- {0}: {1}" -f $key, [string]$uiValue))
+            } else {
+                $null = $md.Add(("- {0}: {1}" -f $key, (($uiValue | ConvertTo-Json -Compress -Depth 8))))
+            }
+        }
     }
     $null = $md.Add("")
     $null = $md.Add("## Checks")
@@ -1078,6 +1695,20 @@ function Remove-AcceptanceState {
                 Write-Host ("[WARN] could not remove isolated LocalAppDataOverride: " + (Format-SafeText $_.Exception.Message))
                 $ok = $false
             }
+        }
+    }
+    if ($script:remoteLocalAppData.Length -gt 0 -and (Test-Path -LiteralPath $script:remoteLocalAppData)) {
+        $remoteName = Split-Path -Leaf $script:remoteLocalAppData
+        if ($remoteName.StartsWith("gw-qin626-accept-remote-")) {
+            try {
+                Remove-Item -LiteralPath $script:remoteLocalAppData -Recurse -Force -ErrorAction Stop
+            } catch {
+                Write-Host ("[WARN] could not remove isolated remote LocalAppData: " + (Format-SafeText $_.Exception.Message))
+                $ok = $false
+            }
+        } else {
+            Write-Host ("[WARN] refusing to remove non-acceptance remote LocalAppData " + $remoteName)
+            $ok = $false
         }
     }
     if ($script:stateClaimed -and (Test-Path -LiteralPath $script:markerPath)) {
@@ -1261,6 +1892,17 @@ public static class GwNative {
     Add-Check "preflight.port-free" (-not (Test-PortOpen -Port 2077 -TimeoutMs 500)) "port 2077 is already listening"
     Add-Check "preflight.no-desktop" ((@(Get-DesktopPids)).Count -eq 0) ("desktop PIDs: " + ((@(Get-DesktopPids)) -join ","))
     Add-Check "preflight.no-backend" ((@(Get-BackendPids)).Count -eq 0) ("backend PIDs: " + ((@(Get-BackendPids)) -join ","))
+    $script:lanAddress = Get-PrivateLanAddress
+    Require-Check "preflight.lan-address" ($script:lanAddress.Length -gt 0) "no private LAN IPv4 address available for the remote scenarios"
+    $script:remoteLocalAppData = Join-Path $env:TEMP ("gw-qin626-accept-remote-" + (Get-Date -Format "yyyyMMdd-HHmmss"))
+    if (Test-Path -LiteralPath $script:remoteLocalAppData) {
+        Remove-Item -LiteralPath $script:remoteLocalAppData -Recurse -Force
+    }
+    New-Item -ItemType Directory -Force -Path $script:remoteLocalAppData | Out-Null
+    $script:ui["environment"] = [ordered]@{
+        lan_address = $script:lanAddress
+        remote_data_mode = "isolated-remote-localappdata"
+    }
 
     Add-Step "fresh-install"
     $fresh = Invoke-Installer -Label "01-fresh-install"
@@ -1272,12 +1914,18 @@ public static class GwNative {
     Set-Generation -RunPy $script:installedRunPy -Generation "G0"
 
     Add-Step "first-run"
-    # Pin the first-run preference to the bundled local backend so an unrelated
-    # workbench server on the LAN cannot divert startup into the discovery list.
-    $localServerPin = [ordered]@{ server_url = "http://127.0.0.1:2077/" } | ConvertTo-Json -Compress
-    Write-Utf8NoBom -Path $script:serverConfig -Text ($localServerPin + "`r`n")
-    Add-Check "first-run.local-server-pin" (Test-Path -LiteralPath $script:serverConfig) "local server preference fixture not created"
-    $first = Start-DesktopPrimary -Label "02-first-run"
+    # 不再写入任何首启服务器偏好：首启必须由本地优先流程自己启动内置后端。
+    Add-Check "first-run.no-server-pin" (-not (Test-Path -LiteralPath $script:serverConfig)) "server preference must not exist before the first launch"
+    $firstCdpPort = Get-FreeTcpPort
+    $first = Start-DesktopPrimary -Label "02-first-run" -CdpPort $firstCdpPort
+    $firstLocalUrl = Wait-CdpTargetUrl -Port $firstCdpPort -Prefix "http://127.0.0.1:2077/static/pages/index.html" -TimeoutSeconds 300
+    Require-Check "first-run.local-navigation" ($firstLocalUrl.StartsWith("http://127.0.0.1:2077/static/pages/index.html", [StringComparison]::OrdinalIgnoreCase)) ("installer shell did not enter the local workbench: " + $firstLocalUrl)
+    $firstFragment = ""
+    if ($firstLocalUrl.Contains("#")) { $firstFragment = $firstLocalUrl.Substring($firstLocalUrl.IndexOf("#") + 1) }
+    $firstFragmentOk = $firstFragment.Length -eq 0 -or ($firstFragment.StartsWith("gw_trusted=") -and $firstFragment.Substring(11) -match '^[A-Za-z0-9_.-]+$')
+    Add-Check "first-run.destination-shape" ($firstFragmentOk -and -not $firstLocalUrl.Contains("?")) ("unexpected local destination: " + $firstLocalUrl)
+    $script:ui["first_run_navigation"] = $firstLocalUrl
+    $script:ui["first_run_trusted_fragment"] = ($firstFragment.Length -gt 0)
     Assert-DesktopReady -Label "02-first-run"
     $shot = Save-Screenshot -Path (Join-Path $script:outputDirPath "02-first-run.png")
     Add-Check "first-run.window-visible" ([GwNative]::IsWindowVisible($first.window.handle)) "main window not visible"
@@ -1462,53 +2110,177 @@ public static class GwNative {
     Stop-TcpHolder -Holder $holder
     Remove-Item -LiteralPath $script:lockPath -Force -ErrorAction SilentlyContinue
 
-    Add-Step "port-2077-conflict"
+    Add-Step "local-failure-and-retry"
     $portHolder = Start-TcpHolder -Port 2077 -Label "12-port-holder"
     $portOwnerBefore = @(Get-ListeningPids -Port 2077)
-    Add-Check "port-conflict.holder" ($portOwnerBefore.Count -eq 1) ("pre-holder listeners " + ($portOwnerBefore -join ","))
-    $conflictLaunch = Start-DesktopProcess -Label "12-port-conflict"
-    $conflictWindow = Wait-DesktopWindow -Process $conflictLaunch.process -TimeoutSeconds 90
-    Require-Check "port-conflict.window" ($null -ne $conflictWindow) "desktop window did not open"
-    $script:desktop = $conflictLaunch.process
-    $conflictDiag = $null
-    $conflictDeadline = (Get-Date).AddSeconds(60)
-    while ((Get-Date) -lt $conflictDeadline) {
-        $candidate = Get-DesktopDiagnosticsSnapshot -Label "12-port-conflict.diagnostics" -WaitSeconds 30
-        if ($null -ne $candidate.data -and $null -ne $candidate.data.diagnostics -and [string]$candidate.data.diagnostics.last_error -match "2077") {
-            $conflictDiag = $candidate
-            break
+    Require-Check "port-conflict.holder" ($portOwnerBefore.Count -eq 1) ("pre-holder listeners " + ($portOwnerBefore -join ","))
+    $conflictCdpPort = Get-FreeTcpPort
+    $conflictLaunch = Start-DesktopPrimary -Label "12-port-conflict" -CdpPort $conflictCdpPort
+    $conflictCdp = New-CdpConnection -Port $conflictCdpPort
+    try {
+        Add-Check "port-conflict.shell-origin" ([string]$conflictCdp.target_url -like "http://tauri.localhost*") ("unexpected shell target: " + [string]$conflictCdp.target_url)
+        Require-Check "port-conflict.ui-failure" (Wait-ShellFailure -Cdp $conflictCdp -TimeoutSeconds 180) "installer shell did not show a retryable local failure"
+        $failureSnapshot = Get-ShellFailureSnapshot -Cdp $conflictCdp
+        $script:ui["local_failure"] = $failureSnapshot
+        Require-Check "port-conflict.ui-title" ([string]$failureSnapshot.title -eq "本机端口被占用") ("local failure title: " + [string]$failureSnapshot.title)
+        Require-Check "port-conflict.ui-reason" ([string]$failureSnapshot.reason -match "2077") ("local failure reason: " + [string]$failureSnapshot.reason)
+        Require-Check "port-conflict.ui-next" ([string]$failureSnapshot.next.Length -gt 0) "local failure next step is empty"
+        Require-Check "port-conflict.ui-retry" ([bool]$failureSnapshot.retry_visible) "local retry button is not visible"
+        Require-Check "port-conflict.ui-home" ([bool]$failureSnapshot.home_visible -and -not [bool]$failureSnapshot.remote_visible) "failure did not stay on the home view"
+        $conflictDiag = Get-DesktopDiagnosticsSnapshot -Label "12-port-conflict.diagnostics" -WaitSeconds 30
+        $conflictError = ""
+        if ($null -ne $conflictDiag -and $null -ne $conflictDiag.data) {
+            $conflictError = [string]$conflictDiag.data.diagnostics.last_error
         }
-        Start-Sleep -Seconds 1
+        Require-Check "port-conflict.last-error" ($conflictError -match "2077") ("desktop last_error " + $conflictError)
+        Add-Check "port-conflict.screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-port-conflict.png")) "screenshot failed"
+
+        $darkTheme = Set-ShellTheme -Cdp $conflictCdp -Theme "dark"
+        Require-Check "port-conflict.theme-dark" ([string]$darkTheme.theme -eq "dark" -and [string]$darkTheme.surface -eq "#08090c" -and [string]$darkTheme.surface_card -eq "#111216" -and [string]$darkTheme.text_main -eq "#e8e8ea" -and [string]$darkTheme.gold -eq "#dfc384") ("dark tokens: " + ($darkTheme | ConvertTo-Json -Compress))
+        $darkShot = Save-Screenshot -Path (Join-Path $script:outputDirPath "12-theme-dark.png")
+        Add-Check "port-conflict.theme-dark-screenshot" $darkShot "dark screenshot failed"
+        $lightTheme = Set-ShellTheme -Cdp $conflictCdp -Theme "light"
+        Require-Check "port-conflict.theme-light" ([string]$lightTheme.theme -eq "light" -and [string]$lightTheme.surface -eq "rgb(241, 242, 245)" -and [string]$lightTheme.surface_card -eq "rgb(255, 255, 255)" -and [string]$lightTheme.text_main -eq "rgb(17, 20, 26)" -and [string]$lightTheme.gold -eq "#dfc384") ("light tokens: " + ($lightTheme | ConvertTo-Json -Compress))
+        Require-Check "port-conflict.theme-light-persist" ([string]$lightTheme.stored -eq "light") ("stored theme: " + [string]$lightTheme.stored)
+        $lightShot = Save-Screenshot -Path (Join-Path $script:outputDirPath "12-theme-light.png")
+        Add-Check "port-conflict.theme-light-screenshot" $lightShot "light screenshot failed"
+        $darkThemeRestored = Set-ShellTheme -Cdp $conflictCdp -Theme "dark"
+        Require-Check "port-conflict.theme-dark-persist" ([string]$darkThemeRestored.theme -eq "dark" -and [string]$darkThemeRestored.stored -eq "dark") ("stored theme: " + [string]$darkThemeRestored.stored)
+        $script:ui["themes"] = [ordered]@{ dark = $darkTheme; light = $lightTheme; dark_restored = $darkThemeRestored }
+
+        $layouts = @()
+        foreach ($layoutWidth in @(724, 900, 1440, 1920)) {
+            $measurement = Measure-ShellLayout -Cdp $conflictCdp -Width $layoutWidth
+            $expectedColumns = 3
+            if ($layoutWidth -le 724) { $expectedColumns = 1 }
+            $expectedCard = 720
+            if ($layoutWidth -le 724) { $expectedCard = 696 }
+            if ($layoutWidth -eq 1440) { $expectedCard = 760 }
+            if ($layoutWidth -eq 1920) { $expectedCard = 800 }
+            $expectedFont = "14px"
+            if ($layoutWidth -eq 1920) { $expectedFont = "15px" }
+            $layoutOk = ([Math]::Abs([int]$measurement.width - $layoutWidth) -le 2) -and ([int]$measurement.columns -eq $expectedColumns) -and ([Math]::Abs([int]$measurement.card_width - $expectedCard) -le 16) -and ([string]$measurement.body_font -eq $expectedFont) -and (-not [bool]$measurement.overflow)
+            Require-Check ("port-conflict.layout-" + $layoutWidth) $layoutOk ("layout " + ($measurement | ConvertTo-Json -Compress))
+            $layouts += $measurement
+        }
+        $script:ui["layouts"] = $layouts
+
+        $fakePort = Get-FreeAddressPort -Address $script:lanAddress
+        $fakeModePath = Join-Path $script:outputDirPath "12-fake-remote.mode.txt"
+        Set-FakeRemoteMode -ModePath $fakeModePath -Mode "no-store"
+        $fake = Start-FakeRemoteServer -Address $script:lanAddress -Port $fakePort -Label "12-fake-remote" -ModePath $fakeModePath
+        $remoteAttemptUrl = "http://$($script:lanAddress):$fakePort"
+        Add-Check "remote-fail-closed.view" ([bool](Open-ShellRemoteView -Cdp $conflictCdp).remote_visible) "remote view did not open"
+        $null = Submit-ShellRemoteUrl -Cdp $conflictCdp -Url $remoteAttemptUrl
+        Require-Check "remote-fail-closed.no-store-visible" (Wait-ShellRemoteError -Cdp $conflictCdp -TimeoutSeconds 180) "remote no-store rejection did not reach the shell"
+        $noStoreSnapshot = Get-ShellRemoteErrorSnapshot -Cdp $conflictCdp
+        $script:ui["remote_fail_closed_no_store"] = $noStoreSnapshot
+        Require-Check "remote-fail-closed.no-store-title" ([string]$noStoreSnapshot.title -eq "远端服务版本无法可信验证") ("remote no-store title: " + [string]$noStoreSnapshot.title)
+        Require-Check "remote-fail-closed.no-store-reason" ([string]$noStoreSnapshot.reason -match "no-store") ("remote no-store reason: " + [string]$noStoreSnapshot.reason)
+        Require-Check "remote-fail-closed.no-store-retry" ([bool]$noStoreSnapshot.retry_visible) "remote retry button is not visible"
+        Add-Check "remote-fail-closed.no-store-screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-remote-no-store.png")) "screenshot failed"
+
+        Set-FakeRemoteMode -ModePath $fakeModePath -Mode "no-version"
+        $null = Invoke-CdpExpression -Connection $conflictCdp -Expression "(() => { document.getElementById('remote-error').hidden = true; document.getElementById('remote-retry').click(); return true; })()"
+        $noVersionShown = Wait-CdpExpression -Connection $conflictCdp -Expression @"
+(() => {
+  const error = document.getElementById('remote-error');
+  const title = document.getElementById('remote-error-title');
+  const reason = document.getElementById('remote-error-reason');
+  return !!(error && !error.hidden && title && title.textContent.trim() === '远端服务版本无法可信验证' && reason && reason.textContent.indexOf('+gw.') >= 0);
+})()
+"@ -TimeoutSeconds 180
+        Require-Check "remote-fail-closed.no-version-visible" $noVersionShown "remote missing +gw. rejection did not reach the shell"
+        $noVersionSnapshot = Get-ShellRemoteErrorSnapshot -Cdp $conflictCdp
+        $script:ui["remote_fail_closed_no_version"] = $noVersionSnapshot
+        Require-Check "remote-fail-closed.no-version-reason" ([string]$noVersionSnapshot.reason -match "\+gw\.") ("remote no-version reason: " + [string]$noVersionSnapshot.reason)
+        Add-Check "remote-fail-closed.no-version-screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-remote-no-version.png")) "screenshot failed"
+
+        Stop-TcpHolder -Holder $fake
+        Require-Check "remote-fail-closed.port-freed" (Wait-ForAddressPortFree -Address $script:lanAddress -Port $fakePort -TimeoutSeconds 30) "fake remote port did not free"
+
+        Require-Check "remote-fail-closed.back-home" ([bool](Invoke-CdpExpression -Connection $conflictCdp -Expression "(() => { document.getElementById('remote-back').click(); return !document.getElementById('home-view').hidden; })()")) "could not return to the home view"
+        Stop-TcpHolder -Holder $portHolder
+        Require-Check "port-conflict.port-freed" (Wait-ForPortFree -Port 2077 -TimeoutSeconds 30) "port 2077 did not free after holder stop"
+        $null = Invoke-CdpExpression -Connection $conflictCdp -Expression "(() => { document.getElementById('local-retry').click(); return true; })()"
+        $retryLocalUrl = Wait-CdpTargetUrl -Port $conflictCdpPort -Prefix "http://127.0.0.1:2077/static/pages/index.html" -TimeoutSeconds 300
+        Require-Check "port-conflict.retry-navigation" ($retryLocalUrl.StartsWith("http://127.0.0.1:2077/static/pages/index.html", [StringComparison]::OrdinalIgnoreCase)) ("local retry did not enter the workbench: " + $retryLocalUrl)
+        $script:ui["local_retry_navigation"] = $retryLocalUrl
+        Close-CdpConnection -Connection $conflictCdp
+        $conflictCdp = $null
+        Assert-DesktopReady -Label "12-port-conflict-retry"
+        $retryServer = Read-JsonFile -Path $script:serverConfig
+        Require-Check "port-conflict.retry-server-config" ([string](Get-PropertyValue -Object $retryServer -Name "server_url") -eq "http://127.0.0.1:2077") ("retry server.json: " + [string](Get-PropertyValue -Object $retryServer -Name "server_url"))
+        $backendAfterRetry = @(Get-BackendPids)
+        Require-Check "port-conflict.retry-backend" ($backendAfterRetry.Count -eq 1) ("backend PIDs after retry " + ($backendAfterRetry -join ","))
+        $script:lifecycle["12-port-conflict"] = [ordered]@{
+            error = $conflictError
+            holder_pid = [int]$portHolder.process.Id
+            listener_pids_before = $portOwnerBefore
+            backend_pids_after_retry = $backendAfterRetry
+        }
+    } finally {
+        Close-CdpConnection -Connection $conflictCdp
     }
-    $conflictError = ""
-    if ($null -ne $conflictDiag -and $null -ne $conflictDiag.data) {
-        $conflictError = [string]$conflictDiag.data.diagnostics.last_error
+    Stop-DesktopGracefully -Label "12-port-conflict-quit"
+
+    Add-Step "remote-backend-prepare"
+    $remotePort = $fakePort
+    $remote = Start-RemoteBackend -Label "12b-remote-backend" -Address $script:lanAddress -Port $remotePort
+    $script:remoteBackendEvidence = [ordered]@{
+        base_url = $remote.base_url
+        openapi_version = $remote.version
+        cache_control = $remote.cache_control
+        local_app_data = "<REMOTE_LOCALAPPDATA>"
     }
-    Require-Check "port-conflict.last-error" ($conflictError -match "2077") ("desktop last_error " + $conflictError)
-    $conflictShot = Save-Screenshot -Path (Join-Path $script:outputDirPath "12-port-conflict.png")
-    Add-Check "port-conflict.screenshot" $conflictShot "screenshot failed"
-    $backendDuringConflict = @(Get-BackendPids)
-    Require-Check "port-conflict.no-backend" ($backendDuringConflict.Count -eq 0) ("backend PIDs " + ($backendDuringConflict -join ","))
-    $ownerDuringConflict = @(Get-ListeningPids -Port 2077)
-    Require-Check "port-conflict.owner-unchanged" ($ownerDuringConflict.Count -eq 1 -and $ownerDuringConflict[0] -eq [int]$portHolder.process.Id) ("listener PIDs " + ($ownerDuringConflict -join ",") + "; holder pid " + [string]$portHolder.process.Id)
-    $conflictQuit = Invoke-DesktopQuit -Label "12-port-conflict"
-    Require-Check "port-conflict.quit" ($conflictQuit.exit_code -eq 0) ("quit helper exit " + [string]$conflictQuit.exit_code)
-    $conflictExited = Wait-ProcessExit -Process $conflictLaunch.process -TimeoutSeconds 30
-    if (-not $conflictExited) {
-        try { Stop-Process -Id $conflictLaunch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
+    $script:ui["remote_backend"] = $script:remoteBackendEvidence
+
+    Add-Step "remote-entry"
+    $remoteHolder = Start-TcpHolder -Port 2077 -Label "13-remote-holder"
+    $remoteCdpPort = Get-FreeTcpPort
+    $remoteLaunch = Start-DesktopPrimary -Label "13-remote-entry" -CdpPort $remoteCdpPort
+    $remoteCdp = New-CdpConnection -Port $remoteCdpPort
+    try {
+        Require-Check "remote-entry.ui-failure" (Wait-ShellFailure -Cdp $remoteCdp -TimeoutSeconds 180) "installer shell did not show the local failure before the remote test"
+        Require-Check "remote-entry.remote-view" ([bool](Open-ShellRemoteView -Cdp $remoteCdp).remote_visible) "remote view did not open"
+        $null = Submit-ShellRemoteUrl -Cdp $remoteCdp -Url $remoteAttemptUrl
+        $remoteExpected = "$remoteAttemptUrl/static/pages/index.html"
+        $remoteTargetUrl = Wait-CdpTargetUrl -Port $remoteCdpPort -Prefix $remoteExpected -TimeoutSeconds 300
+        Require-Check "remote-entry.navigation" ($remoteTargetUrl.StartsWith($remoteExpected, [StringComparison]::OrdinalIgnoreCase)) ("remote connection did not enter the workbench: " + $remoteTargetUrl)
+        Require-Check "remote-entry.no-trusted-ticket" (-not $remoteTargetUrl.Contains("gw_trusted") -and -not $remoteTargetUrl.Contains("?")) ("remote destination carries a local ticket: " + $remoteTargetUrl)
+        $script:ui["remote_navigation"] = $remoteTargetUrl
+        $savedRemote = Read-JsonFile -Path $script:serverConfig
+        $savedRemoteUrl = [string](Get-PropertyValue -Object $savedRemote -Name "server_url")
+        Require-Check "remote-entry.server-config" ($savedRemoteUrl -eq $remoteAttemptUrl) ("server.json remote value: " + $savedRemoteUrl)
+        $remoteBackendPids = @($script:remoteBackendPids | Where-Object { Get-Process -Id ([int]$_) -ErrorAction SilentlyContinue })
+        Require-Check "remote-entry.remote-backend" ($remoteBackendPids.Count -eq 1) ("remote backend PIDs: " + ($remoteBackendPids -join ","))
+        $localBackendPids = @(Get-BackendPids)
+        Require-Check "remote-entry.no-local-backend" ($localBackendPids.Count -eq 0) ("local backend PIDs: " + ($localBackendPids -join ","))
+        $remoteListeners = @(Get-ListeningPids -Port $remotePort)
+        Require-Check "remote-entry.remote-listener" ($remoteListeners.Count -ge 1 -and $remoteListeners -contains [int]$remoteBackendPids[0]) ("remote listeners: " + ($remoteListeners -join ",") + "; remote backend PIDs: " + ($remoteBackendPids -join ","))
+        $remoteListener2077 = @(Get-ListeningPids -Port 2077)
+        Require-Check "remote-entry.local-port-owner" ($remoteListener2077.Count -eq 1 -and $remoteListener2077[0] -eq [int]$remoteHolder.process.Id) ("port 2077 listeners: " + ($remoteListener2077 -join ",") + "; holder pid: " + [string]$remoteHolder.process.Id)
+        $script:ui["remote_entry_snapshot"] = [ordered]@{
+            remote_navigation = $remoteTargetUrl
+            server_config = $savedRemoteUrl
+            remote_backend_pids = $remoteBackendPids
+            local_backend_pids = $localBackendPids
+            remote_listener_pids = $remoteListeners
+        }
+        Add-Check "remote-entry.screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "13-remote-workbench.png")) "screenshot failed"
+    } finally {
+        Close-CdpConnection -Connection $remoteCdp
     }
-    Require-Check "port-conflict.desktop-exit" $conflictExited "desktop process did not exit"
-    Require-Check "port-conflict.lock-removed" (Wait-ForNoLock -TimeoutSeconds 30) "instance lock still present"
-    $script:desktop = $null
-    $script:lifecycle["12-port-conflict"] = [ordered]@{
-        error = $conflictError
-        holder_pid = [int]$portHolder.process.Id
-        backend_pids = $backendDuringConflict
-        listener_pids = $ownerDuringConflict
-        desktop_pid = [int]$conflictLaunch.process.Id
+    Stop-TcpHolder -Holder $remoteHolder
+    Require-Check "remote-entry.port-freed" (Wait-ForPortFree -Port 2077 -TimeoutSeconds 30) "port 2077 did not free after the remote holder stop"
+    Stop-DesktopGracefully -Label "13-remote-quit"
+    Stop-RemoteBackends
+    Require-Check "remote-entry.backend-stopped" (Wait-ForAddressPortFree -Address $script:lanAddress -Port $remotePort -TimeoutSeconds 30) "remote backend port stayed open after stop"
+    $script:lifecycle["13-remote-entry"] = [ordered]@{
+        remote_url = $remoteAttemptUrl
+        remote_openapi_version = $remote.version
+        cache_control = $remote.cache_control
     }
-    Stop-TcpHolder -Holder $portHolder
-    Require-Check "port-conflict.port-freed" (Wait-ForPortFree -Port 2077 -TimeoutSeconds 30) "port 2077 did not free after holder stop"
 
     Add-Step "upgrade-rotation"
     Set-Generation -RunPy $script:installedRunPy -Generation "G0"
@@ -1603,6 +2375,7 @@ try {
     Add-Check "unhandled-error" $false (Format-SafeText $script:fatal)
 } finally {
     Stop-Holders
+    Stop-RemoteBackends
     if ($null -ne $script:desktop) {
         try {
             $quit = Invoke-DesktopQuit -Label "99-cleanup-quit"
