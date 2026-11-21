@@ -544,11 +544,19 @@ class VideoTaskService:
         return _job_view(row)
 
     def schedule(self, job_id: str) -> None:
+        # QIN-627 L5：写窗口关闭后不再派发新的视频任务。
+        from gw.core.write_window import guard_write
+
+        guard_write()
         with self._lock:
             if job_id in self._scheduled:
                 return
             self._scheduled.add(job_id)
         self.executor.submit(self._run_job, job_id)
+
+    def active_job_count(self) -> int:
+        with self._lock:
+            return len(self._scheduled)
 
     def _run_job(self, job_id: str) -> None:
         try:
@@ -1016,3 +1024,17 @@ def get_video_service() -> VideoTaskService:
             if _default_service is None:
                 _default_service = VideoTaskService()
     return _default_service
+
+
+def _active_job_count() -> int:
+    service = _default_service
+    return service.active_job_count() if service is not None else 0
+
+
+def _register_write_window_host() -> None:
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("video_tasks", _active_job_count)
+
+
+_register_write_window_host()

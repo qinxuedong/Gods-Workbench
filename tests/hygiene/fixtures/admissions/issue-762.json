@@ -1,0 +1,49 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 762,
+  "authorization_basis": "GitHub Issue #762, PM design approval 2026-11-20 (comment 7038526965)",
+  "files": [
+    "gw/core/write_window.py",
+    "gw/core/runtime_paths.py",
+    "gw/core/storage.py",
+    "gw/core/local_accounts.py",
+    "gw/core/team_messages.py",
+    "gw/core/sqlite_vec_engine.py",
+    "gw/core/jxl_tool.py",
+    "gw/settings/data_location.py",
+    "gw/api/routes_settings.py",
+    "gw/api/app.py",
+    "gw/api/routes_asset_collect.py",
+    "gw/api/agent_integration.py",
+    "gw/video_tasks/store.py",
+    "gw/video_tasks/service.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/dedup_confirm.py",
+    "gw/agent_runtime/storage/sqlite.py",
+    "gw/media/repository.py",
+    "gw/projects_hub/service.py",
+    "gw/god_workflow/registry.py",
+    "web/js/modules/asset-manager/settings.js",
+    "web/css/pages/directory-settings.css",
+    "tests/contracts/settings/test_qin_627_data_location_migration.py",
+    "tests/contracts/settings/test_qin_627_write_window.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/hygiene/fixtures/admissions/issue-762.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/settings/test_qin_627_data_location_migration.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #762, PM design approval 2026-11-20",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/settings/test_qin_627_write_window.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #762, PM design approval 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-627：程序与数据分离、引导指针 runtime-root.json、可验证迁移与 L1-L5 写窗口；模型缓存默认 prune 排除，素材原件零改动。只登记本票分片，不改基础账本与 node-files.txt。"
+}

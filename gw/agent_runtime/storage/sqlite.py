@@ -57,11 +57,21 @@ class SQLiteDatabase:
             raise PathIsolationError("Runtime SQLite database path must be a file.")
         self.path = safe
         self.path.parent.mkdir(parents=True, exist_ok=True)
-        self._initialize()
+        from gw.core.write_window import writes_blocked
+
+        if not writes_blocked():
+            self._initialize()
 
     def connect(self) -> sqlite3.Connection:
-        connection = sqlite3.connect(
-            self.path, timeout=30, isolation_level=None, factory=_ClosingConnection
+        # QIN-627 L3：只读窗口内以 mode=ro 打开，运行记录查询仍可用。
+        from gw.core.write_window import open_sqlite, writes_blocked
+
+        connection = open_sqlite(
+            self.path,
+            write=not writes_blocked(),
+            timeout=30,
+            isolation_level=None,
+            factory=_ClosingConnection,
         )
         connection.row_factory = sqlite3.Row
         connection.execute("PRAGMA foreign_keys = ON")

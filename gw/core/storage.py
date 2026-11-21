@@ -52,6 +52,7 @@ from gw.core.runtime_paths import (
     VIDEO_DATA_DIR_ENV,
     resolve_runtime_paths,
 )
+from gw.core.write_window import guard_write
 
 DATA_DIR_ENV = "GW_DATA_DIR"
 ALLOWED_ROOTS_ENV = "GW_ALLOWED_ROOTS"
@@ -1175,7 +1176,11 @@ def load_with_status(namespace: str, default: Any = None) -> tuple[Any, bool]:
 
 
 def save(namespace: str, payload: Any) -> None:
-    """原子写入命名空间快照：先写临时文件再替换，避免半截文件。"""
+    """原子写入命名空间快照：先写临时文件再替换，避免半截文件。
+
+    QIN-627 L2：写窗口关闭（迁移/只读）时抛 ``WriteWindowClosed``，由路由层映射 503。
+    """
+    guard_write()
     path = _file_for(namespace)
     with namespace_lock(namespace):
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -1674,7 +1679,16 @@ def next_sequence(prefix: str, existing: Iterator[str]) -> str:
 
 
 class DataDirLockedError(RuntimeError):
-    """同一数据目录已被另一个神工坊进程独占。"""
+    """同一数据目录或本机实例已被另一个神工坊进程独占。
+
+    ``code`` 区分失败原因（QIN-627 双层锁）：
+    ``LOCK_HELD`` / ``LOCK_STALE_UNRECOVERABLE`` / ``LOCK_UNSUPPORTED``。
+    """
+
+    def __init__(self, message: str, *, code: str = "LOCK_HELD") -> None:
+        self.code = code
+        self.message = message
+        super().__init__(message)
 
 
 class DataDirLock:
@@ -1690,7 +1704,7 @@ class DataDirLock:
         try:
             if os.name == "nt":
                 import msvcrt
-                self._handle.seek(0)
+                self._handle.seek(_LOCK_OFFSET)
                 msvcrt.locking(self._handle.fileno(), msvcrt.LK_UNLCK, 1)
             else:
                 import fcntl
@@ -1701,6 +1715,268 @@ class DataDirLock:
 
 
 _HELD_DATA_LOCKS: dict[str, DataDirLock] = {}
+_HELD_INSTANCE_LOCKS: dict[str, DataDirLock] = {}
+_LOCK_OFFSET = 1023
+
+
+def _host_name() -> str:
+    import socket
+
+    try:
+        return socket.gethostname()
+    except OSError:  # pragma: no cover - 极端环境下主机名不可得
+        return ""
+
+
+def _boot_id() -> str:
+    try:
+        return Path("/proc/sys/kernel/random/boot_id").read_text(
+            encoding="utf-8"
+        ).strip()
+    except (OSError, ValueError):
+        return ""
+
+
+def _process_start_time(pid: int) -> int | None:
+    """返回进程创建时间（Windows 为 FILETIME，POSIX 为 clock ticks 计数）。
+
+    用来识别 pid 复用：pid 相同但起始时间不同即视为陈旧锁。
+    """
+    if pid <= 0:
+        return None
+    if os.name == "nt":
+        try:
+            import ctypes
+            from ctypes import wintypes
+
+            class _FileTime(ctypes.Structure):
+                _fields_ = [
+                    ("dwLowDateTime", wintypes.DWORD),
+                    ("dwHighDateTime", wintypes.DWORD),
+                ]
+
+            kernel32 = ctypes.windll.kernel32  # type: ignore[attr-defined]
+            handle = kernel32.OpenProcess(0x1000, False, int(pid))  # QUERY_LIMITED
+            if not handle:
+                return None
+            try:
+                creation = _FileTime()
+                exit_time = _FileTime()
+                kernel_time = _FileTime()
+                user_time = _FileTime()
+                ok = kernel32.GetProcessTimes(
+                    handle,
+                    ctypes.byref(creation),
+                    ctypes.byref(exit_time),
+                    ctypes.byref(kernel_time),
+                    ctypes.byref(user_time),
+                )
+                if not ok:
+                    return None
+                return (creation.dwHighDateTime << 32) | creation.dwLowDateTime
+            finally:
+                kernel32.CloseHandle(handle)
+        except Exception:  # pragma: no cover - 平台能力缺失时降级为不可判定
+            return None
+    try:
+        text = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8")
+    except (OSError, ValueError):
+        return None
+    try:
+        fields = text.rsplit(")", 1)[1].split()
+        return int(fields[19])
+    except (IndexError, ValueError):
+        return None
+
+
+def _lock_identity() -> dict[str, Any]:
+    pid = os.getpid()
+    return {
+        "host": _host_name(),
+        "pid": pid,
+        "pid_start_time": _process_start_time(pid),
+        "boot_id": _boot_id(),
+        "started_at": now_iso(),
+        "app_version": os.getenv("GW_APP_VERSION", "0.1.0"),
+    }
+
+
+def read_lock_identity(path: Path) -> dict[str, Any] | None:
+    """读取锁身份；优先读旁路 owner 文件，兼容旧格式锁文件内的 JSON。
+
+    Windows 进程持有锁文件句柄时，其他进程连打开都不被允许，因此身份必须落在
+    ``<lock>.owner.json`` 旁路文件里，锁文件只保留加锁哨兵。
+    """
+    owner = Path(str(path) + ".owner.json")
+    for candidate in (owner, Path(path)):
+        try:
+            with candidate.open("r", encoding="utf-8") as handle:
+                text = handle.read(512).strip()
+        except (OSError, ValueError):
+            continue
+        if not text:
+            continue
+        try:
+            payload = json.loads(text)
+        except (json.JSONDecodeError, TypeError):
+            continue
+        if isinstance(payload, dict):
+            return payload
+    return None
+
+
+def _identity_holder_alive(identity: Mapping[str, Any] | None) -> bool:
+    if not identity:
+        return False
+    if str(identity.get("host") or "") != _host_name():
+        # 跨机同根（NAS）无法用本机进程表判定；交给操作系统锁结论。
+        return True
+    try:
+        pid = int(identity.get("pid") or 0)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    recorded = identity.get("pid_start_time")
+    current = _process_start_time(pid)
+    if current is None:
+        try:
+            os.kill(pid, 0)
+        except OSError:
+            return False
+        return True
+    if recorded is None:
+        return True
+    return int(recorded) == int(current)
+
+
+def _lock_handle(handle: Any) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        # 锁文件尾部哨兵字节（offset 1023），让 host/pid 身份区可被其他进程读取。
+        # msvcrt 的字节区间锁会实际阻断被锁字节的读取，锁首字节会让诊断读取失败。
+        _pad_lock_file(handle)
+        handle.seek(_LOCK_OFFSET)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def _unlock_handle(handle: Any) -> None:
+    if os.name == "nt":
+        import msvcrt
+
+        handle.seek(_LOCK_OFFSET)
+        msvcrt.locking(handle.fileno(), msvcrt.LK_UNLCK, 1)
+    else:
+        import fcntl
+
+        fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
+
+
+def _pad_lock_file(handle: Any) -> None:
+    """把锁文件补到哨兵字节之后，保证区间锁落在真实文件范围内。"""
+    size = os.fstat(handle.fileno()).st_size
+    if size <= _LOCK_OFFSET:
+        handle.write(" " * (_LOCK_OFFSET + 1 - size))
+        handle.flush()
+
+
+def _lock_error_code(error: OSError) -> str:
+    import errno
+
+    codes = {
+        getattr(errno, "ENOLCK", None),
+        getattr(errno, "EOPNOTSUPP", None),
+        getattr(errno, "ENOTSUP", None),
+    }
+    win_codes = {33, 50, 1}  # ERROR_LOCK_VIOLATION / ERROR_NOT_SUPPORTED / ERROR_INVALID_FUNCTION
+    if error.errno in codes:
+        return "LOCK_UNSUPPORTED"
+    if getattr(error, "winerror", None) in win_codes and error.errno is None:
+        return "LOCK_UNSUPPORTED"
+    return "LOCK_HELD"
+
+
+def _write_lock_identity(handle: Any, path: Path) -> None:
+    identity = _lock_identity()
+    handle.seek(0)
+    handle.truncate()
+    handle.write(json.dumps(identity, ensure_ascii=True))
+    handle.flush()
+    _pad_lock_file(handle)
+    try:
+        os.fsync(handle.fileno())
+    except OSError:  # pragma: no cover - 部分网络盘不支持 fsync
+        pass
+    owner = Path(str(path) + ".owner.json")
+    temporary = owner.with_name(owner.name + ".tmp")
+    temporary.write_text(json.dumps(identity, ensure_ascii=True), encoding="utf-8")
+    os.replace(temporary, owner)
+
+
+def _acquire_lock_file(path: Path, *, label: str) -> DataDirLock:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    handle = open(path, "a+", encoding="utf-8")
+    try:
+        _lock_handle(handle)
+    except OSError as error:
+        identity = read_lock_identity(path)
+        code = _lock_error_code(error)
+        if code == "LOCK_UNSUPPORTED":
+            handle.close()
+            raise DataDirLockedError(
+                f"{label}所在文件系统不支持文件锁，已拒绝共享写入", code="LOCK_UNSUPPORTED"
+            ) from None
+        if code == "LOCK_HELD" and _identity_holder_alive(identity):
+            handle.close()
+            raise DataDirLockedError(
+                f"{label}已被另一个神工坊进程占用（{path.parent}）", code="LOCK_HELD"
+            )
+        marker = path.with_name(path.name + ".recover")
+        try:
+            fd = os.open(marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            handle.close()
+            raise DataDirLockedError(
+                f"{label}处于陈旧锁恢复中且未能取得唯一赢家资格",
+                code="LOCK_STALE_UNRECOVERABLE",
+            ) from None
+        except OSError:
+            handle.close()
+            raise DataDirLockedError(
+                f"{label}无法安全判定陈旧锁", code="LOCK_STALE_UNRECOVERABLE"
+            ) from None
+        os.close(fd)
+        recovered = False
+        try:
+            for _ in range(5):
+                time.sleep(1.0)
+                try:
+                    _lock_handle(handle)
+                    recovered = True
+                    break
+                except OSError:
+                    continue
+        finally:
+            with contextlib.suppress(OSError):
+                marker.unlink()
+        if not recovered:
+            handle.close()
+            raise DataDirLockedError(
+                f"{label}陈旧锁恢复失败", code="LOCK_STALE_UNRECOVERABLE"
+            )
+    try:
+        _write_lock_identity(handle, path)
+    except OSError:
+        with contextlib.suppress(Exception):
+            _unlock_handle(handle)
+        handle.close()
+        raise
+    return DataDirLock(path, handle)
 
 
 def is_data_dir_lock_held(root: Path) -> bool:
@@ -1711,10 +1987,36 @@ def is_data_dir_lock_held(root: Path) -> bool:
         return held is not None and held._handle is not None
 
 
+def acquire_instance_lock(runtime_root: Path) -> DataDirLock:
+    """引导目录级本机实例锁（跨数据位置有效）。
+
+    同一进程重复获取返回已持有句柄，供 app lifespan 与测试内的重复挂载幂等。
+    """
+    root = Path(runtime_root)
+    root.mkdir(parents=True, exist_ok=True)
+    key = str(root.resolve())
+    with _LOCK:
+        held = _HELD_INSTANCE_LOCKS.get(key)
+        if held is not None and held._handle is not None:
+            return held
+    lock = _acquire_lock_file(root / ".gw-instance.lock", label="本机实例锁")
+    with _LOCK:
+        _HELD_INSTANCE_LOCKS[key] = lock
+    return lock
+
+
+def is_instance_lock_held(runtime_root: Path) -> bool:
+    key = str(Path(runtime_root).resolve())
+    with _LOCK:
+        held = _HELD_INSTANCE_LOCKS.get(key)
+        return held is not None and held._handle is not None
+
+
 def acquire_data_dir_lock(root: Path) -> DataDirLock:
     """对数据目录加跨进程独占锁；已被别的进程占用时立即失败，不等待、不共享。
 
     同一进程重复获取（run.py 预检 + 应用 lifespan）返回已持有的句柄。
+    锁文件写 JSON 身份（host/pid/pid_start_time/boot_id），用于区分 pid 复用。
     """
     root = Path(root)
     root.mkdir(parents=True, exist_ok=True)
@@ -1723,24 +2025,60 @@ def acquire_data_dir_lock(root: Path) -> DataDirLock:
         held = _HELD_DATA_LOCKS.get(key)
         if held is not None and held._handle is not None:
             return held
-    path = root / ".gw-data.lock"
-    handle = open(path, "a+", encoding="utf-8")
-    try:
-        if os.name == "nt":
-            import msvcrt
-            handle.seek(0)
-            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
-        else:
-            import fcntl
-            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
-    except OSError:
-        handle.close()
-        raise DataDirLockedError(f"数据目录已被另一个神工坊进程占用: {root}") from None
-    handle.seek(0)
-    handle.truncate()
-    handle.write(str(os.getpid()))
-    handle.flush()
-    lock = DataDirLock(path, handle)
+    lock = _acquire_lock_file(root / ".gw-data.lock", label="数据目录")
     with _LOCK:
         _HELD_DATA_LOCKS[key] = lock
     return lock
+
+
+def release_data_dir_lock(root: Path) -> None:
+    """释放本进程登记的某个数据根锁，供启动恢复切换根时安全交棒。
+
+    只释放本进程持有的句柄；未持有或已释放时为空操作。调用方必须先取得
+    最终根的锁，再调用本函数，避免出现两个根都无人持有的窗口。
+    """
+    key = str(Path(root).resolve())
+    with _LOCK:
+        lock = _HELD_DATA_LOCKS.pop(key, None)
+    if lock is not None:
+        lock.release()
+
+
+def _lock_file_actively_held(path: Path) -> bool:
+    """用操作系统锁实测文件是否被持有；身份元数据不可信时也返回真实结论。
+
+    只做非阻塞探测：能取得锁就立即释放，不写身份、不做陈旧锁恢复。打不开
+    文件或文件系统不支持锁时按「可能被持有」处理，调用方据此 fail-closed。
+    """
+    if not path.parent.exists():
+        return False
+    try:
+        handle = open(path, "a+", encoding="utf-8")
+    except OSError:
+        return True
+    try:
+        try:
+            _lock_handle(handle)
+        except OSError:
+            return True
+        with contextlib.suppress(OSError):
+            _unlock_handle(handle)
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            handle.close()
+
+
+def data_dir_lock_held_by_foreign_process(root: Path) -> bool:
+    """判断某个数据根是否被本进程之外的存活宿主持有。
+
+    本机写入口（如本机账户 CLI）在服务运行或迁移静默期间不能绕过跨进程
+    数据锁直接写库；同进程的 API/迁移自身仍可通过。锁身份旁文件与锁内
+    JSON 都可能被伪造或损坏，因此只有本进程实际登记持有该根锁时才放行；
+    其余情况一律探测操作系统的真实锁状态，仍被占用、打不开或文件系统不
+    支持锁均按外部持有处理（fail-closed）。
+    """
+    root = Path(root)
+    if is_data_dir_lock_held(root):
+        return False
+    return _lock_file_actively_held(root / ".gw-data.lock")

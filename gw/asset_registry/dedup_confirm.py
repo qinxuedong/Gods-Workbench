@@ -800,6 +800,14 @@ class DedupConfirmJobs:
             if thread.is_alive() and thread is not threading.current_thread():
                 thread.join(timeout=5.0)
 
+    def active_job_count(self) -> int:
+        raw = self.store.read()
+        return sum(
+            1
+            for item in raw.get("jobs", {}).values()
+            if item.get("status") not in TERMINAL
+        )
+
     def configure_test_hooks(
         self,
         *,
@@ -1039,6 +1047,10 @@ class DedupConfirmJobs:
         auth: Any,
         idempotency_key: str,
     ) -> dict[str, Any]:
+        # QIN-627 L5：写窗口关闭后不再受理新的查重确认任务。
+        from gw.core.write_window import guard_write
+
+        guard_write()
         if not isinstance(idempotency_key, str) or not 1 <= len(idempotency_key) <= 160:
             _error(400, "DEDUP_IDEMPOTENCY_KEY_REQUIRED", "查重确认任务需要不超过 160 字符的幂等键")
         actor = _actor(auth)
@@ -1779,3 +1791,16 @@ def service() -> DedupConfirmJobs:
 def shutdown() -> None:
     if _default is not None:
         _default.shutdown()
+
+
+def _active_job_count() -> int:
+    return _default.active_job_count() if _default is not None else 0
+
+
+def _register_write_window_host() -> None:
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("dedup_confirm", _active_job_count)
+
+
+_register_write_window_host()

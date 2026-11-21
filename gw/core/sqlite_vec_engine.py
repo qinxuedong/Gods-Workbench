@@ -209,13 +209,22 @@ class SQLiteVecEngine:
                 raise ValueError("SQLite 数据库父目录必须已存在")
             sqlite_path = str(path)
 
-        self._db = sqlite3.connect(
-            sqlite_path, timeout=10, isolation_level=None, check_same_thread=False
+        # QIN-627 L3：只读窗口内退化为 mode=ro，跳过 DDL 但保留检索能力。
+        from gw.core.write_window import open_sqlite, writes_blocked
+
+        read_only = writes_blocked()
+        self._db = open_sqlite(
+            sqlite_path,
+            write=not read_only,
+            timeout=10,
+            isolation_level=None,
+            check_same_thread=False,
         )
         self._db.row_factory = sqlite3.Row
         self._db.execute("PRAGMA busy_timeout=10000")
         try:
-            self._initialize_schema()
+            if not read_only:
+                self._initialize_schema()
         except Exception:
             self._db.close()
             self._closed = True

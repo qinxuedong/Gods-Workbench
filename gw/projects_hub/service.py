@@ -137,6 +137,9 @@ def _state_error(code: str, message: str) -> CleanroomException:
 
 def _atomic_write(path: Path, value: dict[str, Any]) -> None:
     """以同目录临时文件和原子替换写入一个快照。"""
+    from gw.core.write_window import guard_write
+
+    guard_write()
     temporary = path.with_name(path.name + ".tmp")
     try:
         path.parent.mkdir(parents=True, exist_ok=True)

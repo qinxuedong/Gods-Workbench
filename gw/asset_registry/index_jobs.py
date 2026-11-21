@@ -1033,6 +1033,16 @@ class IndexJobs:
             self.condition.notify_all()
         self.executor.shutdown(wait=True, cancel_futures=True)
 
+    def active_job_count(self):
+        """活动索引任务数；供迁移前确认无后台复制/写入。"""
+        raw = self.store.read()
+        jobs = raw.get("jobs") or {}
+        return sum(
+            1
+            for job in jobs.values()
+            if str(job.get("status") or "") in {"queued", "running", "paused"}
+        )
+
     def _root_snapshot_key(self):
         """廉价探测根配置快照是否改变，避免每个 NAS 文件都重新 resolve 全部根。"""
         try:
@@ -1441,6 +1451,10 @@ class IndexJobs:
             self.store.mutate(finish)
 
     def submit(self, kind, payload, auth, key, *, registration=None, _registration_context=None):
+        # QIN-627 L5：写窗口关闭后不再接受新的后台索引任务。
+        from gw.core.write_window import guard_write
+
+        guard_write()
         if not isinstance(key, str) or not 1 <= len(key) <= 160:
             _error(
                 400,
@@ -2838,3 +2852,18 @@ def shutdown():
         shutdown_dedup_confirm()
     except Exception:
         pass
+
+
+def _active_job_count():
+    if _default is None:
+        return 0
+    return _default.active_job_count()
+
+
+def _register_write_window_host():
+    from gw.core.write_window import get_write_window
+
+    get_write_window().register_host("asset_index", _active_job_count)
+
+
+_register_write_window_host()
