@@ -77,7 +77,7 @@ function deckHarness(options = {}) {
     elements.set('accountModal', modal);
 
     const document = {
-        readyState: 'complete',
+        readyState: 'loading',
         addEventListener() {},
         getElementById(id) { return elements.get(id) || null; },
         querySelector() { return null; },
@@ -129,9 +129,11 @@ function deckHarness(options = {}) {
         CustomEvent,
         setTimeout(fn) { if (typeof fn === 'function') fn(); return 1; },
         clearTimeout() {},
+        setInterval() { return 1; },
+        clearInterval() {},
         performance: { now: () => Date.now() },
         location: { reload() {} },
-        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        requestAnimationFrame: (fn) => { if (typeof fn === 'function') fn(); return 1; },
         cancelAnimationFrame: () => {},
         fetch: fetchImpl,
         AbortSignal: globalThis.AbortSignal || { timeout: () => ({}) },
@@ -146,7 +148,9 @@ function deckHarness(options = {}) {
         performance: { now: () => Date.now() },
         setTimeout(fn) { if (typeof fn === 'function') fn(); return 1; },
         clearTimeout() {},
-        requestAnimationFrame: (fn) => setTimeout(fn, 0),
+        setInterval() { return 1; },
+        clearInterval() {},
+        requestAnimationFrame: (fn) => { if (typeof fn === 'function') fn(); return 1; },
         cancelAnimationFrame: () => {},
         fetch: fetchImpl,
         AbortSignal: globalThis.AbortSignal || { timeout: () => ({}) },
