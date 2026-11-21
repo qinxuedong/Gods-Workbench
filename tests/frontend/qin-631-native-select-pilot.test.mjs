@@ -884,9 +884,163 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.ok(agentsHtml.includes('/static/css/components/gw-native-select.css'), 'agents.html 必须引用公共样式');
     assert.ok(agentsHtml.includes('/static/js/core/gw-native-select.js'), 'agents.html 必须引用公共控制器');
     assert.ok(
-      agentsHtml.includes('<select id="agentProviderSelect" data-gw-select class="gw-native-select-input'),
-      'agents.html #agentProviderSelect 必须带有 data-gw-select 属性且外壳类名齐备'
+      agentsHtml.includes('<select id="agentProviderSelect" data-gw-select data-gw-trigger="#agentPromptInput" class="gw-native-select-input'),
+      'agents.html #agentProviderSelect 必须带有 data-gw-select 与 data-gw-trigger="#agentPromptInput" 声明属性'
     );
+  });
+
+  test('AC3 & P1阻断整改: 智能体页非模态 Provider 控件 Escape 焦点回归实测（拒绝丢失至 BODY）', async () => {
+    const jsPath = path.join(REPO_ROOT, 'web/js/core/gw-native-select.js');
+    const imported = await import(pathToFileURL(jsPath).href);
+    const GWNativeSelect = imported.default || imported;
+
+    // 1. 验证声明式 data-gw-trigger 焦点返还
+    let promptInputFocused = false;
+    let providerBlurred = false;
+    const mockPromptInput = {
+      id: 'agentPromptInput',
+      nodeType: 1,
+      isConnected: true,
+      focus() { promptInputFocused = true; }
+    };
+
+    let keydownHandler = null;
+    let focusHandler = null;
+    const mockProviderSelect = {
+      id: 'agentProviderSelect',
+      nodeType: 1,
+      tagName: 'SELECT',
+      dataset: { gwSelect: '', gwTrigger: '#agentPromptInput' },
+      getAttribute(attr) {
+        if (attr === 'data-gw-trigger') return '#agentPromptInput';
+        if (attr === 'data-gw-select') return '';
+        return null;
+      },
+      classList: {
+        classes: new Set(['gw-native-select-input']),
+        contains(c) { return this.classes.has(c); },
+        add(c) { this.classes.add(c); }
+      },
+      parentElement: {
+        nodeType: 1,
+        classList: {
+          classes: new Set(['gw-select-shell']),
+          contains(c) { return this.classes.has(c); },
+          add(c) { this.classes.add(c); },
+          remove(c) { this.classes.delete(c); }
+        }
+      },
+      addEventListener(evt, fn) {
+        if (evt === 'keydown') keydownHandler = fn;
+        if (evt === 'focus') focusHandler = fn;
+      },
+      blur() { providerBlurred = true; },
+      ownerDocument: {
+        activeElement: null,
+        querySelector(sel) {
+          if (sel === '#agentPromptInput') return mockPromptInput;
+          return null;
+        },
+        getElementById(id) {
+          if (id === 'agentPromptInput') return mockPromptInput;
+          return null;
+        }
+      }
+    };
+
+    GWNativeSelect.enhance(mockProviderSelect);
+
+    // 触发 Escape
+    keydownHandler({ key: 'Escape' });
+    assert.equal(providerBlurred, true, '按下 Escape 必须使 providerSelect 失焦');
+    assert.equal(promptInputFocused, true, '按下 Escape 必须安全将焦点返还给声明的 #agentPromptInput，绝不丢失到 BODY');
+
+    // 2. 验证通用前置焦点追踪回归（Focus Origin Tracking）
+    let lastButtonFocused = false;
+    const mockPreviousButton = {
+      id: 'mockPreviousButton',
+      nodeType: 1,
+      isConnected: true,
+      focus() { lastButtonFocused = true; }
+    };
+    let unconfiguredBlurred = false;
+    let unconfiguredKeydown = null;
+    let unconfiguredFocus = null;
+
+    const mockUnconfiguredSelect = {
+      id: 'unconfiguredSelect',
+      nodeType: 1,
+      tagName: 'SELECT',
+      dataset: { gwSelect: '' },
+      getAttribute(attr) { return null; },
+      classList: {
+        classes: new Set(['gw-native-select-input']),
+        contains(c) { return this.classes.has(c); },
+        add(c) { this.classes.add(c); }
+      },
+      parentElement: {
+        nodeType: 1,
+        classList: {
+          classes: new Set(['gw-select-shell']),
+          contains(c) { return this.classes.has(c); },
+          add(c) { this.classes.add(c); },
+          remove(c) { this.classes.delete(c); }
+        }
+      },
+      addEventListener(evt, fn) {
+        if (evt === 'keydown') unconfiguredKeydown = fn;
+        if (evt === 'focus') unconfiguredFocus = fn;
+      },
+      blur() { unconfiguredBlurred = true; },
+      ownerDocument: {
+        activeElement: mockPreviousButton
+      }
+    };
+
+    GWNativeSelect.enhance(mockUnconfiguredSelect);
+    // 模拟聚焦并记忆前置焦点
+    unconfiguredFocus();
+    // 模拟按下 Escape
+    unconfiguredKeydown({ key: 'Escape' });
+    assert.equal(unconfiguredBlurred, true, '按下 Escape 必须使 select 失焦');
+    assert.equal(lastButtonFocused, true, '未显式配置 trigger 的控件，按 Escape 必须将焦点返还给移入前记忆的前置焦点');
+
+    // 3. 验证无外部 trigger 且无前置焦点时的防丢安全兜底（W3C A11y 焦点驻留规范）
+    let standaloneBlurred = false;
+    let standaloneKeydown = null;
+    let standaloneFocus = null;
+    const mockStandaloneSelect = {
+      id: 'standaloneSelect',
+      nodeType: 1,
+      tagName: 'SELECT',
+      dataset: { gwSelect: '' },
+      getAttribute(attr) { return null; },
+      classList: {
+        classes: new Set(['gw-native-select-input']),
+        contains(c) { return this.classes.has(c); },
+        add(c) { this.classes.add(c); }
+      },
+      parentElement: {
+        nodeType: 1,
+        classList: {
+          classes: new Set(['gw-select-shell']),
+          contains(c) { return this.classes.has(c); },
+          add(c) { this.classes.add(c); },
+          remove(c) { this.classes.delete(c); }
+        }
+      },
+      addEventListener(evt, fn) {
+        if (evt === 'keydown') standaloneKeydown = fn;
+        if (evt === 'focus') standaloneFocus = fn;
+      },
+      blur() { standaloneBlurred = true; },
+      ownerDocument: {
+        activeElement: null
+      }
+    };
+    GWNativeSelect.enhance(mockStandaloneSelect);
+    standaloneKeydown({ key: 'Escape' });
+    assert.equal(standaloneBlurred, false, '在无有效 trigger 与前置焦点时，绝对禁止盲目 blur() 导致焦点流失到 document.body');
   });
 
   test('AC3 & 必改2: 预包装结构事件绑定补齐、幂等标记与自初始化机制', async () => {

@@ -59,13 +59,67 @@
       (typeof selectEl.getAttribute === 'function' && selectEl.getAttribute('data-gw-enhanced') === 'true');
 
     if (!isEnhanced) {
-      // 绑定键盘交互：Esc 键失焦并释放焦点（支持返还至触发控件）
+      // 辅助函数：解析焦点返还触发器（支持 options 传入、HTML 声明属性与前置活动焦点追踪）
+      function resolveTrigger(el, customOpts) {
+        if (customOpts) {
+          if (customOpts.triggerElement) {
+            if (typeof customOpts.triggerElement === 'string') {
+              const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
+              if (doc && typeof doc.querySelector === 'function') {
+                try {
+                  const found = doc.querySelector(customOpts.triggerElement) || doc.getElementById(customOpts.triggerElement);
+                  if (found) return found;
+                } catch (_) {}
+              }
+            } else if (customOpts.triggerElement.nodeType === 1 || typeof customOpts.triggerElement.focus === 'function') {
+              return customOpts.triggerElement;
+            }
+          }
+          if (typeof customOpts.getTriggerElement === 'function') {
+            const found = customOpts.getTriggerElement();
+            if (found) return found;
+          }
+        }
+
+        // 声明式属性解析：data-gw-trigger 或 data-trigger
+        const triggerSelector = (typeof el.getAttribute === 'function' && (el.getAttribute('data-gw-trigger') || el.getAttribute('data-trigger'))) ||
+          (el.dataset && (el.dataset.gwTrigger || el.dataset.trigger));
+        if (triggerSelector && typeof triggerSelector === 'string') {
+          const doc = el.ownerDocument || (typeof document !== 'undefined' ? document : null);
+          if (doc && typeof doc.querySelector === 'function') {
+            try {
+              const found = doc.querySelector(triggerSelector) || doc.getElementById(triggerSelector);
+              if (found && typeof found.focus === 'function') return found;
+            } catch (_) {}
+          }
+        }
+
+        // 动态前置活动焦点追踪（Focus Origin Tracking）
+        if (el._gwPreviousFocus && el._gwPreviousFocus.isConnected && typeof el._gwPreviousFocus.focus === 'function') {
+          return el._gwPreviousFocus;
+        }
+
+        return null;
+      }
+
+      // 动态记忆前置焦点：当 select 获取焦点时，记录移入前的 activeElement（若有效且非 body）
+      selectEl.addEventListener('focus', function () {
+        const doc = selectEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (doc && doc.activeElement && doc.activeElement !== selectEl && doc.activeElement !== doc.body && doc.activeElement.isConnected) {
+          selectEl._gwPreviousFocus = doc.activeElement;
+        }
+      });
+
+      // 绑定键盘交互：Esc 键安全失焦并返还焦点（优先返还至 triggerElement / data-gw-trigger / 前置焦点，避免丢到 BODY）
       selectEl.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' || e.key === 'Esc') {
-          selectEl.blur();
-          const trigger = opts.triggerElement || (typeof opts.getTriggerElement === 'function' ? opts.getTriggerElement() : null);
-          if (trigger && typeof trigger.focus === 'function') {
+          const trigger = resolveTrigger(selectEl, opts);
+          if (trigger && typeof trigger.focus === 'function' && trigger !== selectEl) {
+            selectEl.blur();
             trigger.focus();
+          } else {
+            // 若无外部目标或前置目标，严禁盲目 blur() 导致焦点流失到 document.body
+            // 保持焦点在自身，符合 W3C A11y 焦点驻留规范
           }
         }
       });
