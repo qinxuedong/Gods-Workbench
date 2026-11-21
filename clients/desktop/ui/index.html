@@ -1,30 +1,119 @@
 ﻿<!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="dark">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#090a0d">
-  <title>Gods&#39; Workbench Desktop</title>
+  <meta name="color-scheme" content="dark light">
+  <meta name="theme-color" content="#08090c">
+  <title>Gods&#39; Workbench</title>
+  <script>
+    try {
+      if (localStorage.getItem("gw.desktop.theme") === "light") {
+        document.documentElement.dataset.theme = "light";
+      }
+    } catch (error) {}
+  </script>
   <link rel="stylesheet" href="/style.css">
   <script src="/app.js" defer></script>
 </head>
 <body>
-  <main class="panel">
-    <header class="brand">
-      <div class="mark" aria-hidden="true">GW</div>
-      <div><p class="eyebrow">LOCAL NAS COMPANION</p><h1>连接工作台</h1></div>
+  <main class="shell">
+    <header class="topbar">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">GW</span>
+        <span class="brand-copy">
+          <strong>Gods&#39; Workbench</strong>
+          <span>本地优先 AI 创作工作台</span>
+        </span>
+      </div>
+      <button id="theme-toggle" class="theme-button" type="button" aria-label="切换到浅色主题" aria-pressed="false">
+        <span class="theme-glyph" aria-hidden="true"></span>
+        <span id="theme-label">深色</span>
+      </button>
     </header>
-    <p class="intro">自动搜索当前局域网内的神工坊 NAS。客户端仅保存服务器地址，不保存模型 API 密钥。</p>
-    <section aria-labelledby="discovery-title">
-      <div class="section-heading"><h2 id="discovery-title">局域网发现</h2><button id="rescan" class="quiet" type="button">重新扫描</button></div>
-      <p id="scan-status" class="status" role="status" aria-live="polite">准备扫描局域网……</p>
-      <div id="server-list" class="server-list"></div>
+
+    <section id="home-view" class="view home" aria-labelledby="launch-title">
+      <div class="launch-card">
+        <p class="eyebrow"><span id="launch-dot" class="led" data-state="active" aria-hidden="true"></span><span id="launch-eyebrow">本机工作台</span></p>
+        <h1 id="launch-title">启动神工坊</h1>
+        <p id="launch-detail" class="launch-detail" role="status" aria-live="polite">正在准备本机服务……</p>
+
+        <ol class="steps" aria-label="启动进度">
+          <li id="step-start" data-state="active"><span class="step-index">1</span><span>拉起本机服务</span></li>
+          <li id="step-ready" data-state="pending"><span class="step-index">2</span><span>等待服务就绪</span></li>
+          <li id="step-verify" data-state="pending"><span class="step-index">3</span><span>验证身份与能力</span></li>
+        </ol>
+
+        <div id="local-error" class="alert" role="alert" hidden>
+          <strong id="local-error-title">本机后端拉起失败</strong>
+          <p id="local-error-reason"></p>
+          <p id="local-error-next" class="alert-next"></p>
+          <div class="alert-actions">
+            <button id="local-retry" class="primary" type="button">重试本机启动</button>
+            <button id="local-details" class="secondary" type="button">查看连接详情</button>
+          </div>
+        </div>
+
+        <p id="local-busy" class="busy-line" role="status">内置服务启动后会自动进入工作台。</p>
+
+        <div class="divider" aria-hidden="true"></div>
+        <button id="remote-entry" class="remote-entry" type="button">
+          <span>连接远端工作台</span>
+          <span class="remote-arrow" aria-hidden="true">→</span>
+        </button>
+      </div>
     </section>
-    <form id="manual-form" class="manual-form">
-      <label for="server-url">手动连接</label>
-      <div class="form-row"><input id="server-url" name="server-url" type="url" placeholder="http://192.168.0.10:2077" autocomplete="url" required><button type="submit">连接</button></div>
-    </form>
-    <footer>NAS 服务需要开放端口 2077 和健康检查路径 /healthz。</footer>
+
+    <section id="remote-view" class="view remote" aria-labelledby="remote-title" hidden>
+      <button id="remote-back" class="link-button" type="button">← 返回本机工作台</button>
+      <div class="remote-head">
+        <h2 id="remote-title">连接远端工作台</h2>
+        <p class="muted">填写 NAS 或另一台电脑上的神工坊地址。连接前会验证版本、能力契约与缓存防线；不兼容时不会放行。</p>
+      </div>
+      <form id="remote-form" class="remote-form" novalidate>
+        <label for="remote-url">服务器地址</label>
+        <div class="field-row">
+          <input id="remote-url" name="remote-url" type="url" inputmode="url" autocomplete="url" placeholder="http://gw-nas.local:2077" required>
+          <button id="remote-submit" class="primary" type="submit">连接</button>
+        </div>
+      </form>
+      <div class="scan-row">
+        <button id="remote-scan" class="secondary" type="button">扫描局域网</button>
+        <p id="scan-status" class="status" role="status" aria-live="polite"></p>
+      </div>
+      <div id="server-list" class="server-list"></div>
+      <div id="remote-error" class="alert" role="alert" hidden>
+        <strong id="remote-error-title">连接失败</strong>
+        <p id="remote-error-reason"></p>
+        <p id="remote-error-next" class="alert-next"></p>
+        <div class="alert-actions">
+          <button id="remote-retry" class="primary" type="button">重试连接</button>
+          <button id="remote-error-details" class="secondary" type="button">查看连接详情</button>
+        </div>
+      </div>
+      <p class="security-note">远端连接只保存服务器地址，不会注入本机一次性票据、设备密钥或模型 API 密钥。</p>
+    </section>
+
+    <details id="about" class="about">
+      <summary>
+        <span>关于 / 连接详情</span>
+        <span class="summary-hint">版本、诊断与备用命令</span>
+      </summary>
+      <div class="about-inner">
+        <div class="about-head">
+          <h2>运行状态</h2>
+          <button id="about-refresh" class="secondary small" type="button">刷新状态</button>
+        </div>
+        <dl id="about-body" class="about-grid"></dl>
+        <section class="command-note" aria-labelledby="command-title">
+          <h3 id="command-title">备用启动方式</h3>
+          <p id="fallback-hint">若安装壳无法拉起本机服务，请先重新运行同一版本安装包修复安装；从源码运行时可在项目根目录双击 <code>start.bat</code>，或在终端执行 <code>python run.py --prod</code>，然后重新打开桌面端。</p>
+          <p class="muted">已有本机账户时，受信自动进入依赖当前用户、SYSTEM 与 Administrators 独占的账户目录权限；权限不合格时只关闭自动进入，不会放宽权限或导出密钥。密码登录始终可用。</p>
+        </section>
+      </div>
+    </details>
+
+    <footer class="footer">客户端仅保存服务器地址与主题偏好，不保存模型 API 密钥、设备密钥或本机票据。</footer>
   </main>
 </body>
 </html>

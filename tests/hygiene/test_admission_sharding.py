@@ -123,11 +123,11 @@ def test_issue_426_shard_registers_its_own_file_set(repo_root: Path):
 
 
 def test_union_keeps_legacy_registrations_and_admitted_files(repo_root: Path):
-    """并集不吞掉历史登记：旧票条目与 113 条准入文件全部仍在（含 QIN-575 与 QIN-631）。"""
+    """并集不吞掉历史登记：旧票条目与 114 条准入文件全部仍在（含 QIN-575、QIN-631、QIN-626）。"""
     metadata = load_admission_metadata(repo_root)
     issues = {item["issue"] for item in metadata["authorized_issue_file_sets"]}
     assert {333, 334, 335, 336, 338, 345, 364, 366, 367, 426} <= issues
-    assert len(metadata["admitted_files"]) == 113
+    assert len(metadata["admitted_files"]) == 114
     assert len(metadata["admission_shards"]) >= 1
 
 
