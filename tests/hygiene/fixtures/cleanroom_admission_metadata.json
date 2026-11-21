@@ -456,14 +456,14 @@
       "path": "docs/contracts/LOCAL-ACCOUNT-AUTH-2026-09-26.md",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "f88d1fce7599332c2e58be99abed385f65f0808453550bf3ce46d44f7118d412",
+      "sha256": "8afc976fb20070580967b91b86132abadeb335bae90a0c8338bfcb54ccad6728",
       "admission": "accepted"
     },
     {
       "path": "docs/contracts/LOCAL-ACCOUNT-INTERFACE-CATALOG.yaml",
       "classification": "frozen_interface_contract",
       "authorization_basis": "cleanroom_frozen_input",
-      "sha256": "eb77547c5f581af39c237786b8b57cf3cd5921a7ad431b09d3cad6df7e07e34e",
+      "sha256": "fcc9f6b65b843a4f323cfea1dc6ef9f2bf1c34ccb6ff4bcbc6e8b28843a47d6a",
       "admission": "accepted"
     },
     {

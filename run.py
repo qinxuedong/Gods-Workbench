@@ -33,7 +33,9 @@ import uuid
 import webbrowser
 from collections.abc import Sequence
 from datetime import UTC, datetime
+from ipaddress import ip_address
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 from urllib.request import urlopen
 
 import uvicorn
@@ -326,6 +328,46 @@ def _prepare_paths(mode: str):
     return resolve_runtime_paths(mode, repo_root=ROOT_DIR)
 
 
+def _is_loopback_host(host: str) -> bool:
+    """判断主机名是否回环地址。"""
+    normalized = str(host or "").strip().lower().rstrip(".")
+    if normalized == "localhost":
+        return True
+    try:
+        return ip_address(normalized).is_loopback
+    except ValueError:
+        return False
+
+
+def _trusted_local_browser_url(base_url: str) -> str:
+    """受信本机浏览器唤起 URL 的最小接线（QIN-630 特批范围）。
+
+    只在浏览器目标是**回环地址**时，把一次性启动票据放进 URL **片段**：
+
+    - 片段不会随请求发给服务端（不进访问日志），也不会进入 Referer；
+    - 设备长期密钥**不进入** URL，URL 里只有短时一次性票据；
+    - 非回环地址与远程 / NAS 路径一律不注入；
+    - 签发失败时保持原 URL 启动，不阻断服务。
+
+    票据不写入 stdout、日志或任何响应体。
+    """
+    parts = urlsplit(base_url)
+    if not _is_loopback_host(parts.hostname or ""):
+        return base_url
+    try:
+        from gw.core import trusted_local
+
+        if not trusted_local.trusted_local_enabled():
+            return base_url
+        ticket = trusted_local.issue_bootstrap_ticket()
+    except Exception:
+        # 便利功能失败不得影响服务启动：回落到普通登录路径。
+        return base_url
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, parts.query, f"gw_trusted={ticket}")
+    )
+
+
 def _open_browser_when_ready(url: str, health_url: str, timeout: float = 30.0) -> None:
     """后台等待 /healthz 后打开浏览器；失败只影响便利功能，不影响服务。"""
     def worker() -> None:
@@ -408,7 +450,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("端口必须在 1 到 65535 之间")
 
     browser_host = "127.0.0.1" if host == "0.0.0.0" else host
-    browser_url = f"http://{browser_host}:{port}/static/pages/index.html"
+    browser_base_url = f"http://{browser_host}:{port}/static/pages/index.html"
     print("=" * 60, flush=True)
     print("  Gods' Workbench Cleanroom", flush=True)
     print(f"  运行态: {mode}", flush=True)
@@ -422,6 +464,8 @@ def main(argv: Sequence[str] | None = None) -> int:
             print(f"  局域网访问地址: http://{lan_ip}:{port}", flush=True)
     print("=" * 60, flush=True)
     if args.open_browser:
+        # 仅在真正唤起浏览器时才签发一次性票据；票据只出现在 URL 片段里。
+        browser_url = _trusted_local_browser_url(browser_base_url)
         _open_browser_when_ready(browser_url, f"http://{browser_host}:{port}/healthz")
     uvicorn.run(app, host=host, port=port, workers=1, reload=False)
     return 0

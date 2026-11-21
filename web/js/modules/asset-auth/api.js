@@ -80,6 +80,18 @@ export function createAssetAuthApi(http) {
             );
         },
         /**
+         * 受信本机一次性启动票据兑换（QIN-630）。
+         *
+         * 只提交短时一次性票据，**不**提交账号口令；身份凭据由服务端用设备
+         * 长期密钥校验票据签名。票据用尽即失效，同一票据不能重复兑换。
+         */
+        bootstrapTrustedLocal(ticket, init = {}) {
+            return request(
+                '/api/asset-auth/local/trusted-bootstrap',
+                jsonInit({ticket: String(ticket || '')}, sameOriginInit({...init, method: 'POST'})),
+            );
+        },
+        /**
          * 本仓当前切片**未提供** /api/asset-auth/bootstrap（本地首位管理员初始化）。
          * 保留该 façade 仅为兼容既有调用方；调用方必须按未接入错误显式降级，
          * 不得把它当作可用的初始化入口（见 http-transport.js 的 NOT_INTEGRATED 语义）。

@@ -32,6 +32,12 @@ RECOVERY_CODE_COUNT = 8
 RECOVERY_LIMIT = 10
 RECOVERY_WINDOW_SECONDS = 60
 
+# 受信本机所有者的固定账号名：口令为随机高熵值、**永不展示给用户**，
+# 只用于在既有本地账户体系里保留一个可被权限判定识别的所有者主体。
+TRUSTED_LOCAL_OWNER_USERNAME = "local-owner"
+# 可执行「认领 / 解绑」的管理角色（既有角色集，不新增角色）。
+TRUSTED_LOCAL_CLAIM_ROLES = frozenset({"admin", "governor"})
+
 
 def database_path() -> Path:
     """返回当前运行态已通过三根路径校验的本地账户库路径。"""
@@ -88,6 +94,25 @@ def database():
             );
             CREATE INDEX IF NOT EXISTS idx_oidc_sessions_subject
                 ON oidc_sessions(subject);
+            CREATE TABLE IF NOT EXISTS trusted_local_owners (
+                owner_id TEXT PRIMARY KEY,
+                user_id TEXT NOT NULL REFERENCES local_users(user_id) ON DELETE CASCADE,
+                device_fingerprint TEXT NOT NULL,
+                identity_domain TEXT NOT NULL DEFAULT 'local_account',
+                claimed_by_user_id TEXT REFERENCES local_users(user_id) ON DELETE SET NULL,
+                claimed_at REAL,
+                claim_method TEXT,
+                established_at REAL NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS idx_trusted_local_owners_device
+                ON trusted_local_owners(device_fingerprint);
+            CREATE TABLE IF NOT EXISTS trusted_local_bootstrap_tickets (
+                jti TEXT PRIMARY KEY,
+                device_fingerprint TEXT NOT NULL,
+                issued_at REAL NOT NULL,
+                expires_at REAL NOT NULL,
+                consumed_at REAL
+            );
         """)
         expires_column = next(
             row
@@ -345,6 +370,22 @@ def _new_session(db, user_id: str) -> str:
     return token
 
 
+def _insert_admin_row(db, username: str, password: str) -> str:
+    """在**既有事务内**插入一个本地管理员账户并返回 user_id。
+
+    供既有 ``create_first_admin`` 与受信本机所有者建立共用，保证两条路径
+    写入的账户结构完全同构（同样的盐、哈希算法与角色约束）。
+    """
+    salt = secrets.token_bytes(16)
+    digest = password_hash(password, salt)
+    user_id = "usr-" + secrets.token_hex(16)
+    db.execute(
+        "INSERT INTO local_users VALUES (?, ?, ?, ?, 'admin')",
+        (user_id, username.lower(), salt, digest),
+    )
+    return user_id
+
+
 def create_first_admin(username: str, password: str):
     valid_password = (
         8 <= len(password) <= 128
@@ -363,24 +404,232 @@ def create_first_admin(username: str, password: str):
         raise CleanroomException(
             409, "LOCAL_ACCOUNT_EXISTS", "管理员已经创建，请直接登录"
         )
-    salt = secrets.token_bytes(16)
-    digest = password_hash(password, salt)
-    user_id = "usr-" + secrets.token_hex(16)
     with database() as db:
         db.execute("BEGIN IMMEDIATE")
         if db.execute("SELECT 1 FROM local_users LIMIT 1").fetchone():
             raise CleanroomException(
                 409, "LOCAL_ACCOUNT_EXISTS", "管理员已经创建，请直接登录"
             )
-        db.execute(
-            "INSERT INTO local_users VALUES (?, ?, ?, ?, 'admin')",
-            (user_id, username, salt, digest),
-        )
+        user_id = _insert_admin_row(db, username, password)
         token = _new_session(db, user_id)
         row = db.execute(
             "SELECT * FROM local_users WHERE user_id=?", (user_id,)
         ).fetchone()
         return _principal(row), token
+
+
+# ---------------------------------------------------------------------------
+# 受信本机所有者与一次性启动票据（持久化层）
+# ---------------------------------------------------------------------------
+
+
+def trusted_local_owner(db) -> dict | None:
+    """读取当前受信本机绑定行；不存在时返回 None。"""
+    row = db.execute(
+        "SELECT * FROM trusted_local_owners ORDER BY established_at LIMIT 1"
+    ).fetchone()
+    return dict(row) if row is not None else None
+
+
+def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tuple[dict, bool]:
+    """在**既有事务内**建立或复用本机所有者。
+
+    - 已有绑定 → 幂等复用；设备指纹不一致时显式报错（密钥被换过）；
+    - 本地账户表非空但无绑定 → 拒绝接管（``needs_manual_claim``），**不改任何数据**；
+    - 本地账户表为空 → 原子建立本机管理员账户与绑定。
+
+    返回 ``(principal, created)``；``created`` 表示本次是否新建了所有者。
+    """
+    binding = trusted_local_owner(db)
+    if binding is not None:
+        if str(binding["device_fingerprint"]) != str(device_fingerprint):
+            raise CleanroomException(
+                409,
+                "TRUSTED_LOCAL_KEY_ROTATED",
+                "设备密钥与既有本机绑定不一致，请先执行显式撤销与重新绑定",
+            )
+        row = db.execute(
+            "SELECT * FROM local_users WHERE user_id=?", (binding["user_id"],)
+        ).fetchone()
+        if row is None:
+            raise CleanroomException(
+                409,
+                "TRUSTED_LOCAL_OWNER_MISSING",
+                "本机所有者账户已缺失，请执行显式恢复命令",
+            )
+        return _principal(row), False
+
+    if db.execute("SELECT 1 FROM local_users LIMIT 1").fetchone():
+        raise CleanroomException(
+            409,
+            "TRUSTED_LOCAL_CLAIM_REQUIRED",
+            "本机已存在本地账户，需由管理员认证后显式认领",
+        )
+
+    user_id = _insert_admin_row(db, TRUSTED_LOCAL_OWNER_USERNAME, secrets.token_hex(32))
+    owner_id = "tlo-" + secrets.token_hex(8)
+    db.execute(
+        "INSERT INTO trusted_local_owners "
+        "(owner_id, user_id, device_fingerprint, identity_domain, "
+        " claimed_by_user_id, claimed_at, claim_method, established_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            owner_id,
+            user_id,
+            str(device_fingerprint),
+            "local_account",
+            user_id,
+            float(now),
+            "bootstrap",
+            float(now),
+        ),
+    )
+    row = db.execute(
+        "SELECT * FROM local_users WHERE user_id=?", (user_id,)
+    ).fetchone()
+    return _principal(row), True
+
+
+def issue_session_for_user(db, user_id: str) -> tuple[dict, str]:
+    """在**既有事务内**为既有账户签发服务端会话。"""
+    row = db.execute(
+        "SELECT * FROM local_users WHERE user_id=?", (user_id,)
+    ).fetchone()
+    if row is None:
+        raise CleanroomException(404, "LOCAL_ACCOUNT_NOT_FOUND", "本地账户不存在")
+    token = _new_session(db, user_id)
+    return _principal(row), token
+
+
+def record_bootstrap_ticket(
+    db, jti: str, device_fingerprint: str, issued_at: float, expires_at: float
+) -> None:
+    """登记一张已签发的启动票据（未消费）。"""
+    db.execute(
+        "INSERT INTO trusted_local_bootstrap_tickets "
+        "(jti, device_fingerprint, issued_at, expires_at, consumed_at) "
+        "VALUES (?, ?, ?, ?, NULL)",
+        (str(jti), str(device_fingerprint), float(issued_at), float(expires_at)),
+    )
+
+
+def consume_bootstrap_ticket(db, jti: str, now: float) -> bool:
+    """在**既有事务内**原子消费一张启动票据；成功返回 True。
+
+    已消费、已过期或不存在的票据一律返回 False，由调用方失败关闭。
+    """
+    row = db.execute(
+        "SELECT * FROM trusted_local_bootstrap_tickets WHERE jti=?", (str(jti),)
+    ).fetchone()
+    if row is None or row["consumed_at"] is not None:
+        return False
+    if float(row["expires_at"]) <= float(now):
+        return False
+    updated = db.execute(
+        "UPDATE trusted_local_bootstrap_tickets SET consumed_at=? "
+        "WHERE jti=? AND consumed_at IS NULL",
+        (float(now), str(jti)),
+    )
+    return updated.rowcount > 0
+
+
+def claim_trusted_local_owner(
+    db,
+    user_id: str,
+    device_fingerprint: str,
+    *,
+    actor_user_id: str,
+    method: str = "password_auth",
+    now: float | None = None,
+) -> dict:
+    """在**既有事务内**把受信本机绑定到指定账户。
+
+    调用方必须先完成原有 owner / 管理员认证；本函数只负责写入绑定与审计字段，
+    不做任何身份判定，也不删除任何账户。
+    """
+    moment = time.time() if now is None else float(now)
+    existing = trusted_local_owner(db)
+    if existing is not None:
+        if str(existing["user_id"]) == str(user_id):
+            return existing
+        raise CleanroomException(
+            409,
+            "TRUSTED_LOCAL_ALREADY_CLAIMED",
+            "本机所有者已绑定到其它账户，请先执行解绑",
+        )
+    row = db.execute(
+        "SELECT * FROM local_users WHERE user_id=?", (str(user_id),)
+    ).fetchone()
+    if row is None:
+        raise CleanroomException(404, "LOCAL_ACCOUNT_NOT_FOUND", "本地账户不存在")
+    owner_id = "tlo-" + secrets.token_hex(8)
+    db.execute(
+        "INSERT INTO trusted_local_owners "
+        "(owner_id, user_id, device_fingerprint, identity_domain, "
+        " claimed_by_user_id, claimed_at, claim_method, established_at) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            owner_id,
+            str(user_id),
+            str(device_fingerprint),
+            "local_account",
+            str(actor_user_id),
+            moment,
+            str(method),
+            moment,
+        ),
+    )
+    claimed = db.execute(
+        "SELECT * FROM trusted_local_owners WHERE owner_id=?", (owner_id,)
+    ).fetchone()
+    return dict(claimed)
+
+
+def unclaim_trusted_local_owner(db, user_id: str) -> bool:
+    """在**既有事务内**解除本机绑定；不删除账户、不删除任何项目数据。"""
+    existing = trusted_local_owner(db)
+    if existing is None:
+        return False
+    if str(existing["user_id"]) != str(user_id):
+        raise CleanroomException(
+            409, "TRUSTED_LOCAL_CLAIM_MISMATCH", "本机绑定指向其它账户，未执行解绑"
+        )
+    db.execute(
+        "DELETE FROM trusted_local_owners WHERE owner_id=?",
+        (existing["owner_id"],),
+    )
+    return True
+
+
+def verify_admin_password(username: str, password: str) -> dict:
+    """校验既有本地账户口令并返回账户行。
+
+    只读校验：**不**签发会话、**不**写入任何数据。口令错误与账户不存在
+    返回同一错误，避免枚举账户。
+    """
+    if not USERNAME.fullmatch(username or "") or len(password or "") > 128:
+        raise CleanroomException(
+            401, "LOCAL_ACCOUNT_CREDENTIALS_INVALID", "账号或密码错误"
+        )
+    with database() as db:
+        row = db.execute(
+            "SELECT * FROM local_users WHERE username=?", (username.lower(),)
+        ).fetchone()
+    salt = row["salt"] if row else b"\x00" * 16
+    expected = row["password_hash"] if row else b"\x00" * 32
+    valid = hmac.compare_digest(password_hash(password or "", salt), expected)
+    if not row or not valid:
+        raise CleanroomException(
+            401, "LOCAL_ACCOUNT_CREDENTIALS_INVALID", "账号或密码错误"
+        )
+    account = dict(row)
+    if str(account.get("role") or "") not in TRUSTED_LOCAL_CLAIM_ROLES:
+        raise CleanroomException(
+            403,
+            "TRUSTED_LOCAL_CLAIM_FORBIDDEN",
+            "只有本机所有者或管理员可以执行该操作",
+        )
+    return account
 
 
 def login(username: str, password: str, client_key: str):

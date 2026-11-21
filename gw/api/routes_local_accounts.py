@@ -14,13 +14,15 @@
 
 """本地账户首次设置与密码登录；与 OIDC 授权码接口相互隔离。"""
 
+import time
 from ipaddress import ip_address
 
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
-from gw.core import local_accounts, session
+from gw.core import audit as audit_log
+from gw.core import local_accounts, session, trusted_local
 from gw.core.config import AUTH_MODE_LOCAL_ACCOUNT, load_runtime_auth_config
 from gw.core.errors import CleanroomException
 
@@ -43,6 +45,16 @@ class RecoveryReset(BaseModel):
 class RecoveryCodeRegeneration(BaseModel):
     model_config = ConfigDict(extra="forbid")
     current_password: SecretStr
+
+
+class TrustedBootstrap(BaseModel):
+    """受信本机一次性启动票据。
+
+    票据只承载**短时一次性能力值**，不接受也不接受任何账号口令字段。
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    ticket: str = Field(min_length=8, max_length=2048)
 
 
 def require_local_mode():
@@ -122,6 +134,78 @@ def login(payload: Credentials, request: Request):
     )
     recovery_codes = local_accounts.ensure_recovery_codes(principal["user_id"])
     return _session_response(request, principal, token, 200, recovery_codes)
+
+
+@router.post("/trusted-bootstrap")
+def trusted_bootstrap(payload: TrustedBootstrap, request: Request):
+    """用一次性启动票据兑换本机会话（受信本机模式）。
+
+    身份凭据**只有**设备密钥签名的一次性票据；回环传输与回环 Host 只是
+    纵深防御的附加约束，**不作为**身份判据。远程 / NAS / 反向代理 /
+    DNS rebinding 场景都拿不到票据，因此不会自动成为本机 owner。
+
+    兑换是原子的：消费票据、建立本机所有者、签发会话在同一事务内完成；
+    任一步失败整体回滚，票据**不被消费**，可重试。
+    """
+    require_local_mode()
+    if not trusted_local.trusted_local_enabled():
+        raise CleanroomException(
+            403, "TRUSTED_LOCAL_DISABLED", "受信本机模式未启用，已拒绝本次请求"
+        )
+    # 纵深防御：只接受回环传输 + 回环 Host，挡 DNS rebinding 与反向代理。
+    if not _loopback(request.client.host if request.client else "") or not _loopback(
+        request.url.hostname or ""
+    ):
+        raise CleanroomException(
+            403,
+            "TRUSTED_LOCAL_TRANSPORT_REJECTED",
+            "只允许在本机回环地址完成本机身份握手",
+        )
+    try:
+        claims = trusted_local.verify_bootstrap_ticket(payload.ticket)
+    except CleanroomException as exc:
+        audit_log.record_auth_event(
+            audit_log.EVENT_LOGIN_DENIED,
+            outcome=audit_log.OUTCOME_DENIED,
+            reason=exc.code,
+            auth_mode=AUTH_MODE_LOCAL_ACCOUNT,
+        )
+        raise
+    jti = str(claims["jti"])
+    fingerprint = str(claims["aud"])
+    now = time.time()
+    with local_accounts.database() as db:
+        db.execute("BEGIN IMMEDIATE")
+        if not local_accounts.consume_bootstrap_ticket(db, jti, now):
+            raise CleanroomException(
+                401,
+                "TRUSTED_LOCAL_BOOTSTRAP_INVALID",
+                "启动票据已被使用或已过期，已拒绝本次请求",
+            )
+        principal, created = local_accounts.ensure_trusted_local_owner(
+            db, fingerprint, now=now
+        )
+        _, token = local_accounts.issue_session_for_user(db, principal["user_id"])
+    if created:
+        audit_log.record_management_event(
+            audit_log.EVENT_BOOTSTRAP_COMPLETED,
+            outcome=audit_log.OUTCOME_SUCCEEDED,
+            reason="trusted_local_bootstrap",
+            subject=principal["user_id"],
+            role=principal["role"],
+            auth_mode=AUTH_MODE_LOCAL_ACCOUNT,
+            resource_id=principal["user_id"],
+        )
+    audit_log.record_auth_event(
+        audit_log.EVENT_SESSION_ESTABLISHED,
+        outcome=audit_log.OUTCOME_SUCCEEDED,
+        reason="trusted_local_bootstrap",
+        subject=principal["user_id"],
+        role=principal["role"],
+        auth_mode=AUTH_MODE_LOCAL_ACCOUNT,
+    )
+    trusted_local.clear_pending_ticket()
+    return _session_response(request, principal, token, 200, [])
 
 
 @router.post("/reset-password")

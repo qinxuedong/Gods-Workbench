@@ -31,6 +31,12 @@ endpoints:
     response: 200及轮换后的HttpOnly会话Cookie
     guard: local_account模式、同源、数据库密码哈希校验
     errors: [400, 401, 403, 429]
+  - method: POST
+    path: /api/asset-auth/local/trusted-bootstrap
+    request: "仅 ticket 字段（字符串 8–2048 字符）；拒绝额外字段"
+    response: "200；JSON 含 authenticated、principal 与空 recovery_codes；设置 HttpOnly/SameSite=Strict 会话 Cookie，Cache-Control=no-store"
+    guard: "local_account 模式、受信本机启用、有效一次性票据、回环客户端与 Host（纵深防御，不作为身份判据）"
+    errors: [401, 403, 409, 422]
 team_messages:
   contract: TEAM-MESSAGES-INTERFACE-CATALOG.yaml
   state_file: GW_DATA_DIR/team_messages.sqlite3；测试使用每例 tmp_path/data，开发使用 .local/runtime-dev/data，生产使用 %LOCALAPPDATA%/GodsWorkbench/data
