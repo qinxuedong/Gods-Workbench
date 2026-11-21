@@ -45,7 +45,7 @@
         </ol>
 
         <div id="local-error" class="alert" role="alert" hidden>
-          <strong id="local-error-title">本机服务未能启动</strong>
+          <strong id="local-error-title">本机后端拉起失败</strong>
           <p id="local-error-reason"></p>
           <p id="local-error-next" class="alert-next"></p>
           <div class="alert-actions">
@@ -107,7 +107,7 @@
         <dl id="about-body" class="about-grid"></dl>
         <section class="command-note" aria-labelledby="command-title">
           <h3 id="command-title">备用启动方式</h3>
-          <p>若安装壳无法拉起本机服务，可在神工坊项目根目录双击运行 <code>start.bat</code>，或在终端执行 <code>python run.py --prod</code>，然后重新打开桌面端。</p>
+          <p id="fallback-hint">若安装壳无法拉起本机服务，请先重新运行同一版本安装包修复安装；从源码运行时可在项目根目录双击 <code>start.bat</code>，或在终端执行 <code>python run.py --prod</code>，然后重新打开桌面端。</p>
           <p class="muted">已有本机账户时，受信自动进入依赖当前用户、SYSTEM 与 Administrators 独占的账户目录权限；权限不合格时只关闭自动进入，不会放宽权限或导出密钥。密码登录始终可用。</p>
         </section>
       </div>

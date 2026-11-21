@@ -2,6 +2,7 @@
   "use strict";
 
   const THEME_KEY = "gw.desktop.theme";
+  const localServer = Object.freeze({ url: "http://127.0.0.1:2077" });
   const invoke = (...args) => window.__TAURI__?.core?.invoke(...args);
 
   const byId = id => document.getElementById(id);
@@ -23,6 +24,7 @@
     localErrorTitle: byId("local-error-title"),
     localErrorReason: byId("local-error-reason"),
     localErrorNext: byId("local-error-next"),
+    fallbackHint: byId("fallback-hint"),
     localRetry: byId("local-retry"),
     localDetails: byId("local-details"),
     localBusy: byId("local-busy"),
@@ -242,9 +244,9 @@
       };
     }
     return {
-      headline: "本机服务未能启动",
+      headline: "本机后端拉起失败",
       reason: "内置服务没有完成启动。",
-      next: "请点击「重试本机启动」；展开「关于 / 连接详情」可查看最近错误与备用启动命令。",
+      next: "请点击「重试本机启动」；若仍失败，展开「关于 / 连接详情」查看最近错误与备用启动命令。",
     };
   }
 
@@ -315,6 +317,11 @@
     window.location.replace(destination);
   }
 
+  async function connect(serverUrl) {
+    if (serverUrl === localServer.url) return await invoke("launch_local_backend");
+    return invoke("connect_to_server", { serverUrl });
+  }
+
   async function launchLocal() {
     if (busy) return;
     const token = ++generation;
@@ -323,7 +330,7 @@
     resetHomeCopy();
     startProgress();
     try {
-      const result = await invoke("launch_local_backend");
+      const result = await connect(localServer.url);
       if (token !== generation) return;
       finishProgress();
       ui.launchEyebrow.textContent = "本机工作台";
@@ -360,7 +367,7 @@
     ui.remoteError.hidden = true;
     ui.scanStatus.textContent = "正在验证服务器身份、版本与能力契约……";
     try {
-      const result = await invoke("connect_to_server", { serverUrl: value });
+      const result = await connect(value);
       if (token !== generation) return;
       ui.scanStatus.textContent = result?.notice || "远端工作台已通过校验，正在进入……";
       refreshDiagnostics();
@@ -466,6 +473,7 @@
         row("能力摘要", digestSummary(diagnostics)),
         row("受信本机", trustedSummary(diagnostics)),
         row("安装目录与数据根", diagnostics.program_data_non_overlapping === true ? "已确认互不包含" : diagnostics.program_data_non_overlapping === false ? "检测到包含关系，已阻断" : "开发源构建（未校验）"),
+        row("备用启动命令", "项目根目录 start.bat 或 python run.py --prod"),
       ];
       if (diagnostics.manifest_error) fragments.push(row("安装清单", diagnostics.manifest_error));
       if (report?.failures?.length) fragments.push(row("握手失败项", report.failures.join("；")));
@@ -523,6 +531,11 @@
 
     refreshDiagnostics();
     loadSavedServer();
+    if (new URLSearchParams(window.location.search).get("rescan") === "1") {
+      openRemoteView();
+      scanLan();
+      return;
+    }
     launchLocal();
   }
 

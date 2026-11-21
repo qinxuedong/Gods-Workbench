@@ -57,7 +57,7 @@ test("AC1: 首页只保留本地启动，版本/诊断/命令全部收进折叠�
 });
 
 test("AC1: 默认始终本地优先，保存的远端地址只预填不自动连接", () => {
-  assert.match(app, /loadSavedServer\(\);\s*\n\s*launchLocal\(\);/);
+  assert.match(app, /loadSavedServer\(\);[\s\S]*?get\("rescan"\) === "1"[\s\S]*?return;[\s\S]*?launchLocal\(\);/);
   assert.match(app, /savedRemoteUrl = saved;/);
   assert.match(app, /ui\.remoteUrl\.value = saved;/);
   assert.doesNotMatch(app, /connect_to_server", \{ serverUrl: saved/);
@@ -89,7 +89,7 @@ test("AC7: 本机与远端失败都给出明确原因、下一步与重试入口
   assert.match(index, /id="remote-retry"[^>]*>重试连接/);
   assert.match(app, /ui\.localRetry\.addEventListener\("click", launchLocal\)/);
   assert.match(app, /ui\.remoteRetry\.addEventListener\("click", \(\) => connectRemote\(/);
-  for (const headline of ["本机端口被占用", "已有实例无响应", "安装文件不完整", "本机服务启动超时", "本机服务提前退出", "本机服务未能启动"]) {
+  for (const headline of ["本机端口被占用", "已有实例无响应", "安装文件不完整", "本机服务启动超时", "本机服务提前退出", "本机后端拉起失败"]) {
     assert.match(app, new RegExp(`headline: "${headline}"`));
   }
   for (const headline of ["远端服务版本无法可信验证", "远端能力不兼容", "远端响应疑似被缓存", "无法连接远端工作台"]) {

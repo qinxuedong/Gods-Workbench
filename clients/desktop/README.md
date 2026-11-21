@@ -20,9 +20,9 @@ The initial screen starts the workbench locally first: it reuses an already heal
 
 Closing the window hides it in the system tray. The tray menu can reopen the Workbench, return to NAS discovery, or quit the client. For scripted checks, `gods-workbench-desktop.exe --quit` uses the same cleanup path as the tray quit action, and `gods-workbench-desktop.exe --diagnostics <file>` writes a version/handshake/trusted/backend snapshot without starting a second client. Both commands authenticate over a loopback control channel protected by the per-instance lock token and never accept remote callers.
 
-## Local-first startup and remote entry (QIN-593, QIN-626)
+## Local backend discovery and automatic launch (QIN-593)
 
-On startup, the desktop client always targets the local workbench first. It probes the loopback health endpoint and reuses a healthy local instance; otherwise it launches the bundled local backend in production mode. LAN discovery does not run at startup and cannot divert the first launch into a server list. The secondary "Connect to remote workbench" entry opens a manual address form with an optional, explicitly clicked LAN scan; a saved remote address is only prefilled, never auto-connected.
+Local-first startup and remote entry (QIN-626): on startup, the desktop client always targets the local workbench first. It probes the loopback health endpoint and reuses a healthy local instance; otherwise it launches the bundled local backend in production mode. LAN discovery does not run at startup and cannot divert the first launch into a server list. The secondary "Connect to remote workbench" entry opens a manual address form with an optional, explicitly clicked LAN scan; a saved remote address is only prefilled, never auto-connected.
 
 The local backend is launched as follows:
 - **Backend root resolution**: Checked in the following order:
