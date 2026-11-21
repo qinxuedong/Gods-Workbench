@@ -30,7 +30,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from gw.core import storage
+from gw.core import local_accounts, storage
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import (
     PROD_DATA_LOCATION_INVALID,
@@ -1301,6 +1301,66 @@ def test_app_startup_refuses_when_recovery_target_root_is_occupied(
         holder.wait(timeout=10)
         storage._HELD_DATA_LOCKS.clear()
         reset_write_window()
+
+
+def test_local_account_reset_is_blocked_by_foreign_data_lock(prod_home):
+    storage._HELD_DATA_LOCKS.clear()
+    local_accounts.create_first_admin("admin", "OldPassw0rd")
+    auth_db = resolve_runtime_paths().auth_db
+    connection = sqlite3.connect(auth_db)
+    hash_before = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+
+    from gw.api.app import create_app
+
+    reset_write_window()
+    try:
+        with TestClient(create_app()):
+            window = get_write_window()
+            window.begin_quiescing(reason="qin-627-cli-probe")
+            script = (
+                "import sys\n"
+                "sys.path.insert(0, r'%s')\n"
+                "from gw.core.errors import CleanroomException\n"
+                "from gw.core.local_accounts import reset_password_local\n"
+                "try:\n"
+                "    reset_password_local('admin', 'NewPassw0rd')\n"
+                "except CleanroomException as exc:\n"
+                "    print(exc.code)\n"
+                "    sys.exit(7)\n"
+                "print('written')\n"
+                "sys.exit(0)\n"
+            ) % str(REPO_ROOT)
+            probe = subprocess.run(
+                [sys.executable, "-c", script],
+                cwd=str(REPO_ROOT),
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            assert probe.returncode == 7, probe.stderr
+            assert probe.stdout.strip() == "DATA_LOCATION_QUIESCING"
+            cli_probe = subprocess.run(
+                [sys.executable, "-m", "gw.core.local_accounts_cli", "reset-password"],
+                cwd=str(REPO_ROOT),
+                input="",
+                capture_output=True,
+                text=True,
+                timeout=15,
+            )
+            assert cli_probe.returncode == 1, cli_probe.stderr
+            assert "数据位置迁移" in cli_probe.stdout
+        connection = sqlite3.connect(auth_db)
+        hash_after = connection.execute(
+            "SELECT password_hash FROM local_users WHERE username='admin'"
+        ).fetchone()[0]
+        connection.close()
+        assert hash_after == hash_before
+    finally:
+        reset_write_window()
+        storage._HELD_DATA_LOCKS.clear()
 
 
 def test_live_holder_is_not_taken_over(prod_home, tmp_path):

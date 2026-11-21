@@ -49,7 +49,21 @@ def database_path() -> Path:
 
 @contextmanager
 def database():
-    path = database_path()
+    try:
+        runtime = resolve_runtime_paths()
+    except RuntimePathError as exc:
+        raise RuntimeError(str(exc)) from None
+    path = runtime.auth_db
+    # QIN-627：本机 CLI 等独立进程不得绕过服务持有的跨进程数据锁直接写库；
+    # 服务自身或 run.py 预持锁的进程 pid 相同，不受影响。
+    from gw.core.storage import data_dir_lock_held_by_foreign_process
+
+    if data_dir_lock_held_by_foreign_process(runtime.data_root):
+        raise CleanroomException(
+            503,
+            "DATA_LOCATION_QUIESCING",
+            "数据位置迁移静默/切换中，本机账户写入已暂停；请等待迁移完成或停止服务后重试",
+        )
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     # QIN-627 L3：只读窗口内以 mode=ro 打开，跳过建表与迁移，保证 GET 仍可认证。
     from gw.core.write_window import open_sqlite, writes_blocked

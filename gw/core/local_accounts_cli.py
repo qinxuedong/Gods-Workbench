@@ -206,7 +206,12 @@ def main(argv: list[str] | None = None) -> int:
         if resolve_auth_mode() != AUTH_MODE_LOCAL_ACCOUNT:
             print("请先将 GW_AUTH_MODE 设置为 local_account，再创建本地管理员。")
             return 1
-        if local_accounts.list_accounts():
+        try:
+            accounts = local_accounts.list_accounts()
+        except CleanroomException as exc:
+            print(exc.message)
+            return 1
+        if accounts:
             print("本地管理员已存在，请直接登录；需要改密时使用 reset-password。")
             return 1
 
@@ -236,7 +241,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     if args.command == "reset-password":
-        accounts = local_accounts.list_accounts()
+        try:
+            accounts = local_accounts.list_accounts()
+        except CleanroomException as exc:
+            print(exc.message)
+            return 1
         if not accounts:
             print("本地账户库中没有账户。")
             return 1

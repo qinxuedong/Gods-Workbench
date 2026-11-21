@@ -2042,3 +2042,22 @@ def release_data_dir_lock(root: Path) -> None:
         lock = _HELD_DATA_LOCKS.pop(key, None)
     if lock is not None:
         lock.release()
+
+
+def data_dir_lock_held_by_foreign_process(root: Path) -> bool:
+    """判断某个数据根是否被本进程之外的存活宿主持有。
+
+    本机写入口（如本机账户 CLI）在服务运行或迁移静默期间不能绕过跨进程
+    数据锁直接写库；同进程的 API/迁移自身仍可通过。跨机同根由锁身份里的
+    host 判定为外部持有，交给迁移流程拒绝。
+    """
+    identity = read_lock_identity(Path(root) / ".gw-data.lock")
+    if not _identity_holder_alive(identity):
+        return False
+    if str((identity or {}).get("host") or "") != _host_name():
+        return True
+    try:
+        pid = int((identity or {}).get("pid") or 0)
+    except (TypeError, ValueError):
+        return True
+    return pid != os.getpid()
