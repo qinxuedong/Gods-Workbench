@@ -174,6 +174,11 @@ test("AC1/AC7: 安装端验收入口带 UTF-8 BOM 并覆盖真实页面/远端�
   assert.match(acceptance, /GW_ALLOWED_HOSTS = \$Address/);
   assert.match(acceptance, /Page\.captureScreenshot/);
   assert.match(acceptance, /12-layout-.*\.page\.png/);
+  assert.match(acceptance, /foreach \(\$file in \$files\)/);
+  assert.match(acceptance, /if \(\$text\.Length -gt 0\) \{ return \$text \}/);
+  const upgradeScript = readFileSync("clients/desktop/packaging/nsis/upgrade.ps1", "utf8");
+  assert.match(upgradeScript, /Add-Content -LiteralPath \$stderrLog/);
+  assert.match(upgradeScript, /\("PostInstall: " \+ \$message\)/);
   assert.match(acceptanceReadme, /GW_ALLOWED_HOSTS/);
 });
 

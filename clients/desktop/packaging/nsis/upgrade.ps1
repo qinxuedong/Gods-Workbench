@@ -9,6 +9,8 @@ $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $backend = Join-Path (Split-Path -Parent $scriptDir) "backend"
 $upgradeRoot = Join-Path $env:LOCALAPPDATA "ai.godsworkbench.desktop\upgrade"
 $journal = Join-Path $upgradeRoot "journal.txt"
+$stdoutLog = Join-Path $upgradeRoot "self-check.log"
+$stderrLog = Join-Path $upgradeRoot "self-check.err.log"
 New-Item -ItemType Directory -Force -Path $upgradeRoot | Out-Null
 
 function Set-JournalState([string]$state) {
@@ -17,6 +19,11 @@ function Set-JournalState([string]$state) {
 
 function Fail([string]$message) {
   # 保留 installed，交由 NSIS 还原后再写 rolled_back；提前落盘会让中断的安装器覆盖唯一备份。
+  # 自检尚未启动的失败也必须留下证据，便于安装端验收定位。
+  try {
+    Add-Content -LiteralPath $stderrLog -Value ("PostInstall: " + $message) -Encoding UTF8
+  } catch {
+  }
   Write-Error $message
   exit 1
 }
@@ -49,8 +56,6 @@ $runPy = Join-Path $backend "run.py"
 if (-not (Test-Path -LiteralPath $python)) { Fail "安装缺少私有 Python 运行时" }
 if (-not (Test-Path -LiteralPath $runPy)) { Fail "安装缺少后端入口" }
 
-$stdoutLog = Join-Path $upgradeRoot "self-check.log"
-$stderrLog = Join-Path $upgradeRoot "self-check.err.log"
 $env:GW_RUNTIME_MODE = "prod"
 $env:GW_HOST = "127.0.0.1"
 $env:GW_PORT = "2077"

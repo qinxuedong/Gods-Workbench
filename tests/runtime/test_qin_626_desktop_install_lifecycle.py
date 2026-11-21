@@ -401,6 +401,19 @@ def test_packaging_self_check_never_writes_bytecode_into_payload() -> None:
     assert upgrade.startswith("\ufeff"), "Windows PowerShell 5.1 需要 UTF-8 BOM 才能正确解析中文提示"
 
 
+def test_install_acceptance_never_hides_self_check_failure_evidence() -> None:
+    acceptance_bytes = (PACKAGING / "acceptance" / "run_install_acceptance.ps1").read_bytes()
+    assert acceptance_bytes.startswith(b"\xef\xbb\xbf")
+    acceptance = acceptance_bytes.decode("utf-8-sig")
+    upgrade = (PACKAGING / "nsis" / "upgrade.ps1").read_text(encoding="utf-8-sig")
+    assert "foreach ($file in $files)" in acceptance, (
+        "失败自检的 stdout 可能只有 BOM，必须遍历日志直到读到非空内容"
+    )
+    assert "if ($text.Length -gt 0) { return $text }" in acceptance
+    assert "Add-Content -LiteralPath $stderrLog" in upgrade
+    assert '("PostInstall: " + $message)' in upgrade, "自检启动前的失败也必须留下失败证据"
+
+
 def test_installer_hooks_and_self_check_contract() -> None:
     hooks = (PACKAGING / "nsis" / "hooks.nsh").read_text(encoding="utf-8")
     upgrade = (PACKAGING / "nsis" / "upgrade.ps1").read_text(encoding="utf-8")

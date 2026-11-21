@@ -213,9 +213,13 @@ function Get-BackupGeneration {
 function Get-SelfCheckTail {
     if (-not (Test-Path -LiteralPath $script:upgradeRoot)) { return "" }
     $files = @(Get-ChildItem -LiteralPath $script:upgradeRoot -Filter "self-check*.log" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
-    if ($files.Count -eq 0) { return "" }
-    $lines = @(Get-Content -LiteralPath $files[0].FullName -Tail 24 -ErrorAction SilentlyContinue)
-    return ($lines -join "`n")
+    # 失败自检的 stdout 可能只有 UTF-8 BOM；必须跳过空文件继续读 stderr，不能只看最新一个。
+    foreach ($file in $files) {
+        $lines = @(Get-Content -LiteralPath $file.FullName -Tail 24 -ErrorAction SilentlyContinue)
+        $text = ($lines -join "`n").Trim()
+        if ($text.Length -gt 0) { return $text }
+    }
+    return ""
 }
 
 function Get-ListeningLines {
