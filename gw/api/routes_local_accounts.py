@@ -182,7 +182,7 @@ def trusted_bootstrap(payload: TrustedBootstrap, request: Request):
                 "TRUSTED_LOCAL_BOOTSTRAP_INVALID",
                 "启动票据已被使用或已过期，已拒绝本次请求",
             )
-        principal, created = local_accounts.ensure_trusted_local_owner(
+        principal, created, recovery_codes = local_accounts.ensure_trusted_local_owner(
             db, fingerprint, now=now
         )
         _, token = local_accounts.issue_session_for_user(db, principal["user_id"])
@@ -205,7 +205,7 @@ def trusted_bootstrap(payload: TrustedBootstrap, request: Request):
         auth_mode=AUTH_MODE_LOCAL_ACCOUNT,
     )
     trusted_local.clear_pending_ticket()
-    return _session_response(request, principal, token, 200, [])
+    return _session_response(request, principal, token, 200, recovery_codes)
 
 
 @router.post("/reset-password")

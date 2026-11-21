@@ -126,11 +126,12 @@ def test_existing_account_is_never_taken_over_and_ticket_survives_failure(truste
         assert created.status_code == 201, created.text
     with local_accounts.database() as db:
         db.execute("BEGIN IMMEDIATE")
-        principal, auto_created = local_accounts.ensure_trusted_local_owner(
+        principal, auto_created, recovery_codes = local_accounts.ensure_trusted_local_owner(
             db, trusted_local.device_key_fingerprint(), now=1.0
         )
     assert auto_created is True
     assert principal["username"] == "owner"
+    assert recovery_codes == []
     assert [row["username"] for row in read_table("local_users")] == ["owner"]
     ticket = issue_ticket()
     with make_client() as client:
@@ -139,6 +140,7 @@ def test_existing_account_is_never_taken_over_and_ticket_survives_failure(truste
         body = redeemed.json()
         assert body["authenticated"] is True
         assert body["principal"]["username"] == "owner"
+        assert body["recovery_codes"] == []
         state = client.get("/api/asset-auth/status").json()
         assert state["authenticated"] is True
         assert state["trusted_local"]["needs_manual_claim"] is False
@@ -162,6 +164,19 @@ def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
         )
         assert created.status_code == 201, created.text
     ticket = issue_ticket()
+    with make_client() as client:
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert redeemed.status_code == 200, redeemed.text
+        assert redeemed.json()["authenticated"] is True
+        assert redeemed.json()["principal"]["username"] == "owner"
+        state = client.get("/api/asset-auth/status").json()
+        assert state["authenticated"] is True
+        assert state["trusted_local"]["established"] is True
+
+    # 解绑后测试手动 trusted-claim：认证失败不改数据、认证成功建立绑定
+    monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: PASSWORD)
+    assert local_accounts_cli.main(["trusted-unclaim", "--username", "owner"]) == 0
+    assert read_table("trusted_local_owners") == []
 
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: "错误密码")
     assert local_accounts_cli.main(["trusted-claim", "--username", "owner"]) == 1
@@ -173,8 +188,9 @@ def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
     assert len(owners) == 1
     assert owners[0]["claim_method"] == "password_auth"
 
+    ticket2 = issue_ticket()
     with make_client() as client:
-        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket2})
         assert redeemed.status_code == 200, redeemed.text
         state = client.get("/api/asset-auth/status").json()
         assert state["trusted_local"]["established"] is True

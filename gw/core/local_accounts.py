@@ -477,14 +477,21 @@ def trusted_local_owner(db) -> dict | None:
     return dict(row) if row is not None else None
 
 
-def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tuple[dict, bool]:
+def ensure_trusted_local_owner(
+    db, device_fingerprint: str, *, now: float
+) -> tuple[dict, bool, list[str]]:
     """在**既有事务内**建立或复用本机所有者（QIN-633 个人本机全权限直入）。
 
     - 已有绑定 → 幂等复用；设备指纹不一致时显式报错（密钥被换过）；
-    - 本地账户表非空且无绑定 → 自动接管已有管理员（多账户优先 admin 且最早创建），写入 auto_takeover 绑定；
-    - 本地账户表为空 → 原子建立本机管理员账户与绑定。
+    - 本地账户表非空且无绑定：
+      - 优先自动接管已有管理员（多账户优先 admin 且最早创建），写入 auto_takeover 绑定；
+      - 若存在账户但无任何 admin 账户：按 PM 裁决选项 A 显式抛出 409
+        TRUSTED_LOCAL_ADMIN_REQUIRED，绝不静默替用户猜测归属或绑定为 editor；
+    - 本地账户表为空：
+      - 原子建立本机管理员账户与绑定；
+      - 生成 8 个恢复码（F1）并交付，供可信证明失效时密码重置恢复。
 
-    返回 ``(principal, created)``；``created`` 表示本次是否新建了所有者绑定。
+    返回 ``(principal, created, recovery_codes)``；``recovery_codes`` 仅在空库首启时包含恢复码。
     """
     binding = trusted_local_owner(db)
     if binding is not None:
@@ -503,18 +510,21 @@ def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tu
                 "TRUSTED_LOCAL_OWNER_MISSING",
                 "本机所有者账户已缺失，请执行显式恢复命令",
             )
-        return _principal(row), False
+        return _principal(row), False, []
 
     # 若本地已有账户但未绑定设备所有者：执行自动所有者接管（QIN-633 个人直入）
-    existing_admin = db.execute(
-        "SELECT * FROM local_users WHERE role='admin' ORDER BY rowid ASC LIMIT 1"
-    ).fetchone()
-    if existing_admin is None:
+    has_any_user = db.execute("SELECT 1 FROM local_users LIMIT 1").fetchone()
+    if has_any_user is not None:
         existing_admin = db.execute(
-            "SELECT * FROM local_users ORDER BY rowid ASC LIMIT 1"
+            "SELECT * FROM local_users WHERE role='admin' ORDER BY rowid ASC LIMIT 1"
         ).fetchone()
-
-    if existing_admin is not None:
+        if existing_admin is None:
+            # 存在用户但无 admin，按 PM 裁决选项 A 显式拒绝，绝不静默猜归属
+            raise CleanroomException(
+                409,
+                "TRUSTED_LOCAL_ADMIN_REQUIRED",
+                "本地未找到管理员账户，无法自动接管所有者权限，请使用账户密码登录",
+            )
         target_user_id = str(existing_admin["user_id"])
         owner_id = "tlo-" + secrets.token_hex(8)
         db.execute(
@@ -533,9 +543,10 @@ def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tu
                 float(now),
             ),
         )
-        return _principal(existing_admin), True
+        return _principal(existing_admin), True, []
 
     user_id = _insert_admin_row(db, TRUSTED_LOCAL_OWNER_USERNAME, secrets.token_hex(32))
+    recovery_codes = _issue_recovery_codes(db, user_id)
     owner_id = "tlo-" + secrets.token_hex(8)
     db.execute(
         "INSERT INTO trusted_local_owners "
@@ -556,7 +567,7 @@ def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tu
     row = db.execute(
         "SELECT * FROM local_users WHERE user_id=?", (user_id,)
     ).fetchone()
-    return _principal(row), True
+    return _principal(row), True, recovery_codes
 
 
 def issue_session_for_user(db, user_id: str) -> tuple[dict, str]:
