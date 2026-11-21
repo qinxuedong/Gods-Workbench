@@ -759,7 +759,7 @@ function init() {
         document.head.append(link);
     }
     root.addEventListener('click', event => {
-        const target = event.target instanceof Element ? event.target : null;
+        const target = event.target && typeof event.target.closest === 'function' ? event.target : null;
         if (!target) return;
         const openButton = target.closest('[data-transfer-open]');
         if (openButton) {
@@ -781,7 +781,7 @@ function init() {
         if (overlay && event.target === overlay) closeDialog();
     });
     root.addEventListener('change', event => {
-        const target = event.target instanceof Element ? event.target : null;
+        const target = event.target && typeof event.target.closest === 'function' ? event.target : null;
         if (!target) return;
         if (target.matches('#assetTransferFileInput')) { void readSelectedFiles(); return; }
         const choice = target.closest('[data-transfer-choice]');

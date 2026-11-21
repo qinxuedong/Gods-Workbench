@@ -6462,8 +6462,8 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
         <div class="registry-toolbar-controls">
             ${!board && document.documentElement.classList.contains('vault-shell-embedded') ? '<button class="hw-btn hw-btn-icon vault-filters-toggle" type="button" popovertarget="registryFacetPopover" title="目录层级" aria-label="目录层级"><i data-lucide="folder-tree"></i></button>' : ''}
             ${governanceTrigger}${coverflowControl}
-            ${transferControl}
             <button class="hw-btn registry-refresh" type="button" data-refresh-assets title="刷新资产" aria-label="刷新资产"><i data-lucide="refresh-cw"></i><span>刷新</span></button>
+            ${transferControl}
             <label class="asset-search-wrap"><i data-lucide="search"></i><input id="registrySearch" class="asset-search" type="search" aria-label="搜索 ${escapeAttr(searchLabel)}" value="${escapeAttr(registryQuery)}" placeholder="搜索文件名 / 标签 / ID"></label>
             <div class="registry-layout-switch btn-segmented-deck" role="group" aria-label="显示方式"><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'grid' ? 'is-active' : ''}" type="button" data-registry-layout="grid" title="方格视图" aria-label="方格视图" aria-pressed="${registryLayout === 'grid'}"><i data-lucide="grid-2x2"></i></button><button class="btn-segmented-item btn-size-sm hw-btn-icon ${registryLayout === 'list' ? 'is-active' : ''}" type="button" data-registry-layout="list" title="列表视图" aria-label="列表视图" aria-pressed="${registryLayout === 'list'}"><i data-lucide="list"></i></button></div>
             ${activeTab === 'projects' ? renderRegistrySelectCapsule({kind:'project', icon:'folder-kanban', label:'项目'}) : ''}
