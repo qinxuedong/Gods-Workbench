@@ -156,6 +156,14 @@ function Read-JsonFile {
 function Get-PropertyValue {
     param($Object, [string]$Name)
     if ($null -eq $Object) { return $null }
+    if ($Object -is [System.Collections.IDictionary]) {
+        foreach ($key in $Object.Keys) {
+            if ([string]::Equals([string]$key, $Name, [StringComparison]::OrdinalIgnoreCase)) {
+                return $Object[$key]
+            }
+        }
+        return $null
+    }
     $property = $Object.PSObject.Properties[$Name]
     if ($null -eq $property) { return $null }
     return $property.Value
@@ -552,7 +560,9 @@ function Get-CdpTargets {
         } finally {
             $response.Close()
         }
-        return @($raw | ConvertFrom-Json)
+        $parsed = $raw | ConvertFrom-Json
+        if ($parsed -is [System.Array]) { return $parsed }
+        return @($parsed)
     } catch {
         return @()
     }
@@ -600,7 +610,7 @@ function New-CdpConnection {
     $cts = New-Object System.Threading.CancellationTokenSource
     $cts.CancelAfter(10000)
     try {
-        $socket.ConnectAsync([Uri]([string](Get-PropertyValue -Object $target -Name "webSocketDebuggerUrl")), $cts.Token).GetAwaiter().GetResult()
+        [void]$socket.ConnectAsync([Uri]([string](Get-PropertyValue -Object $target -Name "webSocketDebuggerUrl")), $cts.Token).GetAwaiter().GetResult()
     } catch {
         $socket.Dispose()
         throw ("CDP websocket connect failed: " + $_.Exception.Message)
@@ -658,7 +668,7 @@ function Invoke-CdpCommand {
     $cts.CancelAfter($TimeoutMs)
     try {
         $segment = [System.ArraySegment[byte]]::new($bytes)
-        $Connection.socket.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $cts.Token).GetAwaiter().GetResult()
+        [void]$Connection.socket.SendAsync($segment, [System.Net.WebSockets.WebSocketMessageType]::Text, $true, $cts.Token).GetAwaiter().GetResult()
     } catch {
         return $null
     } finally {
@@ -948,6 +958,11 @@ while (`$true) {
             $actual = 0
             try { $actual = [int]([IO.File]::ReadAllText($ready).Trim()) } catch { }
             if ($actual -gt 0) {
+                $visibleDeadline = (Get-Date).AddSeconds(10)
+                while ((Get-Date) -lt $visibleDeadline) {
+                    if (@(Get-ListeningPids -Port $actual) -contains [int]$started.Id) { break }
+                    Start-Sleep -Milliseconds 200
+                }
                 $holder = [pscustomobject]@{ process = $started; port = $actual; script = $holderScript; ready = $ready }
                 $null = $script:holders.Add($holder)
                 return $holder
@@ -1444,6 +1459,7 @@ function Start-RemoteBackend {
         GW_BUNDLE_MANIFEST = ""
         GW_PRODUCT_VERSION = ""
         GW_HOST = ""
+        GW_ALLOWED_HOSTS = $Address
         PYTHONDONTWRITEBYTECODE = "1"
         GW_RUNTIME_MODE = "prod"
     }

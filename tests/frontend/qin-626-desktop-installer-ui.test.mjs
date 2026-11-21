@@ -7,6 +7,7 @@ const app = readFileSync("clients/desktop/ui/app.js", "utf8");
 const index = readFileSync("clients/desktop/ui/index.html", "utf8");
 const style = readFileSync("clients/desktop/ui/style.css", "utf8");
 const readme = readFileSync("clients/desktop/README.md", "utf8");
+const acceptanceReadme = readFileSync("clients/desktop/packaging/acceptance/README.md", "utf8");
 const contract = readFileSync("docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md", "utf8");
 const hardwareTokens = readFileSync("web/css/base/hardware-tokens.css", "utf8");
 const themeCss = readFileSync("web/css/base/theme.css", "utf8");
@@ -164,6 +165,14 @@ test("AC1/AC7: 安装端验收入口带 UTF-8 BOM 并覆盖真实页面/远端�
   assert.match(acceptance, /remote-entry\.no-trusted-ticket/);
   assert.match(acceptance, /Test-NoStoreHeaders/);
   assert.match(acceptance, /first-run\.no-server-pin/);
+  assert.match(acceptance, /\$parsed = \$raw \| ConvertFrom-Json/);
+  assert.match(acceptance, /\$parsed -is \[System\.Array\]/);
+  assert.match(acceptance, /\$Object -is \[System\.Collections\.IDictionary\]/);
+  assert.match(acceptance, /\[StringComparison\]::OrdinalIgnoreCase/);
+  assert.match(acceptance, /\[void\]\$socket\.ConnectAsync/);
+  assert.match(acceptance, /\[void\]\$Connection\.socket\.SendAsync/);
+  assert.match(acceptance, /GW_ALLOWED_HOSTS = \$Address/);
+  assert.match(acceptanceReadme, /GW_ALLOWED_HOSTS/);
 });
 
 test("公开界面示例不使用内网地址或真实路径", () => {

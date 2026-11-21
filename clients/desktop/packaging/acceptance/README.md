@@ -10,6 +10,7 @@
 - 当前登录会话能看到桌面窗口（用于检查主窗口和失败弹窗；不要求管理员权限）。
 - `2077` 端口空闲，且没有其他 `gods-workbench-desktop.exe` 实例。
 - 机器具有一个可绑定的私有 IPv4 局域网地址（`10/8`、`172.16/12`、`192.168/16`）；远端场景会在该地址的临时端口上启动随包后端和假服务。地址在证据中替换为 `<LAN_IP>`。
+- 远端真实后端以 `--host <LAN_IP>` 启动，并设置 `GW_ALLOWED_HOSTS=<LAN_IP>`，以满足工作台 Host 白名单；假服务不经过该中间件。
 - WebView2 运行时可用；脚本通过 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` 为验收实例开启临时 CDP 端口，只连接 `127.0.0.1`。
 - 安装器构建自同一提交；构建时写入的 `product_version` 与 `git_commit` 必须和验收参数一致。
 - 若机器上已有真实 `%LOCALAPPDATA%\GodsWorkbench`，必须用 `-LocalAppDataOverride` 指向一个空的隔离目录；脚本不会删除真实数据根。
