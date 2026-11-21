@@ -955,7 +955,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.equal(providerBlurred, true, '按下 Escape 必须使 providerSelect 失焦');
     assert.equal(promptInputFocused, true, '按下 Escape 必须安全将焦点返还给声明的 #agentPromptInput，绝不丢失到 BODY');
 
-    // 2. 验证通用前置焦点追踪回归（Focus Origin Tracking）
+    // 2. 验证通用前置焦点追踪回归（Focus Origin Tracking，严格还原真实浏览器 FocusEvent 与 DOM 时序）
     let lastButtonFocused = false;
     const mockPreviousButton = {
       id: 'mockPreviousButton',
@@ -965,7 +965,9 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     };
     let unconfiguredBlurred = false;
     let unconfiguredKeydown = null;
+    let unconfiguredFocusin = null;
     let unconfiguredFocus = null;
+    let unconfiguredMousedown = null;
 
     const mockUnconfiguredSelect = {
       id: 'unconfiguredSelect',
@@ -989,21 +991,76 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       },
       addEventListener(evt, fn) {
         if (evt === 'keydown') unconfiguredKeydown = fn;
+        if (evt === 'focusin') unconfiguredFocusin = fn;
         if (evt === 'focus') unconfiguredFocus = fn;
+        if (evt === 'mousedown') unconfiguredMousedown = fn;
       },
       blur() { unconfiguredBlurred = true; },
       ownerDocument: {
-        activeElement: mockPreviousButton
+        // 关键时序还原：真实浏览器在派发 focusin/focus 时，activeElement 早已切换为目标元素本身！
+        activeElement: null
       }
     };
+    mockUnconfiguredSelect.ownerDocument.activeElement = mockUnconfiguredSelect;
 
     GWNativeSelect.enhance(mockUnconfiguredSelect);
-    // 模拟聚焦并记忆前置焦点
-    unconfiguredFocus();
+
+    // 真实浏览器键盘/Tab时序：当焦点从 mockPreviousButton 移入 selectEl 时：
+    // activeElement 已是 mockUnconfiguredSelect，而 focusin 事件的 relatedTarget 是失去焦点的原按钮
+    unconfiguredFocusin({ type: 'focusin', relatedTarget: mockPreviousButton });
+
     // 模拟按下 Escape
     unconfiguredKeydown({ key: 'Escape' });
     assert.equal(unconfiguredBlurred, true, '按下 Escape 必须使 select 失焦');
-    assert.equal(lastButtonFocused, true, '未显式配置 trigger 的控件，按 Escape 必须将焦点返还给移入前记忆的前置焦点');
+    assert.equal(lastButtonFocused, true, '即使 activeElement 已为当前 select，通过 focusin.relatedTarget 仍能精准捕获并返还前置焦点');
+
+    // 2b. 验证鼠标交互 mousedown 瞬间的前置焦点捕获时序
+    let mousedownButtonFocused = false;
+    const mockMousedownButton = {
+      id: 'mockMousedownButton',
+      nodeType: 1,
+      isConnected: true,
+      focus() { mousedownButtonFocused = true; }
+    };
+    let mouseSelectBlurred = false;
+    let mouseSelectKeydown = null;
+    let mouseSelectMousedown = null;
+    const mockMouseSelect = {
+      id: 'mouseSelect',
+      nodeType: 1,
+      tagName: 'SELECT',
+      dataset: { gwSelect: '' },
+      getAttribute(attr) { return null; },
+      classList: {
+        classes: new Set(['gw-native-select-input']),
+        contains(c) { return this.classes.has(c); },
+        add(c) { this.classes.add(c); }
+      },
+      parentElement: {
+        nodeType: 1,
+        classList: {
+          classes: new Set(['gw-select-shell']),
+          contains(c) { return this.classes.has(c); },
+          add(c) { this.classes.add(c); },
+          remove(c) { this.classes.delete(c); }
+        }
+      },
+      addEventListener(evt, fn) {
+        if (evt === 'keydown') mouseSelectKeydown = fn;
+        if (evt === 'mousedown') mouseSelectMousedown = fn;
+      },
+      blur() { mouseSelectBlurred = true; },
+      ownerDocument: {
+        activeElement: mockMousedownButton // 鼠标按下瞬间，原按钮仍为 activeElement
+      }
+    };
+    GWNativeSelect.enhance(mockMouseSelect);
+    mouseSelectMousedown();
+    // 鼠标点击后浏览器将 activeElement 切换为 select
+    mockMouseSelect.ownerDocument.activeElement = mockMouseSelect;
+    mouseSelectKeydown({ key: 'Escape' });
+    assert.equal(mouseSelectBlurred, true, '鼠标交互后按 Escape 必须使 select 失焦');
+    assert.equal(mousedownButtonFocused, true, '通过 mousedown 瞬间捕获的前置焦点，按 Escape 必须精准返还给原按钮');
 
     // 3. 验证无外部 trigger 且无前置焦点时的防丢安全兜底（W3C A11y 焦点驻留规范）
     let standaloneBlurred = false;

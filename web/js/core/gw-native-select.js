@@ -6,6 +6,19 @@
 (function (global) {
   'use strict';
 
+  // 全局跟踪非公共下拉控件的活动元素，为无 relatedTarget 或异步环境提供兜底
+  let lastActiveInteractiveElement = null;
+
+  if (typeof document !== 'undefined' && typeof document.addEventListener === 'function') {
+    document.addEventListener('focusin', function (e) {
+      const target = e.target;
+      if (target && target.nodeType === 1 && target.tagName !== 'SELECT' &&
+          !(target.classList && typeof target.classList.contains === 'function' && target.classList.contains('gw-native-select-input'))) {
+        lastActiveInteractiveElement = target;
+      }
+    }, true);
+  }
+
   /**
    * 增强指定的原生 select 元素
    * @param {HTMLSelectElement|string} target 目标 select 或选择器
@@ -99,14 +112,47 @@
           return el._gwPreviousFocus;
         }
 
+        // 全局前置活动交互元素兜底
+        if (lastActiveInteractiveElement && lastActiveInteractiveElement.isConnected &&
+            typeof lastActiveInteractiveElement.focus === 'function' && lastActiveInteractiveElement !== el) {
+          return lastActiveInteractiveElement;
+        }
+
         return null;
       }
 
-      // 动态记忆前置焦点：当 select 获取焦点时，记录移入前的 activeElement（若有效且非 body）
-      selectEl.addEventListener('focus', function () {
+      function capturePreviousFocus(candidate) {
         const doc = selectEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
-        if (doc && doc.activeElement && doc.activeElement !== selectEl && doc.activeElement !== doc.body && doc.activeElement.isConnected) {
-          selectEl._gwPreviousFocus = doc.activeElement;
+        const body = doc ? doc.body : null;
+        if (candidate && candidate !== selectEl && candidate !== body &&
+            candidate.nodeType === 1 && candidate.isConnected && typeof candidate.focus === 'function') {
+          selectEl._gwPreviousFocus = candidate;
+        }
+      }
+
+      // 1. 标准 FocusEvent 时序：focusin 事件的 relatedTarget 是失去焦点的原活动元素
+      selectEl.addEventListener('focusin', function (e) {
+        if (e && e.relatedTarget) {
+          capturePreviousFocus(e.relatedTarget);
+        } else if (lastActiveInteractiveElement && lastActiveInteractiveElement.isConnected) {
+          capturePreviousFocus(lastActiveInteractiveElement);
+        }
+      });
+
+      // 2. 兼容 focus 事件中的 relatedTarget 与全局兜底
+      selectEl.addEventListener('focus', function (e) {
+        if (e && e.relatedTarget) {
+          capturePreviousFocus(e.relatedTarget);
+        } else if (lastActiveInteractiveElement && lastActiveInteractiveElement.isConnected) {
+          capturePreviousFocus(lastActiveInteractiveElement);
+        }
+      });
+
+      // 3. 鼠标交互时序：在 mousedown 发生瞬间，activeElement 尚未切换至 selectEl
+      selectEl.addEventListener('mousedown', function () {
+        const doc = selectEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
+        if (doc && doc.activeElement && doc.activeElement !== selectEl) {
+          capturePreviousFocus(doc.activeElement);
         }
       });
 
@@ -114,7 +160,9 @@
       selectEl.addEventListener('keydown', function (e) {
         if (e.key === 'Escape' || e.key === 'Esc') {
           const trigger = resolveTrigger(selectEl, opts);
-          if (trigger && typeof trigger.focus === 'function' && trigger !== selectEl) {
+          const doc = selectEl.ownerDocument || (typeof document !== 'undefined' ? document : null);
+          const body = doc ? doc.body : null;
+          if (trigger && typeof trigger.focus === 'function' && trigger !== selectEl && trigger !== body) {
             selectEl.blur();
             trigger.focus();
           } else {

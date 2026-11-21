@@ -69,7 +69,7 @@
    - 选项文字超长时，在未展开态强制应用 `text-overflow: ellipsis; overflow: hidden; white-space: nowrap;`，防止撑破栅格布局或弹窗容器。
 3. **键盘与焦点响应**：
    - 当用户通过 `Tab` 键聚焦时，容器获得 `:focus-within` 伪类，显示香槟钛金（`--gw-warning`）高亮边框与外发光环；
-   - 支持键盘 `Escape` 快速失焦并安全返还焦点：优先返还至 `options.triggerElement`、声明式属性 `data-gw-trigger`（或 `data-trigger`）指定的选择器目标、或移入前动态记忆的前置焦点；
+   - 支持键盘 `Escape` 快速失焦并安全返还焦点：优先返还至 `options.triggerElement`、声明式属性 `data-gw-trigger`（或 `data-trigger`）指定的选择器目标；在未显式声明 trigger 时，通过 W3C 标准 `focusin` 的 `relatedTarget` 或移入前交互焦点机制动态返还至前置活动控件；
    - 当不存在外部 trigger 且无有效前置焦点时，严禁盲目失焦将焦点抛弃至 `document.body`，保持当前焦点以确保无障碍（A11y）上下文不丢失；
    - 纯原生 `<select>` 具备操作系统原生键盘上下键选择与快速检索选项能力。
 4. **响应式与多端尺寸**：
