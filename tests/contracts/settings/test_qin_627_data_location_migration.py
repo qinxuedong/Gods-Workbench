@@ -1520,6 +1520,98 @@ def test_local_account_reset_rejects_foreign_lock_with_owner_claiming_current_pi
     assert hash_after == hash_before
 
 
+def test_local_account_write_transaction_holds_data_lock(prod_home):
+    storage._HELD_DATA_LOCKS.clear()
+    local_accounts.create_first_admin("admin", "OldPassw0rd")
+    auth_db = resolve_runtime_paths().auth_db
+    connection = sqlite3.connect(auth_db)
+    hash_before = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+    root = resolve_runtime_paths().data_root
+
+    script = (
+        "import sys\n"
+        "sys.path.insert(0, r'%s')\n"
+        "import gw.core.storage as storage\n"
+        "import gw.core.write_window as write_window\n"
+        "from gw.core.local_accounts import reset_password_local\n"
+        "original = write_window.open_sqlite\n"
+        "def delayed_open(path, **kwargs):\n"
+        "    print('before_open', flush=True)\n"
+        "    sys.stdin.readline()\n"
+        "    return original(path, **kwargs)\n"
+        "write_window.open_sqlite = delayed_open\n"
+        "reset_password_local('admin', 'NewPassw0rd')\n"
+        "print('RESET_SUCCEEDED', flush=True)\n"
+    ) % str(REPO_ROOT)
+    process = subprocess.Popen(
+        [sys.executable, "-c", script, str(root)],
+        cwd=str(REPO_ROOT),
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert process.stdout.readline().strip() == "before_open"
+        # 账户进程在 open_sqlite() 窗口仍持有数据锁，外部进程不能抢锁。
+        with pytest.raises(storage.DataDirLockedError) as exc:
+            storage.acquire_data_dir_lock(root)
+        assert exc.value.code == "LOCK_HELD"
+        process.stdin.write("go\n")
+        process.stdin.flush()
+        stdout, stderr = process.communicate(timeout=15)
+        assert process.returncode == 0, stderr
+        assert "RESET_SUCCEEDED" in stdout
+    finally:
+        if process.poll() is None:
+            process.terminate()
+            process.wait(timeout=5)
+
+    connection = sqlite3.connect(auth_db)
+    hash_after = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+    assert hash_after != hash_before
+
+    # 反方向：外部先持锁时，账户写入必须在取得锁阶段被拒绝，哈希不变。
+    storage.acquire_data_dir_lock(root)
+    rejected_script = (
+        "import sys\n"
+        "sys.path.insert(0, r'%s')\n"
+        "from gw.core.errors import CleanroomException\n"
+        "from gw.core.local_accounts import reset_password_local\n"
+        "try:\n"
+        "    reset_password_local('admin', 'ThirdPassw0rd')\n"
+        "except CleanroomException as exc:\n"
+        "    print(exc.code)\n"
+        "    sys.exit(7)\n"
+        "print('written')\n"
+        "sys.exit(0)\n"
+    ) % str(REPO_ROOT)
+    try:
+        probe = subprocess.run(
+            [sys.executable, "-c", rejected_script],
+            cwd=str(REPO_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=15,
+        )
+    finally:
+        storage.release_data_dir_lock(root)
+    assert probe.returncode == 7, probe.stderr
+    assert probe.stdout.strip() == "DATA_LOCATION_QUIESCING"
+    connection = sqlite3.connect(auth_db)
+    hash_rejected = connection.execute(
+        "SELECT password_hash FROM local_users WHERE username='admin'"
+    ).fetchone()[0]
+    connection.close()
+    assert hash_rejected == hash_after
+
+
 def test_local_account_reset_fails_closed_when_lock_identity_is_corrupt(prod_home):
     storage._HELD_DATA_LOCKS.clear()
     local_accounts.create_first_admin("admin", "OldPassw0rd")
