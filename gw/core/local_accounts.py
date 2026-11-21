@@ -478,13 +478,13 @@ def trusted_local_owner(db) -> dict | None:
 
 
 def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tuple[dict, bool]:
-    """在**既有事务内**建立或复用本机所有者。
+    """在**既有事务内**建立或复用本机所有者（QIN-633 个人本机全权限直入）。
 
     - 已有绑定 → 幂等复用；设备指纹不一致时显式报错（密钥被换过）；
-    - 本地账户表非空但无绑定 → 拒绝接管（``needs_manual_claim``），**不改任何数据**；
+    - 本地账户表非空且无绑定 → 自动接管已有管理员（多账户优先 admin 且最早创建），写入 auto_takeover 绑定；
     - 本地账户表为空 → 原子建立本机管理员账户与绑定。
 
-    返回 ``(principal, created)``；``created`` 表示本次是否新建了所有者。
+    返回 ``(principal, created)``；``created`` 表示本次是否新建了所有者绑定。
     """
     binding = trusted_local_owner(db)
     if binding is not None:
@@ -505,12 +505,35 @@ def ensure_trusted_local_owner(db, device_fingerprint: str, *, now: float) -> tu
             )
         return _principal(row), False
 
-    if db.execute("SELECT 1 FROM local_users LIMIT 1").fetchone():
-        raise CleanroomException(
-            409,
-            "TRUSTED_LOCAL_CLAIM_REQUIRED",
-            "本机已存在本地账户，需由管理员认证后显式认领",
+    # 若本地已有账户但未绑定设备所有者：执行自动所有者接管（QIN-633 个人直入）
+    existing_admin = db.execute(
+        "SELECT * FROM local_users WHERE role='admin' ORDER BY rowid ASC LIMIT 1"
+    ).fetchone()
+    if existing_admin is None:
+        existing_admin = db.execute(
+            "SELECT * FROM local_users ORDER BY rowid ASC LIMIT 1"
+        ).fetchone()
+
+    if existing_admin is not None:
+        target_user_id = str(existing_admin["user_id"])
+        owner_id = "tlo-" + secrets.token_hex(8)
+        db.execute(
+            "INSERT INTO trusted_local_owners "
+            "(owner_id, user_id, device_fingerprint, identity_domain, "
+            " claimed_by_user_id, claimed_at, claim_method, established_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                owner_id,
+                target_user_id,
+                str(device_fingerprint),
+                "local_account",
+                target_user_id,
+                float(now),
+                "auto_takeover",
+                float(now),
+            ),
         )
+        return _principal(existing_admin), True
 
     user_id = _insert_admin_row(db, TRUSTED_LOCAL_OWNER_USERNAME, secrets.token_hex(32))
     owner_id = "tlo-" + secrets.token_hex(8)
