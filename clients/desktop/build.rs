@@ -5,6 +5,7 @@ fn generated_windows_icon() -> PathBuf {
     const IMAGE_BYTES: u32 = SIZE * SIZE * 4 + SIZE * 4;
     const GOLD: [u8; 4] = [223, 195, 132, 255];
     const DARK: [u8; 4] = [9, 10, 13, 255];
+    const ORANGE: [u8; 4] = [251, 90, 21, 255];
 
     let mut dib = Vec::with_capacity(40 + IMAGE_BYTES as usize);
     dib.extend_from_slice(&40_u32.to_le_bytes());
@@ -21,13 +22,24 @@ fn generated_windows_icon() -> PathBuf {
 
     for y in (0..SIZE).rev() {
         for x in 0..SIZE {
-            let border = x < 3 || x >= 29 || y < 3 || y >= 29;
-            let letter_g = (y >= 8 && y < 11 && x >= 9 && x < 23)
-                || (x >= 8 && x < 11 && y >= 9 && y < 23)
-                || (y >= 20 && y < 23 && x >= 9 && x < 23)
-                || (x >= 21 && x < 24 && y >= 17 && y < 22)
-                || (y >= 15 && y < 18 && x >= 17 && x < 24);
-            let [red, green, blue, alpha] = if border || letter_g { GOLD } else { DARK };
+            let border = x < 2 || x >= 30 || y < 2 || y >= 30;
+            let letter_g = ((y >= 7 && y < 10 && x >= 7 && x < 21)
+                || (x >= 6 && x < 9 && y >= 8 && y < 24)
+                || (y >= 22 && y < 25 && x >= 7 && x < 21)
+                || (x >= 18 && x < 21 && y >= 16 && y < 23)
+                || (y >= 15 && y < 18 && x >= 13 && x < 21))
+                && !(y == 7 && x == 7)
+                && !(y == 24 && x == 7);
+            let apostrophe = (y >= 7 && y <= 8 && x >= 25 && x <= 26)
+                || (y >= 9 && y <= 10 && x >= 24 && x <= 25)
+                || (y >= 11 && y <= 12 && x >= 23 && x <= 24);
+            let [red, green, blue, alpha] = if apostrophe {
+                ORANGE
+            } else if border || letter_g {
+                GOLD
+            } else {
+                DARK
+            };
             dib.extend_from_slice(&[blue, green, red, alpha]);
         }
     }

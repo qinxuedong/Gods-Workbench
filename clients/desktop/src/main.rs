@@ -1565,19 +1565,27 @@ fn make_tray_icon() -> Image<'static> {
     const SIZE: u32 = 32;
     const DARK: [u8; 4] = [9, 10, 13, 255];
     const GOLD: [u8; 4] = [223, 195, 132, 255];
+    const ORANGE: [u8; 4] = [251, 90, 21, 255];
     const CLEAR: [u8; 4] = [0, 0, 0, 0];
     let mut pixels = vec![0; (SIZE * SIZE * 4) as usize];
     for y in 0..SIZE {
         for x in 0..SIZE {
-            let border = x < 3 || x >= 29 || y < 3 || y >= 29;
-            let letter_g = (y >= 8 && y < 11 && x >= 9 && x < 23)
-                || (x >= 8 && x < 11 && y >= 9 && y < 23)
-                || (y >= 20 && y < 23 && x >= 9 && x < 23)
-                || (x >= 21 && x < 24 && y >= 17 && y < 22)
-                || (y >= 15 && y < 18 && x >= 17 && x < 24);
-            let color = if border || letter_g {
+            let border = x < 2 || x >= 30 || y < 2 || y >= 30;
+            let letter_g = ((y >= 7 && y < 10 && x >= 7 && x < 21)
+                || (x >= 6 && x < 9 && y >= 8 && y < 24)
+                || (y >= 22 && y < 25 && x >= 7 && x < 21)
+                || (x >= 18 && x < 21 && y >= 16 && y < 23)
+                || (y >= 15 && y < 18 && x >= 13 && x < 21))
+                && !(y == 7 && x == 7)
+                && !(y == 24 && x == 7);
+            let apostrophe = (y >= 7 && y <= 8 && x >= 25 && x <= 26)
+                || (y >= 9 && y <= 10 && x >= 24 && x <= 25)
+                || (y >= 11 && y <= 12 && x >= 23 && x <= 24);
+            let color = if apostrophe {
+                ORANGE
+            } else if border || letter_g {
                 GOLD
-            } else if x >= 3 && x < 29 && y >= 3 && y < 29 {
+            } else if x >= 2 && x < 30 && y >= 2 && y < 30 {
                 DARK
             } else {
                 CLEAR
@@ -1689,6 +1697,150 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_make_tray_icon_includes_brand_colors_and_apostrophe() {
+        let icon = make_tray_icon();
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
+        let rgba = icon.rgba();
+        assert_eq!(rgba.len(), 32 * 32 * 4);
+
+        let pixel_at = |x: usize, y: usize| -> [u8; 4] {
+            let idx = (y * 32 + x) * 4;
+            [rgba[idx], rgba[idx + 1], rgba[idx + 2], rgba[idx + 3]]
+        };
+
+        const ORANGE: [u8; 4] = [251, 90, 21, 255];
+        const GOLD: [u8; 4] = [223, 195, 132, 255];
+        const DARK: [u8; 4] = [9, 10, 13, 255];
+
+        // 1. 验证外边框与内衬背景
+        assert_eq!(pixel_at(0, 0), GOLD, "outer border pixel should be gold");
+        assert_eq!(pixel_at(1, 1), GOLD, "outer border pixel should be gold");
+        assert_eq!(pixel_at(4, 4), DARK, "inner background should be dark");
+        assert_eq!(pixel_at(30, 30), GOLD, "outer border pixel should be gold");
+
+        // 2. 验证橙色撇号倾斜几何位置（右上角倾斜梯形切角特征）
+        assert_eq!(pixel_at(25, 7), ORANGE, "apostrophe top-left pixel");
+        assert_eq!(pixel_at(26, 8), ORANGE, "apostrophe top-right pixel");
+        assert_eq!(pixel_at(24, 9), ORANGE, "apostrophe mid pixel");
+        assert_eq!(pixel_at(23, 11), ORANGE, "apostrophe bottom-left pixel");
+
+        // 3. 验证切角 G 的关键特征：中线槽与切角缺口
+        assert_eq!(
+            pixel_at(7, 7),
+            DARK,
+            "G corner notch should be cut out (dark background)"
+        );
+        assert_eq!(pixel_at(14, 16), GOLD, "G inner horizontal bar");
+        assert_eq!(pixel_at(7, 16), GOLD, "G left vertical stem");
+
+        // 4. 统计全局像素分布与对比度
+        let mut orange_count = 0;
+        let mut gold_count = 0;
+        let mut dark_count = 0;
+
+        for pixel in rgba.chunks_exact(4) {
+            match pixel {
+                [251, 90, 21, 255] => orange_count += 1,
+                [223, 195, 132, 255] => gold_count += 1,
+                [9, 10, 13, 255] => dark_count += 1,
+                _ => {}
+            }
+        }
+
+        assert_eq!(
+            orange_count, 12,
+            "tray icon must contain exactly 12 orange apostrophe pixels defining the tilted trapezoid"
+        );
+        assert!(
+            gold_count >= 100,
+            "tray icon must contain gold G and border"
+        );
+        assert!(dark_count >= 400, "tray icon must contain dark background");
+    }
+
+    #[test]
+    fn test_window_icon_binary_format_and_pixel_parity() {
+        // 验证生成 Windows ICO 的二进制格式与 DIB 位图规范
+        const SIZE: u32 = 32;
+        const IMAGE_BYTES: u32 = SIZE * SIZE * 4 + SIZE * 4;
+        const GOLD: [u8; 4] = [223, 195, 132, 255];
+        const DARK: [u8; 4] = [9, 10, 13, 255];
+        const ORANGE: [u8; 4] = [251, 90, 21, 255];
+
+        let mut dib = Vec::with_capacity(40 + IMAGE_BYTES as usize);
+        dib.extend_from_slice(&40_u32.to_le_bytes());
+        dib.extend_from_slice(&(SIZE as i32).to_le_bytes());
+        dib.extend_from_slice(&((SIZE * 2) as i32).to_le_bytes());
+        dib.extend_from_slice(&1_u16.to_le_bytes());
+        dib.extend_from_slice(&32_u16.to_le_bytes());
+        dib.extend_from_slice(&0_u32.to_le_bytes());
+        dib.extend_from_slice(&IMAGE_BYTES.to_le_bytes());
+        dib.extend_from_slice(&0_i32.to_le_bytes());
+        dib.extend_from_slice(&0_i32.to_le_bytes());
+        dib.extend_from_slice(&0_u32.to_le_bytes());
+        dib.extend_from_slice(&0_u32.to_le_bytes());
+
+        for y in (0..SIZE).rev() {
+            for x in 0..SIZE {
+                let border = x < 2 || x >= 30 || y < 2 || y >= 30;
+                let letter_g = ((y >= 7 && y < 10 && x >= 7 && x < 21)
+                    || (x >= 6 && x < 9 && y >= 8 && y < 24)
+                    || (y >= 22 && y < 25 && x >= 7 && x < 21)
+                    || (x >= 18 && x < 21 && y >= 16 && y < 23)
+                    || (y >= 15 && y < 18 && x >= 13 && x < 21))
+                    && !(y == 7 && x == 7)
+                    && !(y == 24 && x == 7);
+                let apostrophe = (y >= 7 && y <= 8 && x >= 25 && x <= 26)
+                    || (y >= 9 && y <= 10 && x >= 24 && x <= 25)
+                    || (y >= 11 && y <= 12 && x >= 23 && x <= 24);
+                let [red, green, blue, alpha] = if apostrophe {
+                    ORANGE
+                } else if border || letter_g {
+                    GOLD
+                } else {
+                    DARK
+                };
+                dib.extend_from_slice(&[blue, green, red, alpha]);
+            }
+        }
+        dib.resize(dib.len() + (SIZE * 4) as usize, 0);
+
+        let mut icon = Vec::with_capacity(22 + dib.len());
+        icon.extend_from_slice(&0_u16.to_le_bytes());
+        icon.extend_from_slice(&1_u16.to_le_bytes());
+        icon.extend_from_slice(&1_u16.to_le_bytes());
+        icon.extend_from_slice(&[SIZE as u8, SIZE as u8, 0, 0]);
+        icon.extend_from_slice(&1_u16.to_le_bytes());
+        icon.extend_from_slice(&32_u16.to_le_bytes());
+        icon.extend_from_slice(&(dib.len() as u32).to_le_bytes());
+        icon.extend_from_slice(&22_u32.to_le_bytes());
+        icon.extend_from_slice(&dib);
+
+        assert_eq!(
+            &icon[0..4],
+            &[0, 0, 1, 0],
+            "ICO header magic must be 0x0000, 0x0001"
+        );
+        assert_eq!(&icon[4..6], &[1, 0], "ICO image count must be 1");
+        assert_eq!(icon[6], 32, "ICO entry width must be 32");
+        assert_eq!(icon[7], 32, "ICO entry height must be 32");
+        assert_eq!(&icon[18..22], &[22, 0, 0, 0], "DIB data offset must be 22");
+
+        let orange_bgra = [21, 90, 251, 255];
+        let mut found_orange = 0;
+        for chunk in dib[40..40 + 32 * 32 * 4].chunks_exact(4) {
+            if chunk == orange_bgra {
+                found_orange += 1;
+            }
+        }
+        assert_eq!(
+            found_orange, 12,
+            "ICO DIB must contain exactly 12 orange BGRA pixels matching tray icon"
+        );
+    }
 
     #[test]
     fn broad_lan_subnet_is_limited_to_local_slash_24() {

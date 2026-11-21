@@ -23,6 +23,7 @@ test("PWA manifest has an installable standalone entry and embedded SVG icon", (
   assert.match(icon.purpose, /maskable/);
   assert.match(icon.src, /^data:image\/svg\+xml,/);
   assert.match(decodeURIComponent(icon.src.slice("data:image/svg+xml,".length)), /^<svg\b/);
+  assert.match(decodeURIComponent(icon.src), /#fb5a15/i, "icon includes brand orange apostrophe");
 });
 
 test("served entry links the manifest and registers the scoped service worker", () => {
