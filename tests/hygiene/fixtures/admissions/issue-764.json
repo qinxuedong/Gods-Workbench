@@ -1,0 +1,49 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 764,
+  "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope/design approval, single-test setup and CI compatibility rulings 2026-11-21",
+  "files": [
+    "gw/api/app.py",
+    "gw/god_workflow/routes.py",
+    "gw/api/routes_transfer.py",
+    "gw/transfer/routes.py",
+    "gw/transfer/service.py",
+    "tests/contracts/assets/test_qin_629_explicit_transfer.py",
+    "tests/contracts/assets/test_qin_629_task_transfer.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/contracts/test_workflow_remediation.py",
+    "tests/hygiene/fixtures/admissions/issue-764.json",
+    "web/css/pages/asset-transfer.css",
+    "web/js/controllers/workflow-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/transfer.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_629_explicit_transfer.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), 2026-11-20",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_qin_629_task_transfer.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope and design approval 2026-11-21",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), PM comment #7059433511; only two KNOWN_IMPLEMENTED endpoint entries",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/test_workflow_remediation.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), PM comment #7058307374; setup-only change in test_selected_asset_bytes_reach_engine_before_generation",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-629 显式上传与按任务传输；无绑定素材沿用直接执行，本机可读素材保留既有直传，跨机受管绑定须回执；Phase 8 仅登记两个预检/确认端点，特批既有测试原断言保留；仅更新本票分片，不改基础账本。"
+}

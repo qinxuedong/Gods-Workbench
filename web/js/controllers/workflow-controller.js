@@ -3607,8 +3607,82 @@ async function handleExecuteWorkflow() {
   `;
 
   try {
-    const payload = JSON.stringify({ workflow_id: wf.workflow_id, expected_version: wf.revision ?? wf.version,
-      target: state.executionTarget, node_info_list: nodeInfoList, source_context: executionSourceContext(wf) });
+    let payload = state.submissionAttempt?.payload || null;
+    if (!payload) {
+      const workflowVersion = wf.revision ?? wf.version;
+      const bindings = (wf.nodes || []).flatMap(node => {
+        const assets = node?.metadata?.input_assets;
+        if (!assets || typeof assets !== "object" || Array.isArray(assets)) return [];
+        return Object.entries(assets).map(([field, asset_id]) => ({
+          node_id: String(node.id), field: String(field), asset_id: String(asset_id),
+        }));
+      });
+      let transferReceiptId = null;
+      if (bindings.length > 0) {
+        const transferContext = await apiFetch("/api/transfer/context");
+        const preflight = await apiFetch("/api/transfer/task-preflights", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            workflow_id: wf.workflow_id,
+            expected_version: workflowVersion,
+            target: state.executionTarget,
+            target_workspace_id: transferContext.workspace_id,
+            directory_id: transferContext.directory_id,
+            bindings,
+          }),
+        });
+        const assetsText = preflight.input_assets?.length
+          ? preflight.input_assets.map(asset => {
+              const fields = (asset.bindings || []).map(binding => `${binding.node_id}.${binding.field}`).join("、");
+              const route = asset.transfer_mode === "mapped"
+                ? "共享映射可读，跳过字节传输"
+                : "按任务传输一次";
+              return `• ${asset.filename}（${asset.size_bytes} B）→ ${fields}；${route}`;
+            }).join("\n")
+          : "无绑定素材（沿用无输入执行流程）";
+        const mappingText = preflight.mapping_status?.status === "verified"
+          ? `共享映射：已由 ${preflight.mapping_status.execution_machine_id} 核验`
+          : "共享映射：当前工作区无需共享映射";
+        const confirmationText = [
+          "请确认本次任务传输：",
+          `执行端：${preflight.executor_label}`,
+          `输入素材：\n${assetsText}`,
+          mappingText,
+          `结果落点：${preflight.workspace_label} / ${preflight.directory_label}（${preflight.target_label}）`,
+          "",
+          "确认后提交任务？",
+        ].join("\n");
+        if (!window.confirm(confirmationText)) {
+          bodyEl.innerHTML = '<div class="hw-bay-row">已取消任务提交；素材和目标位置均未传输。</div>';
+          return;
+        }
+        const confirmed = await apiFetch(
+          `/api/transfer/task-preflights/${encodeURIComponent(preflight.preflight_id)}/confirm`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expected_version: preflight.version }),
+          },
+        );
+        transferReceiptId = confirmed.transfer_receipt_id;
+      }
+      const executePayload = {
+        workflow_id: wf.workflow_id,
+        expected_version: workflowVersion,
+        target: state.executionTarget,
+        node_info_list: nodeInfoList,
+        source_context: executionSourceContext(wf),
+      };
+      if (transferReceiptId) executePayload.transfer_receipt_id = transferReceiptId;
+      payload = JSON.stringify(executePayload);
+      // 响应丢失时复用同一请求体与幂等键；有素材时同时复用确认回执。
+      state.submissionAttempt = {
+        payload,
+        key: crypto.randomUUID(),
+        ...(transferReceiptId ? { receiptId: transferReceiptId } : {}),
+      };
+    }
     // 响应丢失后保留同一请求键；收到公共任务 ID 后下一次操作才创建新键。
     if (state.submissionAttempt?.payload !== payload) {
       state.submissionAttempt = { payload, key: crypto.randomUUID() };
