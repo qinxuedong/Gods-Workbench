@@ -6,6 +6,7 @@
     "gw/api/routes_auth.py",
     "gw/api/routes_local_accounts.py",
     "gw/core/local_accounts.py",
+    "tests/contracts/auth/test_qin_630_trusted_local_owner.py",
     "tests/contracts/auth/test_qin_633_personal_local_owner.py",
     "tests/frontend/node-files.txt",
     "tests/frontend/qin-633-personal-local-owner.test.mjs",
