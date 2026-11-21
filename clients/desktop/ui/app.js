@@ -531,7 +531,8 @@
 
     refreshDiagnostics();
     loadSavedServer();
-    if (new URLSearchParams(window.location.search).get("rescan") === "1") {
+    const searchParams = new URLSearchParams(window.location.search);
+    if (searchParams.get("rescan") === "1" || searchParams.get("view") === "remote") {
       openRemoteView();
       scanLan();
       return;

@@ -1440,7 +1440,7 @@ fn origins_match(current: &str, saved: &str) -> bool {
     }
 }
 
-/// 客户端桥接命令只对本地发现页与当前已连接的服务器页面开放（QIN-432 AC10）。
+/// 客户端桥接命令只对本地发现页、本地 2077 服务端以及当前已连接的服务器页面开放（QIN-432 / QIN-626 AC10）。
 fn ensure_client_bridge_window(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
     if ensure_local_ui(window).is_ok() {
         return Ok(());
@@ -1448,6 +1448,11 @@ fn ensure_client_bridge_window(app: &AppHandle, window: &WebviewWindow) -> Resul
     let current = window
         .url()
         .map_err(|error| format!("Cannot read window URL: {error}"))?;
+    let host = current.host_str().unwrap_or_default().to_ascii_lowercase();
+    let port = current.port().unwrap_or(80);
+    if (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077 {
+        return Ok(());
+    }
     let saved = last_saved_server_url(app)?;
     let saved = saved.ok_or_else(|| {
         "Client bridge commands are only available for the connected server page.".to_string()
@@ -1777,8 +1782,11 @@ fn set_client_setting(
 }
 
 #[tauri::command]
-async fn discover_lan(window: WebviewWindow) -> Result<Vec<DiscoveryResult>, String> {
-    ensure_local_ui(&window)?;
+async fn discover_lan(
+    app: AppHandle,
+    window: WebviewWindow,
+) -> Result<Vec<DiscoveryResult>, String> {
+    ensure_client_bridge_window(&app, &window)?;
     let client = new_http_client()?;
     let probes = scan_targets()
         .into_iter()
@@ -1794,7 +1802,7 @@ async fn discover_lan(window: WebviewWindow) -> Result<Vec<DiscoveryResult>, Str
 
 #[tauri::command]
 fn last_server(app: AppHandle, window: WebviewWindow) -> Result<Option<String>, String> {
-    ensure_local_ui(&window)?;
+    ensure_client_bridge_window(&app, &window)?;
     let path = config_path(&app)?;
     let content = match fs::read(path) {
         Ok(content) => content,
@@ -1827,7 +1835,7 @@ async fn connect_to_server_inner(
     diagnostics: &ClientDiagnostics,
     server_url: &str,
 ) -> Result<LaunchResult, String> {
-    ensure_local_ui(window)?;
+    ensure_client_bridge_window(app, window)?;
     let base = normalize_server_url(server_url)?;
     let manifest_result = load_installed_manifest();
     record_manifest_result(diagnostics, &manifest_result);
@@ -1953,7 +1961,7 @@ async fn launch_local_backend_inner(
     diagnostics: &ClientDiagnostics,
     backend_state: &ManagedBackendState,
 ) -> Result<LaunchResult, String> {
-    ensure_local_ui(window)?;
+    ensure_client_bridge_window(app, window)?;
     let manifest_result = load_installed_manifest();
     record_manifest_result(diagnostics, &manifest_result);
     let manifest = manifest_result?;
@@ -2321,7 +2329,7 @@ fn get_diagnostics(
     diagnostics: State<'_, ClientDiagnostics>,
     backend: State<'_, ManagedBackendState>,
 ) -> Result<DiagnosticsView, String> {
-    ensure_local_ui(&window)?;
+    ensure_client_bridge_window(&app, &window)?;
     diagnostics_view(&app, &diagnostics, &backend)
 }
 
@@ -2583,9 +2591,23 @@ fn main() {
                     }
                     "scan" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let mut scan_url = local_url.clone();
-                            scan_url.set_query(Some("rescan=1"));
-                            let _ = window.navigate(scan_url);
+                            let is_local_workbench = if let Ok(u) = window.url() {
+                                let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+                                let port = u.port().unwrap_or(80);
+                                (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077
+                            } else {
+                                false
+                            };
+
+                            if is_local_workbench {
+                                if let Ok(settings_url) = Url::parse("http://127.0.0.1:2077/pages/settings.html?panel=general&action=scan-nas") {
+                                    let _ = window.navigate(settings_url);
+                                }
+                            } else {
+                                let mut scan_url = local_url.clone();
+                                scan_url.set_query(Some("view=remote&rescan=1"));
+                                let _ = window.navigate(scan_url);
+                            }
                             let _ = window.show();
                             let _ = window.set_focus();
                         }

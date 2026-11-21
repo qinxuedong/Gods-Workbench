@@ -28,7 +28,9 @@
     "tests/hygiene/fixtures/admissions/issue-761.json",
     "tests/hygiene/test_admission_sharding.py",
     "tests/hygiene/test_cleanroom_hygiene.py",
-    "tests/runtime/test_qin_626_desktop_install_lifecycle.py"
+    "tests/runtime/test_qin_626_desktop_install_lifecycle.py",
+    "web/js/controllers/settings.js",
+    "web/pages/settings.html"
   ],
   "admitted_files": [
     {

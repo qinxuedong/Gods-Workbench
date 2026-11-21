@@ -11,6 +11,8 @@ const acceptanceReadme = readFileSync("clients/desktop/packaging/acceptance/READ
 const contract = readFileSync("docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md", "utf8");
 const hardwareTokens = readFileSync("web/css/base/hardware-tokens.css", "utf8");
 const themeCss = readFileSync("web/css/base/theme.css", "utf8");
+const settingsHtml = readFileSync("web/pages/settings.html", "utf8");
+const settingsJs = readFileSync("web/js/controllers/settings.js", "utf8");
 
 function declaredValue(css, name, scope = ":root") {
   const block = css.slice(css.indexOf(scope));
@@ -188,4 +190,22 @@ test("公开界面示例不使用内网地址或真实路径", () => {
   assert.match(app, /host === "127\.0\.0\.1" \|\| host === "localhost"/);
   assert.doesNotMatch(index, /[A-Za-z]:\\|\\\\[A-Za-z0-9._-]+\\/);
   assert.match(index, /gw-nas\.local/);
+});
+
+test("AC10: 设置页通用面板接入远端工作台拟物卡与安全降级", () => {
+  assert.match(settingsHtml, /id="remoteWorkspaceCard"/);
+  assert.match(settingsHtml, /id="remoteBrowserFallback"/);
+  assert.match(settingsHtml, /id="remoteServerUrl"/);
+  assert.match(settingsHtml, /id="btnConnectRemote"/);
+  assert.match(settingsHtml, /id="btnScanLan"/);
+  assert.match(settingsHtml, /id="btnReturnLocal"/);
+  assert.match(settingsHtml, /col-start-1/);
+
+  assert.match(settingsJs, /initRemoteWorkspaceCard/);
+  assert.match(settingsJs, /window\.__TAURI__\?\.core\?\.invoke/);
+  assert.match(settingsJs, /invoke\('last_server'\)/);
+  assert.match(settingsJs, /invoke\('connect_to_server', \{ serverUrl: raw \}\)/);
+  assert.match(settingsJs, /invoke\('discover_lan'\)/);
+  assert.match(settingsJs, /invoke\('launch_local_backend'\)/);
+  assert.match(settingsJs, /action=scan-nas/);
 });

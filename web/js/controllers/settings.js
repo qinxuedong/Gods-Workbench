@@ -245,4 +245,134 @@
 
   init();
   loadPromptSources();
+  initRemoteWorkspaceCard();
+
+  function initRemoteWorkspaceCard() {
+    const card = q('#remoteWorkspaceCard');
+    if (!card) return;
+
+    const fallback = q('#remoteBrowserFallback');
+    const bridgeStatus = q('#remoteBridgeStatus');
+    const btnConnect = q('#btnConnectRemote');
+    const inputUrl = q('#remoteServerUrl');
+    const btnScan = q('#btnScanLan');
+    const listContainer = q('#remoteDiscoveredList');
+    const errBox = q('#remoteConnectError');
+    const btnReturn = q('#btnReturnLocal');
+
+    const invoke = window.__TAURI__?.core?.invoke;
+    if (typeof invoke !== 'function') {
+      if (fallback) fallback.classList.remove('hidden');
+      if (bridgeStatus) bridgeStatus.textContent = '浏览器环境 (未连接客户端)';
+      if (btnConnect) btnConnect.disabled = true;
+      if (inputUrl) inputUrl.disabled = true;
+      if (btnScan) btnScan.disabled = true;
+      if (btnReturn) btnReturn.disabled = true;
+      return;
+    }
+
+    if (bridgeStatus) bridgeStatus.textContent = '客户端在线';
+
+    // 预填上次成功连接的远端地址（若有）
+    invoke('last_server').then(saved => {
+      if (saved && inputUrl) {
+        inputUrl.value = saved;
+      }
+    }).catch(() => {});
+
+    // 连接远端
+    btnConnect?.addEventListener('click', async () => {
+      const raw = inputUrl?.value.trim();
+      if (!raw) {
+        if (errBox) {
+          errBox.textContent = '请输入远端工作台地址';
+          errBox.classList.remove('hidden');
+        }
+        return;
+      }
+      if (errBox) errBox.classList.add('hidden');
+      btnConnect.disabled = true;
+      btnConnect.textContent = '连接中…';
+      try {
+        const res = await invoke('connect_to_server', { serverUrl: raw });
+        if (res && res.destination) {
+          window.location.href = res.destination;
+        }
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent = typeof err === 'string' ? err : (err?.message || '连接远端失败');
+          errBox.classList.remove('hidden');
+        }
+        btnConnect.disabled = false;
+        btnConnect.textContent = '连接远端';
+      }
+    });
+
+    // 扫描局域网
+    btnScan?.addEventListener('click', async () => {
+      btnScan.disabled = true;
+      btnScan.textContent = '扫描中…';
+      if (errBox) errBox.classList.add('hidden');
+      try {
+        const list = await invoke('discover_lan');
+        if (listContainer) {
+          listContainer.classList.remove('hidden');
+          if (!Array.isArray(list) || list.length === 0) {
+            listContainer.innerHTML = '<p class="gw-type-body-sm text-slate-400 p-2">未发现局域网内的神工坊服务</p>';
+          } else {
+            listContainer.innerHTML = list.map(item => {
+              const url = esc(item.url || '');
+              const name = esc(item.name || 'Gods Workbench');
+              return `<div class="flex items-center justify-between p-2 rounded bg-white/5 border border-white/5">
+                <div>
+                  <span class="gw-type-body-sm text-slate-200 font-bold block">${name}</span>
+                  <span class="gw-type-body-sm text-slate-400 font-mono">${url}</span>
+                </div>
+                <button type="button" class="hw-btn btn-size-sm" data-remote-select="${url}">选择</button>
+              </div>`;
+            }).join('');
+            listContainer.querySelectorAll('[data-remote-select]').forEach(b => {
+              b.addEventListener('click', () => {
+                if (inputUrl) inputUrl.value = b.dataset.remoteSelect;
+              });
+            });
+          }
+        }
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent = typeof err === 'string' ? err : (err?.message || '扫描局域网失败');
+          errBox.classList.remove('hidden');
+        }
+      } finally {
+        btnScan.disabled = false;
+        btnScan.textContent = '扫描局域网';
+      }
+    });
+
+    // 返回本机工作台
+    btnReturn?.addEventListener('click', async () => {
+      btnReturn.disabled = true;
+      btnReturn.textContent = '切换中…';
+      if (errBox) errBox.classList.add('hidden');
+      try {
+        const res = await invoke('launch_local_backend');
+        if (res && res.destination) {
+          window.location.href = res.destination;
+        }
+      } catch (err) {
+        if (errBox) {
+          errBox.textContent = typeof err === 'string' ? err : (err?.message || '返回本机工作台失败');
+          errBox.classList.remove('hidden');
+        }
+        btnReturn.disabled = false;
+        btnReturn.textContent = '返回本机工作台';
+      }
+    });
+
+    // 监听 URL 参数 action=scan-nas 自动触发扫描
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('action') === 'scan-nas') {
+      btnScan?.click();
+    }
+  }
 })();
