@@ -700,6 +700,24 @@ function Invoke-CdpExpression {
     return (Get-PropertyValue -Object $remoteObject -Name "value")
 }
 
+function Save-CdpScreenshot {
+    param($Connection, [string]$Path)
+    $response = Invoke-CdpCommand -Connection $Connection -Method "Page.captureScreenshot" -Params @{
+        format = "png"
+        fromSurface = $true
+    } -TimeoutMs 15000
+    if ($null -eq $response) { return $false }
+    $result = Get-PropertyValue -Object $response -Name "result"
+    $data = [string](Get-PropertyValue -Object $result -Name "data")
+    if ([string]::IsNullOrEmpty($data)) { return $false }
+    try {
+        [IO.File]::WriteAllBytes($Path, [Convert]::FromBase64String($data))
+        return $true
+    } catch {
+        return $false
+    }
+}
+
 function Wait-CdpExpression {
     param($Connection, [string]$Expression, [int]$TimeoutSeconds = 60)
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
@@ -1946,6 +1964,12 @@ public static class GwNative {
     $shot = Save-Screenshot -Path (Join-Path $script:outputDirPath "02-first-run.png")
     Add-Check "first-run.window-visible" ([GwNative]::IsWindowVisible($first.window.handle)) "main window not visible"
     Add-Check "first-run.screenshot" $shot "screenshot failed"
+    $firstCdp = New-CdpConnection -Port $firstCdpPort
+    try {
+        Add-Check "first-run.page-screenshot" (Save-CdpScreenshot -Connection $firstCdp -Path (Join-Path $script:outputDirPath "02-first-run.page.png")) "page screenshot failed"
+    } finally {
+        Close-CdpConnection -Connection $firstCdp
+    }
     New-Item -ItemType Directory -Force -Path (Join-Path $script:processLocalAppData "GodsWorkbench") | Out-Null
     Write-Utf8NoBom -Path $script:sentinelPath -Text ("{""kind"":""qin626-acceptance-sentinel"",""version"":""" + $script:expectedVersionValue + """}`r`n")
     Add-Check "first-run.data-sentinel" (Test-Path -LiteralPath $script:sentinelPath) "data sentinel not created"
@@ -2150,16 +2174,19 @@ public static class GwNative {
         }
         Require-Check "port-conflict.last-error" ($conflictError -match "2077") ("desktop last_error " + $conflictError)
         Add-Check "port-conflict.screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-port-conflict.png")) "screenshot failed"
+        Add-Check "port-conflict.page-screenshot" (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath "12-port-conflict.page.png")) "page screenshot failed"
 
         $darkTheme = Set-ShellTheme -Cdp $conflictCdp -Theme "dark"
         Require-Check "port-conflict.theme-dark" ([string]$darkTheme.theme -eq "dark" -and [string]$darkTheme.surface -eq "#08090c" -and [string]$darkTheme.surface_card -eq "#111216" -and [string]$darkTheme.text_main -eq "#e8e8ea" -and [string]$darkTheme.gold -eq "#dfc384") ("dark tokens: " + ($darkTheme | ConvertTo-Json -Compress))
         $darkShot = Save-Screenshot -Path (Join-Path $script:outputDirPath "12-theme-dark.png")
         Add-Check "port-conflict.theme-dark-screenshot" $darkShot "dark screenshot failed"
+        Add-Check "port-conflict.theme-dark-page-screenshot" (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath "12-theme-dark.page.png")) "dark page screenshot failed"
         $lightTheme = Set-ShellTheme -Cdp $conflictCdp -Theme "light"
         Require-Check "port-conflict.theme-light" ([string]$lightTheme.theme -eq "light" -and [string]$lightTheme.surface -eq "rgb(241, 242, 245)" -and [string]$lightTheme.surface_card -eq "rgb(255, 255, 255)" -and [string]$lightTheme.text_main -eq "rgb(17, 20, 26)" -and [string]$lightTheme.gold -eq "#dfc384") ("light tokens: " + ($lightTheme | ConvertTo-Json -Compress))
         Require-Check "port-conflict.theme-light-persist" ([string]$lightTheme.stored -eq "light") ("stored theme: " + [string]$lightTheme.stored)
         $lightShot = Save-Screenshot -Path (Join-Path $script:outputDirPath "12-theme-light.png")
         Add-Check "port-conflict.theme-light-screenshot" $lightShot "light screenshot failed"
+        Add-Check "port-conflict.theme-light-page-screenshot" (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath "12-theme-light.page.png")) "light page screenshot failed"
         $darkThemeRestored = Set-ShellTheme -Cdp $conflictCdp -Theme "dark"
         Require-Check "port-conflict.theme-dark-persist" ([string]$darkThemeRestored.theme -eq "dark" -and [string]$darkThemeRestored.stored -eq "dark") ("stored theme: " + [string]$darkThemeRestored.stored)
         $script:ui["themes"] = [ordered]@{ dark = $darkTheme; light = $lightTheme; dark_restored = $darkThemeRestored }
@@ -2177,6 +2204,7 @@ public static class GwNative {
             if ($layoutWidth -eq 1920) { $expectedFont = "15px" }
             $layoutOk = ([Math]::Abs([int]$measurement.width - $layoutWidth) -le 2) -and ([int]$measurement.columns -eq $expectedColumns) -and ([Math]::Abs([int]$measurement.card_width - $expectedCard) -le 16) -and ([string]$measurement.body_font -eq $expectedFont) -and (-not [bool]$measurement.overflow)
             Require-Check ("port-conflict.layout-" + $layoutWidth) $layoutOk ("layout " + ($measurement | ConvertTo-Json -Compress))
+            Add-Check ("port-conflict.layout-" + $layoutWidth + "-page-screenshot") (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath ("12-layout-" + $layoutWidth + ".page.png"))) "layout page screenshot failed"
             $layouts += $measurement
         }
         $script:ui["layouts"] = $layouts
@@ -2195,6 +2223,7 @@ public static class GwNative {
         Require-Check "remote-fail-closed.no-store-reason" ([string]$noStoreSnapshot.reason -match "no-store") ("remote no-store reason: " + [string]$noStoreSnapshot.reason)
         Require-Check "remote-fail-closed.no-store-retry" ([bool]$noStoreSnapshot.retry_visible) "remote retry button is not visible"
         Add-Check "remote-fail-closed.no-store-screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-remote-no-store.png")) "screenshot failed"
+        Add-Check "remote-fail-closed.no-store-page-screenshot" (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath "12-remote-no-store.page.png")) "page screenshot failed"
 
         Set-FakeRemoteMode -ModePath $fakeModePath -Mode "no-version"
         $null = Invoke-CdpExpression -Connection $conflictCdp -Expression "(() => { document.getElementById('remote-error').hidden = true; document.getElementById('remote-retry').click(); return true; })()"
@@ -2211,6 +2240,7 @@ public static class GwNative {
         $script:ui["remote_fail_closed_no_version"] = $noVersionSnapshot
         Require-Check "remote-fail-closed.no-version-reason" ([string]$noVersionSnapshot.reason -match "\+gw\.") ("remote no-version reason: " + [string]$noVersionSnapshot.reason)
         Add-Check "remote-fail-closed.no-version-screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "12-remote-no-version.png")) "screenshot failed"
+        Add-Check "remote-fail-closed.no-version-page-screenshot" (Save-CdpScreenshot -Connection $conflictCdp -Path (Join-Path $script:outputDirPath "12-remote-no-version.page.png")) "page screenshot failed"
 
         Stop-TcpHolder -Holder $fake
         Require-Check "remote-fail-closed.port-freed" (Wait-ForAddressPortFree -Address $script:lanAddress -Port $fakePort -TimeoutSeconds 30) "fake remote port did not free"
@@ -2284,6 +2314,12 @@ public static class GwNative {
             remote_listener_pids = $remoteListeners
         }
         Add-Check "remote-entry.screenshot" (Save-Screenshot -Path (Join-Path $script:outputDirPath "13-remote-workbench.png")) "screenshot failed"
+        $remoteShotCdp = New-CdpConnection -Port $remoteCdpPort
+        try {
+            Add-Check "remote-entry.page-screenshot" (Save-CdpScreenshot -Connection $remoteShotCdp -Path (Join-Path $script:outputDirPath "13-remote-workbench.page.png")) "page screenshot failed"
+        } finally {
+            Close-CdpConnection -Connection $remoteShotCdp
+        }
     } finally {
         Close-CdpConnection -Connection $remoteCdp
     }

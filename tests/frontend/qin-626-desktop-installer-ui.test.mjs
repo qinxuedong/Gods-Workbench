@@ -172,6 +172,8 @@ test("AC1/AC7: 安装端验收入口带 UTF-8 BOM 并覆盖真实页面/远端�
   assert.match(acceptance, /\[void\]\$socket\.ConnectAsync/);
   assert.match(acceptance, /\[void\]\$Connection\.socket\.SendAsync/);
   assert.match(acceptance, /GW_ALLOWED_HOSTS = \$Address/);
+  assert.match(acceptance, /Page\.captureScreenshot/);
+  assert.match(acceptance, /12-layout-.*\.page\.png/);
   assert.match(acceptanceReadme, /GW_ALLOWED_HOSTS/);
 });
 
