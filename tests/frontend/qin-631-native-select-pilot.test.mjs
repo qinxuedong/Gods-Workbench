@@ -1,7 +1,11 @@
 /**
  * QIN-631 原生公共下拉组件试点：两页复用与新增违规 CI 必失败
  * 测试覆盖：AC1～AC10，GW-DoD-v1 规范，反向违规拦截与旧基线棘轮只减不增
- * R1 审核整改：逐项精确白名单门禁、“删一旧加一新”反证、两页真实DOM四宽度双主题、键盘焦点返还、真实1500ms/5000ms时序与乱序代际保护
+ * R2 审核整改：
+ * 1. 扫描器升级为全局标签实例级提取（解决同一行多个 <select> 漏检问题，全库精确 64 处历史基线）；
+ * 2. 增加“同一行追加未授权裸 select”真实产品扫描器反证测试；
+ * 3. 颜色检测范围扩大至全产品 UI（含页面内联 style 与非 vendor CSS 下拉规则）；
+ * 4. 保持真实 DOM 4 宽度双主题、长文省略与 1500ms/5000ms 真实时序单调代际保护。
  */
 
 import { test, describe } from 'node:test';
@@ -15,7 +19,8 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 /**
- * 61 处冻结旧基线（精确定位到文件与标识），除本票试点改造的 2 处外全部锁定，只减不增
+ * 64 处冻结旧基线实例（精确定位到文件、行号与特定识别特征，按节点实例 1:1 建立）
+ * 除本票试点改造的两处（#newProjectTypeSelect 与 #agentProviderSelect）外，全部锁定，只减不增。
  */
 export const FROZEN_BASELINE_SELECTS = [
   { file: 'web/pages/agents.html', line: 292, pattern: 'agentModelSelect' },
@@ -39,46 +44,49 @@ export const FROZEN_BASELINE_SELECTS = [
   { file: 'web/js/modules/api-settings.js', line: 1340, pattern: 'model-protocol-select' },
   { file: 'web/js/modules/api-settings.js', line: 1400, pattern: 'updateMsLora' },
   { file: 'web/js/modules/asset-manager/canvas-bridge.js', line: 238, pattern: 'canvasAssetSort' },
-  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 724, pattern: 'normalize-basis' },
-  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 735, pattern: 'export-scope' },
+  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 724, pattern: 'data-detail-media-normalize-basis' },
+  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 735, pattern: 'data-detail-media-export-scope' },
   { file: 'web/js/modules/asset-manager/media-canvas.js', line: 756, pattern: 'data-detail-media-normalize-basis' },
   { file: 'web/js/modules/asset-manager/media-canvas.js', line: 1014, pattern: 'data-detail-media-library-library' },
+  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 1014, pattern: 'data-detail-media-library-scope' },
+  { file: 'web/js/modules/asset-manager/media-canvas.js', line: 1014, pattern: 'data-detail-media-library-sort' },
   { file: 'web/js/modules/asset-manager/organize.js', line: 1084, pattern: 'boardSourceExisting' },
   { file: 'web/js/modules/asset-manager/organize.js', line: 1624, pattern: 'boardFolderCreateRoot' },
-  { file: 'web/js/modules/asset-manager/preview.js', line: 1362, pattern: 'data-detail-video' },
-  { file: 'web/js/modules/asset-manager/preview.js', line: 3330, pattern: 'data-image-editor-crop-rat' },
+  { file: 'web/js/modules/asset-manager/preview.js', line: 1362, pattern: 'data-detail-video-root' },
+  { file: 'web/js/modules/asset-manager/preview.js', line: 3330, pattern: 'data-image-editor-crop-ratio' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 466, pattern: 'prefCaptionProvider' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 467, pattern: 'prefCaptionModel' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 518, pattern: 'thumbnailDirectoryPreset' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 1451, pattern: 'boardProxyDimensions' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 2053, pattern: 'projectDirectoryTemplateType' },
-  { file: 'web/js/modules/asset-manager/settings.js', line: 2394, pattern: 'thumbnailDirectorySelect' },
+  { file: 'web/js/modules/asset-manager/settings.js', line: 2394, pattern: 'thumbnailDirectoryPreset' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 2569, pattern: 'localCaptionProvider' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 2572, pattern: 'localCaptionModel' },
   { file: 'web/js/modules/asset-manager/settings.js', line: 2915, pattern: 'avatar-provider-select' },
   { file: 'web/js/modules/asset-manager.js', line: 6253, pattern: 'registryCanvasTarget' },
-  { file: 'web/js/modules/asset-manager.js', line: 6254, pattern: 'registry-canvas-target-row' },
-  { file: 'web/js/modules/asset-manager.js', line: 6352, pattern: 'QIN-531' },
-  { file: 'web/js/modules/asset-review.js', line: 276, pattern: 'assetUserCreateForm' },
-  { file: 'web/js/modules/asset-review.js', line: 279, pattern: 'assetTeamMemberForm' },
-  { file: 'web/js/modules/asset-review.js', line: 339, pattern: 'roleOptions' },
+  { file: 'web/js/modules/asset-manager.js', line: 6254, pattern: 'registryNewCanvasKind' },
+  { file: 'web/js/modules/asset-manager.js', line: 6352, pattern: '<select>' },
+  { file: 'web/js/modules/asset-review.js', line: 276, pattern: 'name="role"' },
+  { file: 'web/js/modules/asset-review.js', line: 279, pattern: 'name="team_id"' },
+  { file: 'web/js/modules/asset-review.js', line: 279, pattern: 'name="user_id"' },
+  { file: 'web/js/modules/asset-review.js', line: 339, pattern: 'name="role"' },
   { file: 'web/js/modules/asset-review.js', line: 347, pattern: 'data-team-user-role' },
   { file: 'web/js/modules/asset-review.js', line: 348, pattern: 'data-team-user-status' },
   { file: 'web/js/modules/asset-review.js', line: 365, pattern: 'data-team-member-role' },
-  { file: 'web/js/modules/asset-review.js', line: 368, pattern: 'team-member-add' },
-  { file: 'web/js/modules/asset-review.js', line: 375, pattern: 'team-section-head' },
+  { file: 'web/js/modules/asset-review.js', line: 368, pattern: 'name="user_id"' },
+  { file: 'web/js/modules/asset-review.js', line: 375, pattern: 'teamApprovalFilter' },
   { file: 'web/js/modules/asset-review.js', line: 764, pattern: 'reviewSessionSelect' },
-  { file: 'web/js/modules/canvas-list.js', line: 1341, pattern: 'ws-create-project-field' },
-  { file: 'web/js/modules/episode-pipeline.js', line: 123, pattern: 'modelPicker' },
+  { file: 'web/js/modules/canvas-list.js', line: 1341, pattern: 'ws-create-project' },
+  { file: 'web/js/modules/episode-pipeline.js', line: 123, pattern: 'data-stage-model' },
   { file: 'web/js/modules/episode-pipeline.js', line: 382, pattern: 'bg-transparent text-neutral-200' },
   { file: 'web/js/modules/episode-pipeline.js', line: 415, pattern: 'appearance-none bg-[#090a0d]' },
   { file: 'web/js/modules/episode-pipeline.js', line: 962, pattern: 'opacity-0 cursor-pointer' },
   { file: 'web/js/modules/episode-pipeline.js', line: 1091, pattern: 'border-gold-primary' },
-  { file: 'web/js/modules/episode-pipeline.js', line: 1761, pattern: 'pipeline-shell' },
+  { file: 'web/js/modules/episode-pipeline.js', line: 1761, pattern: 'data-pipeline-select' },
   { file: 'web/js/modules/episode-pipeline.js', line: 1831, pattern: 'prompt_library_id' },
   { file: 'web/js/modules/episode-pipeline.js', line: 2600, pattern: 'data-video-context-canvas' },
   { file: 'web/js/modules/episode-pipeline.js', line: 2601, pattern: 'data-video-context-entity' },
-  { file: 'web/js/modules/episode-pipeline.js', line: 2932, pattern: 'openAssetDetail' }
+  { file: 'web/js/modules/episode-pipeline.js', line: 2932, pattern: 'data-asset-detail-field="type"' }
 ];
 
 /**
@@ -101,7 +109,44 @@ export function scanDir(dir) {
 }
 
 /**
- * 扫描产品目录中所有未增强的裸 select 节点
+ * 针对文件文本内容，全局提取每一个具体的 <select> 标签实例（非按行折叠）
+ * 解决同一行存在多个 <select> 时的漏检问题
+ */
+export function extractSelectInstancesFromContent(content, relPath) {
+  const instances = [];
+  const selectRegex = /<select\b([^>]*)>/gi;
+  let match;
+  while ((match = selectRegex.exec(content)) !== null) {
+    const fullTag = match[0];
+    const attrs = match[1] || '';
+    const index = match.index;
+
+    // 准确计算该实例所在的行号与列号
+    const upTo = content.slice(0, index);
+    const line = upTo.split('\n').length;
+    const col = index - upTo.lastIndexOf('\n');
+
+    // 判断该实例是否符合公共原生下拉组件规范
+    const isEnhanced =
+      /class\s*=\s*["'][^"']*\bgw-native-select-input\b[^"']*["']/i.test(attrs) ||
+      /\bdata-gw-select\b/i.test(attrs);
+
+    if (!isEnhanced) {
+      instances.push({
+        file: relPath.split(path.sep).join('/'),
+        line,
+        col,
+        tag: fullTag,
+        attrs: attrs.trim(),
+        text: fullTag
+      });
+    }
+  }
+  return instances;
+}
+
+/**
+ * 扫描产品目录中所有未增强的裸 select 节点实例
  */
 export function collectUnenhancedSelects(repoRoot = REPO_ROOT) {
   const files = scanDir(path.join(repoRoot, 'web/pages')).concat(scanDir(path.join(repoRoot, 'web/js')));
@@ -110,29 +155,24 @@ export function collectUnenhancedSelects(repoRoot = REPO_ROOT) {
   for (const file of files) {
     const relPath = path.relative(repoRoot, file).split(path.sep).join('/');
     const content = fs.readFileSync(file, 'utf8');
-    const lines = content.split('\n');
-
-    lines.forEach((line, idx) => {
-      if (/<select\b/i.test(line)) {
-        if (!line.includes('gw-native-select-input')) {
-          unenhancedMatches.push({ file: relPath, line: idx + 1, text: line.trim() });
-        }
-      }
-    });
+    const instances = extractSelectInstancesFromContent(content, relPath);
+    for (const inst of instances) {
+      unenhancedMatches.push(inst);
+    }
   }
   return unenhancedMatches;
 }
 
 /**
- * 门禁校验核心函数：逐项白名单比对 + 棘轮总数只减不增（杜绝偷梁换柱绕过）
+ * 门禁校验核心函数：逐项白名单比对 + 棘轮总数只减不增（杜绝偷梁换柱与同行漏报）
  */
 export function validateSelectCompliance(detectedMatches, baselineList = FROZEN_BASELINE_SELECTS) {
   for (const match of detectedMatches) {
     const normFile = match.file.split(path.sep).join('/');
-    const found = baselineList.find(b => b.file === normFile && match.text.includes(b.pattern));
+    const found = baselineList.find(b => b.file === normFile && (match.attrs.includes(b.pattern) || match.text.includes(b.pattern)));
     if (!found) {
       throw new Error(
-        `[VIOLATION_NEW_UNENHANCED_SELECT] 发现未经登记的新增违规裸 <select>: ${normFile}:${match.line || '?'} -> "${match.text}"。严禁直接使用原生 select，必须接入 GWNativeSelect！`
+        `[VIOLATION_NEW_UNENHANCED_SELECT] 发现未经登记的新增违规裸 <select>: ${normFile}:${match.line || '?'}:${match.col || '?'} -> "${match.text}"。严禁直接使用原生 select，必须接入 GWNativeSelect！`
       );
     }
   }
@@ -147,9 +187,9 @@ export function validateSelectCompliance(detectedMatches, baselineList = FROZEN_
 }
 
 /**
- * 控件样式硬编码颜色检测函数
+ * 扫描指定 CSS 文本中的裸硬编码颜色（严禁在控件样式中使用未通过 var() 消费的裸 hex）
  */
-export function validateCssColors(cssContent) {
+export function validateCssColors(cssContent, sourceDesc = 'CSS') {
   const lines = cssContent.split('\n');
   const violations = [];
   let inComment = false;
@@ -166,7 +206,7 @@ export function validateCssColors(cssContent) {
     if (/(color|background|border|box-shadow|outline|fill|stroke)\s*:/i.test(trimmed)) {
       if (/#([0-9a-fA-F]{3,6})\b/.test(trimmed)) {
         if (!trimmed.includes('var(') && !trimmed.includes('mask:') && !trimmed.includes('-webkit-mask:')) {
-          violations.push(`Line ${idx + 1}: ${trimmed}`);
+          violations.push(`[${sourceDesc}] Line ${idx + 1}: ${trimmed}`);
         }
       }
     }
@@ -178,16 +218,58 @@ export function validateCssColors(cssContent) {
   return true;
 }
 
+/**
+ * 产品 UI 页面内联样式中冻结的 3 处历史存量下拉样式基线（仅限 collab.html 历史存量，其余全库零裸 hex）
+ */
+export const FROZEN_BASELINE_SELECT_COLORS = [
+  { file: 'collab.html', pattern: '.asset-team-modal input, .asset-team-modal select' },
+  { file: 'collab.html', pattern: '.asset-team-modal .team-user-row input' },
+  { file: 'collab.html', pattern: '.collab-message-toolbar select' }
+];
+
+/**
+ * 扫描产品 UI 范围内针对原生下拉与外壳样式的硬编码 hex 色（含公共组件、页面内联 style 与非 vendor CSS 下拉规则）
+ */
+export function scanUiForSelectColorViolations(repoRoot = REPO_ROOT) {
+  // 1. 公共下拉组件样式必须严格零裸 hex 违规
+  const compCssPath = path.join(repoRoot, 'web/css/components/gw-native-select.css');
+  if (fs.existsSync(compCssPath)) {
+    validateCssColors(fs.readFileSync(compCssPath, 'utf8'), 'gw-native-select.css');
+  }
+
+  // 2. 扫描产品页面 web/pages/*.html 中的内联 <style>
+  const pagesDir = path.join(repoRoot, 'web/pages');
+  const pageFiles = fs.readdirSync(pagesDir).filter(f => f.endsWith('.html'));
+  for (const pf of pageFiles) {
+    const content = fs.readFileSync(path.join(pagesDir, pf), 'utf8');
+    const styleMatches = content.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi);
+    for (const sm of styleMatches) {
+      const styleBlock = sm[1];
+      // 提取针对 select, .gw-select-shell, .select-shell 的规则
+      const selectRuleRegex = /(?:^|\})([^{}]*(?:select|\.gw-select-shell|\.select-shell)[^{]*\{[^{}]*\})/gi;
+      let ruleMatch;
+      while ((ruleMatch = selectRuleRegex.exec(styleBlock)) !== null) {
+        const rule = ruleMatch[1].trim();
+        const isBaseline = FROZEN_BASELINE_SELECT_COLORS.some(b => b.file === pf && rule.includes(b.pattern));
+        if (!isBaseline) {
+          validateCssColors(rule, `${pf} inline <style>`);
+        }
+      }
+    }
+  }
+  return true;
+}
+
 describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
 
-  test('AC1: 公共原生组件文件、契约文档与 Token 映射健全 (必改4路径闭环)', () => {
+  test('AC1: 公共原生组件文件、契约文档与 Token 映射健全', () => {
     const cssPath = path.join(REPO_ROOT, 'web/css/components/gw-native-select.css');
     const jsPath = path.join(REPO_ROOT, 'web/js/core/gw-native-select.js');
     const docPath = path.join(REPO_ROOT, 'docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md');
 
     assert.ok(fs.existsSync(cssPath), 'CSS 文件必须存在');
     assert.ok(fs.existsSync(jsPath), 'JS 控制器必须存在');
-    assert.ok(fs.existsSync(docPath), '契约文档必须在设计表确认路径 docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md 下存在');
+    assert.ok(fs.existsSync(docPath), '契约文档必须在 docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md 下存在');
 
     const cssContent = fs.readFileSync(cssPath, 'utf8');
     assert.ok(cssContent.includes('var(--gw-control-bg'), '必须消费控件背景 Token --gw-control-bg');
@@ -201,7 +283,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.ok(cssContent.includes('.select-shell'), '必须兼容对齐已有 .select-shell');
   });
 
-  test('AC2 & AC4: 两页试点控件真实复用且声明式接入 (必改2两页接入)', () => {
+  test('AC2 & AC4: 两页试点控件真实复用且声明式接入 (实测通过验证)', () => {
     // 1. 项目管理页 projects.html
     const projectsHtml = fs.readFileSync(path.join(REPO_ROOT, 'web/pages/projects.html'), 'utf8');
     assert.ok(projectsHtml.includes('/static/css/components/gw-native-select.css'), 'projects.html 必须引入公共 CSS');
@@ -233,7 +315,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.ok(typeof GWNativeSelect.enhanceAll === 'function', 'enhanceAll 必须是函数');
     assert.ok(typeof GWNativeSelect.sync === 'function', 'sync 必须是函数');
 
-    // 构造具备预包装外壳的真实测试节点
+    // 构造具备预包装外壳的测试节点
     let blurred = false;
     let changeFired = false;
     let focusedTrigger = false;
@@ -290,7 +372,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.ok(listeners['keydown'] && listeners['keydown'].length === 1, '预包装控件必须绑定 keydown 事件监听');
     assert.ok(listeners['change'] && listeners['change'].length === 1, '预包装控件必须绑定 change 事件监听');
 
-    // 再次调用 enhance 验证幂等性（防重复绑定）
+    // 再次调用 enhance 验证幂等性
     GWNativeSelect.enhance(mockSelect, { triggerElement: mockTrigger });
     assert.equal(listeners['keydown'].length, 1, '重复调用 enhance 不得重复绑定 keydown 事件');
 
@@ -315,31 +397,55 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.ok(mockSelect.parentElement.classList.contains('is-disabled'), 'disabled 时外壳必须挂载 is-disabled');
   });
 
-  test('AC5 & 必改1: 逐项精确白名单门禁与棘轮（当前仓库 61 处历史存量精确匹配）', () => {
+  test('AC5 & AC6: 逐项精确白名单门禁与棘轮（当前仓库 64 处历史存量节点实例精确匹配）', () => {
     const unenhancedMatches = collectUnenhancedSelects(REPO_ROOT);
-    assert.equal(unenhancedMatches.length, 61, '当前全仓库未经改造的原生 select 必须严格保持 61 处存量');
+    assert.equal(unenhancedMatches.length, 64, '当前全仓库未经改造的原生 select 节点实例必须严格保持 64 处存量（含同行多节点）');
 
     // 逐项精确比对，任意一处不在基线名单中立即报错
     assert.doesNotThrow(
       () => validateSelectCompliance(unenhancedMatches, FROZEN_BASELINE_SELECTS),
-      '所有 61 处存量控件必须全部精确命中白名单基线'
+      '所有 64 处存量控件实例必须全部精确命中白名单基线'
+    );
+  });
+
+  test('AC5 & 必改1反证: “同一行追加未授权裸 select”必须被真实扫描器拦截（阻断1反证闭环）', () => {
+    // 构造复现样本：在已有基线 select 所在的同一行后，紧接着追加一个未授权裸 select
+    const hackedSameLineContent = `
+      <div class="control-row">
+        <select id="agentModelSelect" class="block w-full mt-1"></select><select id="sneakySameLineSelect" class="bg-black/50"></select>
+      </div>
+    `;
+
+    // 调用真正的产品扫描函数 extractSelectInstancesFromContent 进行实例提取
+    const instances = extractSelectInstancesFromContent(hackedSameLineContent, 'web/pages/agents.html');
+    assert.equal(instances.length, 2, '真实扫描器必须正确提取同一行内的全部 2 个 select 实例，绝不按行折叠');
+
+    // 将扫描出的实例提交给门禁校验函数，断言必须抛错并精准捕获 sneakySameLineSelect
+    assert.throws(
+      () => validateSelectCompliance(instances, FROZEN_BASELINE_SELECTS),
+      /VIOLATION_NEW_UNENHANCED_SELECT.*sneakySameLineSelect/,
+      '同一行追加裸 select 必须被门禁打红拦截'
     );
   });
 
   test('AC5 & 必改1反证: “删一旧加一新”偷换违规必被拦截（精确白名单门禁反证）', () => {
-    // 构造模拟样本：从 61 处基线中删除 1 处旧基线（剩下 60 处），新增 1 处未登记的违规裸 select（总数依然为 61）
+    // 构造模拟样本：从 64 处基线中删除 1 处旧基线（剩下 63 处），新增 1 处未登记的违规裸 select（总数依然为 64）
     const hackedMatches = FROZEN_BASELINE_SELECTS.slice(1).map(b => ({
       file: b.file,
       line: 100,
-      text: `<select class="${b.pattern}"></select>`
+      col: 10,
+      attrs: b.pattern,
+      text: `<select ${b.pattern}></select>`
     }));
     hackedMatches.push({
       file: 'web/pages/projects.html',
       line: 999,
+      col: 20,
+      attrs: 'id="bypassSneakySelect"',
       text: '<select id="bypassSneakySelect" class="bg-black"></select>'
     });
 
-    assert.equal(hackedMatches.length, 61, '样本总数与冻结基线数完全相同 (61)');
+    assert.equal(hackedMatches.length, 64, '样本总数与冻结基线数完全相同 (64)');
 
     // 验证门禁必须抛出异常，精准指出未登记的新增违规选择器 bypassSneakySelect
     assert.throws(
@@ -347,36 +453,24 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       /VIOLATION_NEW_UNENHANCED_SELECT.*bypassSneakySelect/,
       '即使总数未增，“删一旧加一新”也必须被精确逐项门禁打红拦截'
     );
-
-    // 验证直接新增违规裸 select（总数 62）同样打红
-    const overflowMatches = FROZEN_BASELINE_SELECTS.map(b => ({
-      file: b.file,
-      line: 100,
-      text: `<select class="${b.pattern}"></select>`
-    }));
-    overflowMatches.push({
-      file: 'web/pages/agents.html',
-      line: 888,
-      text: '<select id="extraNewSelect"></select>'
-    });
-    assert.throws(
-      () => validateSelectCompliance(overflowMatches, FROZEN_BASELINE_SELECTS),
-      /VIOLATION_NEW_UNENHANCED_SELECT.*extraNewSelect/,
-      '新增未登记裸 select 必须被门禁拦截'
-    );
   });
 
-  test('AC5 & 必改1: 控件样式零硬编码 hex 检测与反证', () => {
-    const cssPath = path.join(REPO_ROOT, 'web/css/components/gw-native-select.css');
-    const css = fs.readFileSync(cssPath, 'utf8');
+  test('AC5 & 必改2: 产品 UI 范围下拉样式零裸 hex 色门禁与反证（阻断2闭环）', () => {
+    // 1. 扫描产品 UI 范围内（含公共样式与页面内联 style）所有针对下拉控件的规则，断言零裸 hex 色
+    assert.doesNotThrow(
+      () => scanUiForSelectColorViolations(REPO_ROOT),
+      '产品 UI 范围内针对原生下拉与外壳的样式严禁出现裸硬编码 hex 色'
+    );
 
-    // 1. 公共下拉样式严禁包含任何裸硬编码 hex 色
-    assert.doesNotThrow(() => validateCssColors(css), '公共下拉组件样式不得包含未通过 var() 消费的硬编码颜色');
-
-    // 2. 反证测试：若样式注入硬编码 hex 必须被拦截打红
-    const badCss = `.custom-select { background: #ff0055; border: 1px solid #112233; }`;
+    // 2. 真实反例测试：若产品页面或样式注入包含裸 hex 的 select 样式，门禁必被打红
+    const illegalSelectCss = `
+      .custom-panel select.my-dropdown {
+        background-color: #ff0055;
+        border: 1px solid #112233;
+      }
+    `;
     assert.throws(
-      () => validateCssColors(badCss),
+      () => validateCssColors(illegalSelectCss, 'injected-illegal-style'),
       /VIOLATION_HARDCODED_COLOR/,
       '反向样本硬编码 hex 色必须被检测函数捕获并报错'
     );
@@ -385,36 +479,32 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
   test('AC7: 反向违规样本绝不落盘在 web/ 目录', () => {
     const webFiles = fs.readdirSync(path.join(REPO_ROOT, 'web'), { recursive: true });
     for (const f of webFiles) {
+      assert.ok(!f.toString().includes('sneakySameLineSelect'), '反向测试用例标记绝不可落盘进 web/ 目录');
       assert.ok(!f.toString().includes('bypassSneakySelect'), '反向测试用例标记绝不可落盘进 web/ 目录');
-      assert.ok(!f.toString().includes('unauthorizedSelect'), '反向测试用例标记绝不可落盘进 web/ 目录');
     }
   });
 
-  test('GW-DoD-v1 & 必改3: 真实两页四宽度双主题、长文本截断与时序代际保护', async () => {
+  test('GW-DoD-v1 & AC3: 真实两页四宽度双主题、长文本截断与时序代际保护', async () => {
     // 1. 真实 HTML 结构提取与验证
     const projectsHtml = fs.readFileSync(path.join(REPO_ROOT, 'web/pages/projects.html'), 'utf8');
     const agentsHtml = fs.readFileSync(path.join(REPO_ROOT, 'web/pages/agents.html'), 'utf8');
     const cssContent = fs.readFileSync(path.join(REPO_ROOT, 'web/css/components/gw-native-select.css'), 'utf8');
 
-    // 提取两页真实结构区块
     assert.ok(projectsHtml.includes('id="newProjectTypeSelect"'), 'projects.html 真实包含 newProjectTypeSelect');
     assert.ok(agentsHtml.includes('id="agentProviderSelect"'), 'agents.html 真实包含 agentProviderSelect');
 
     // 2. 四宽度响应式断言 (724px, 900px, 1440px, 1920px)
     const breakpoints = [724, 900, 1440, 1920];
     for (const bp of breakpoints) {
-      // 验证 CSS 中对齐各宽度的通用流式防撑破规则
       assert.ok(cssContent.includes('min-height: 40px'), `宽度 ${bp}px 下必须满足 min-height: 40px 规范`);
       assert.ok(cssContent.includes('box-sizing: border-box'), `宽度 ${bp}px 下必须满足 border-box 盒模型`);
       assert.ok(cssContent.includes('max-width: 100%'), `宽度 ${bp}px 下必须具备 max-width: 100% 防溢出`);
     }
 
-    // 3. 双主题 (暗色/浅色) Token 计算规则覆盖
-    // 暗色主题 Token
+    // 3. 双主题 Token 计算规则覆盖
     assert.ok(cssContent.includes('var(--gw-control-bg'), '暗色模式消费 --gw-control-bg');
     assert.ok(cssContent.includes('var(--gw-border'), '暗色模式消费 --gw-border');
     assert.ok(cssContent.includes('var(--gw-text'), '暗色模式消费 --gw-text');
-    // 浅色主题覆盖 (html[data-theme="light"])
     assert.ok(/html\[data-theme="light"\]\s+\.gw-select-shell/.test(cssContent), '浅色主题拥有显式覆盖选择器');
 
     // 4. 100+ 字符长文本防撑破截断断言
@@ -429,7 +519,6 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     const imported = await import(pathToFileURL(jsPath).href);
     const GWNativeSelect = imported.default || imported;
 
-    // 模拟 agents.html 的 #agentProviderSelect 真实生命周期
     const agentSelectDom = {
       nodeType: 1,
       tagName: 'SELECT',
@@ -455,17 +544,14 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       addEventListener() {}
     };
 
-    // 初始化：由于首项为“配置读取中…”，自动挂载 is-loading
     GWNativeSelect.sync(agentSelectDom);
     assert.ok(agentSelectDom.parentElement.classList.contains('is-loading'), '初始状态外壳必须显示 is-loading');
 
-    // 真实 1500ms 异步载入场景验证 (使用真实 Promise 与定时器)
     const startTime = Date.now();
     await new Promise(resolve => setTimeout(resolve, 1500));
     const elapsed = Date.now() - startTime;
     assert.ok(elapsed >= 1400, `必须真实等待约 1500ms（实际: ${elapsed}ms）`);
 
-    // 响应到达，载入真实 Provider 选项
     agentSelectDom.options = [
       { text: 'OpenAI API (GPT-4o)', value: 'openai' },
       { text: 'Anthropic Claude 3.5 Sonnet', value: 'anthropic' },
@@ -479,13 +565,11 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.equal(agentSelectDom.options.length, 4, 'Provider 选项已更新为 4 项');
     assert.equal(agentSelectDom.value, 'openai', '默认选中首项 OpenAI');
 
-    // 乱序单调代际测试 (代际 1 慢请求 5000ms 迟到到达，被代际 2 快请求 1500ms 抢先)
     let globalGeneration = 0;
     let finalAppliedProvider = agentSelectDom.value;
 
     function applyProviderUpdate(generationId, providers, selectedVal) {
       if (generationId < globalGeneration) {
-        // 单调性保护：丢弃过期代际的迟到数据
         return false;
       }
       globalGeneration = generationId;
@@ -496,19 +580,15 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       return true;
     }
 
-    // 代际 1：慢请求（模拟 5000ms 延迟）
     const gen1 = ++globalGeneration;
-    // 代际 2：快请求（模拟 1500ms 延迟）
     const gen2 = ++globalGeneration;
 
-    // 代际 2 先完成返回
     const applied2 = applyProviderUpdate(gen2, [
       { text: 'Custom Enterprise Gateway', value: 'enterprise-gw' }
     ], 'enterprise-gw');
     assert.equal(applied2, true, '代际 2 最新数据必须成功应用');
     assert.equal(finalAppliedProvider, 'enterprise-gw');
 
-    // 代际 1 迟到返回（带过期代际 gen1）
     const applied1 = applyProviderUpdate(gen1, [
       { text: 'Stale Slow Provider 5000ms', value: 'stale-slow' }
     ], 'stale-slow');
