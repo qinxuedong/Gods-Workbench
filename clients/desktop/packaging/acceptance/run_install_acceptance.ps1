@@ -56,11 +56,14 @@ $script:installedRunPy = Join-Path $script:installDirPath "backend\run.py"
 $script:uninstaller = Join-Path $script:installDirPath "uninstall.exe"
 $script:realLocalAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA", "Process")
 if (-not $script:realLocalAppData) { $script:realLocalAppData = [Environment]::GetFolderPath("LocalApplicationData") }
+$script:realAppData = [Environment]::GetEnvironmentVariable("APPDATA", "Process")
+if (-not $script:realAppData) { $script:realAppData = [Environment]::GetFolderPath("ApplicationData") }
 $script:processLocalAppData = $script:realLocalAppData
+$script:processAppData = $script:realAppData
 $script:upgradeRoot = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
 $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
 $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
-$script:clientConfigDir = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "ai.godsworkbench.desktop"
+$script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
 $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
 $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
 $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
@@ -836,6 +839,7 @@ function Start-DesktopProcess {
     if (-not $WorkingDirectory) { $WorkingDirectory = $script:installDirPath }
     $environment = @{
         LOCALAPPDATA = $script:processLocalAppData
+        APPDATA = $script:processAppData
         GW_BACKEND_ROOT = ""
         GW_ROOT_DIR = ""
         GW_PYTHON = ""
@@ -1024,6 +1028,8 @@ function Invoke-Installer {
     $beforeBackup = Get-BackupGeneration
     $beforeInstalled = Get-Generation -RunPy $script:installedRunPy
     $installerEnvironment = @{
+        LOCALAPPDATA = $script:processLocalAppData
+        APPDATA = $script:processAppData
         GW_BUNDLE_MANIFEST = ""
         GW_PRODUCT_VERSION = ""
     }
@@ -1839,6 +1845,14 @@ public static class GwNative {
     if ($LocalAppDataOverride) {
         $script:processLocalAppData = [IO.Path]::GetFullPath($LocalAppDataOverride)
         $script:dataMode = "isolated-localappdata-override"
+        $script:processAppData = Join-Path $script:processLocalAppData "roaming"
+        $script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
+        $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
+        $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
+        $script:upgradeRoot = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
+        $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
+        $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
+        $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
         if ($Reset -and (Test-Path -LiteralPath $script:processLocalAppData)) {
             $overrideName = Split-Path -Leaf $script:processLocalAppData
             if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
@@ -1847,6 +1861,11 @@ public static class GwNative {
             Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
+        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
+        $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
+        $script:savedProcessEnvAppData = $env:APPDATA
+        $env:LOCALAPPDATA = $script:processLocalAppData
+        $env:APPDATA = $script:processAppData
         $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
         $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
         if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
@@ -1984,6 +2003,41 @@ public static class GwNative {
     $clientSettingsFixture = [ordered]@{ upload_source_dir = "<acceptance-upload-source>" } | ConvertTo-Json -Compress
     Write-Utf8NoBom -Path $script:clientConfig -Text ($clientSettingsFixture + "`r`n")
     Add-Check "first-run.client-settings-fixture" (Test-Path -LiteralPath $script:clientConfig) "client.json fixture not created"
+
+    Add-Step "tray-find-nas"
+    $trayCdp = New-CdpConnection -Port $firstCdpPort
+    try {
+        $trayNavExpr = "window.location.href = 'http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas'"
+        $null = Invoke-CdpExpression -Connection $trayCdp -Expression $trayNavExpr
+        $trayTargetUrl = Wait-CdpTargetUrl -Port $firstCdpPort -Prefix "http://127.0.0.1:2077/static/pages/settings.html" -TimeoutSeconds 30
+        Require-Check "tray-find-nas.navigation-ok" ($trayTargetUrl.StartsWith("http://127.0.0.1:2077/static/pages/settings.html", [StringComparison]::OrdinalIgnoreCase)) ("failed to navigate to settings url: " + $trayTargetUrl)
+        Start-Sleep -Seconds 2
+        $pageCheckExpr = @"
+(() => {
+    const card = document.querySelector('#remoteWorkspaceCard');
+    const panel = document.querySelector('[data-panel="general"]');
+    const scanBtn = document.querySelector('#btnScanLan');
+    return {
+        is404: document.title.includes('404') || (document.body && document.body.innerText.includes('Not Found')),
+        generalActive: !!(panel && panel.classList.contains('active')),
+        remoteCardExists: !!card,
+        scanBtnExists: !!scanBtn
+    };
+})()
+"@
+        $trayPageStatus = Invoke-CdpExpression -Connection $trayCdp -Expression $pageCheckExpr
+        Require-Check "tray-find-nas.no-404" (-not $trayPageStatus.is404) "settings page returned 404 or not found"
+        Require-Check "tray-find-nas.general-active" ($trayPageStatus.generalActive) "general settings panel not active"
+        Require-Check "tray-find-nas.remote-card" ($trayPageStatus.remoteCardExists) "remoteWorkspaceCard not present in DOM"
+        Require-Check "tray-find-nas.scan-button" ($trayPageStatus.scanBtnExists) "btnScanLan not present in DOM"
+        Add-Check "tray-find-nas.page-screenshot" (Save-CdpScreenshot -Connection $trayCdp -Path (Join-Path $script:outputDirPath "02-tray-find-nas.page.png")) "tray find nas screenshot failed"
+
+        $null = Invoke-CdpExpression -Connection $trayCdp -Expression "window.location.href = 'http://127.0.0.1:2077/static/pages/index.html'"
+        $null = Wait-CdpTargetUrl -Port $firstCdpPort -Prefix "http://127.0.0.1:2077/static/pages/index.html" -TimeoutSeconds 30
+        Start-Sleep -Seconds 1
+    } finally {
+        Close-CdpConnection -Connection $trayCdp
+    }
 
     Add-Step "hot-start"
     $hot = Start-DesktopProcess -Label "03-hot-start"
@@ -2379,7 +2433,11 @@ public static class GwNative {
     Require-Check "uninstall.client-settings-exists" (Test-Path -LiteralPath $script:clientConfig) "client settings missing before uninstall"
     $backupBeforeUninstall = Get-BackupGeneration
     $installedBeforeUninstall = Get-Generation -RunPy $script:installedRunPy
-    $uninstallLaunch = Start-GwProcess -FilePath $script:uninstaller -Arguments @("/S") -Label "18-uninstall" -Environment @{} -WorkingDirectory $script:outputDirPath
+    $uninstallEnv = @{
+        LOCALAPPDATA = $script:processLocalAppData
+        APPDATA = $script:processAppData
+    }
+    $uninstallLaunch = Start-GwProcess -FilePath $script:uninstaller -Arguments @("/S") -Label "18-uninstall" -Environment $uninstallEnv -WorkingDirectory $script:outputDirPath
     $uninstallExited = Wait-ProcessExit -Process $uninstallLaunch.process -TimeoutSeconds 300
     if (-not $uninstallExited) {
         try { Stop-Process -Id $uninstallLaunch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
@@ -2468,5 +2526,7 @@ try {
         if (Test-Path -LiteralPath $badManifest) { Remove-Item -LiteralPath $badManifest -Force -ErrorAction SilentlyContinue }
     }
     if (-not $cleanupStateOk) { $exitCode = 1 }
+    if ($script:savedProcessEnvLocalAppData) { $env:LOCALAPPDATA = $script:savedProcessEnvLocalAppData }
+    if ($script:savedProcessEnvAppData) { $env:APPDATA = $script:savedProcessEnvAppData }
 }
 exit $exitCode

@@ -2472,6 +2472,9 @@ fn run_diagnostics_command(path: &Path) -> i32 {
     }
 }
 
+pub const TRAY_FIND_NAS_SETTINGS_URL: &str =
+    "http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas";
+
 fn make_tray_icon() -> Image<'static> {
     const SIZE: u32 = 32;
     const DARK: [u8; 4] = [9, 10, 13, 255];
@@ -2600,7 +2603,7 @@ fn main() {
                             };
 
                             if is_local_workbench {
-                                if let Ok(settings_url) = Url::parse("http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas") {
+                                if let Ok(settings_url) = Url::parse(TRAY_FIND_NAS_SETTINGS_URL) {
                                     let _ = window.navigate(settings_url);
                                 }
                             } else {
@@ -2647,6 +2650,20 @@ fn release_own_instance_lock(path: &Path) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tray_find_nas_settings_url_contract() {
+        let parsed =
+            Url::parse(TRAY_FIND_NAS_SETTINGS_URL).expect("valid tray find nas settings url");
+        assert_eq!(parsed.scheme(), "http");
+        assert_eq!(parsed.host_str(), Some("127.0.0.1"));
+        assert_eq!(parsed.port(), Some(2077));
+        assert_eq!(parsed.path(), "/static/pages/settings.html");
+        let query_pairs: std::collections::HashMap<_, _> =
+            parsed.query_pairs().into_owned().collect();
+        assert_eq!(query_pairs.get("section").map(String::as_str), Some("general"));
+        assert_eq!(query_pairs.get("action").map(String::as_str), Some("scan-nas"));
+    }
 
     #[test]
     fn test_make_tray_icon_includes_brand_colors_and_apostrophe() {
