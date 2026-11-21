@@ -1235,29 +1235,38 @@ async def execute_task(
                 "INPUT_ASSET_FIELD_UNRESOLVED",
                 "输入素材字段无法映射到实际执行图，请补齐节点定义",
             )
-    transfer_receipt_id = None
+    explicit_transfer_intent = any(
+        key in body
+        for key in ("transfer_receipt_id", "target_workspace_id", "directory_id")
+    )
+    transfer_receipt_id = body.get("transfer_receipt_id")
     transfer_service = None
     task_input_assets: list[dict[str, Any]] = []
     resolved_input_assets: dict[str, tuple[Path, dict[str, Any]]] = {}
-    if workflow_id and (task_input_bindings or "transfer_receipt_id" in body):
-        transfer_receipt_id = body.get("transfer_receipt_id")
-        if not isinstance(transfer_receipt_id, str) or not transfer_receipt_id:
-            raise CleanroomException(
-                409,
-                "TASK_TRANSFER_CONFIRMATION_REQUIRED",
-                "请先预检并确认任务素材与结果落点",
-            )
+    if explicit_transfer_intent and (
+        not workflow_id
+        or not isinstance(transfer_receipt_id, str)
+        or not transfer_receipt_id
+    ):
+        raise CleanroomException(
+            409,
+            "TASK_TRANSFER_CONFIRMATION_REQUIRED",
+            "请先预检并确认任务素材与结果落点",
+        )
+    if workflow_id and (task_input_bindings or explicit_transfer_intent):
         from gw.core.asset_visibility import asset_owner_key
         from gw.workspaces import context as workspace_context
+        from gw.workspaces.model import MODE_LOCAL
 
         integration = globals().get("_qin629_task_transfer_integration")
         if not isinstance(integration, dict):
             raise unavailable(
                 "TASK_TRANSFER_UNAVAILABLE", "任务传输服务未就绪，请稍后重试"
             )
-        transfer_service = integration["service"]
         with workspace_context.bind_execution_context(None):
-            workspace_snapshot, execution_context = integration["current_context"]()
+            workspace_snapshot, execution_context = integration["current_context"](
+                body.get("target_workspace_id")
+            )
         workspace_revision, mapping_id, mapping_root_id = integration[
             "task_context_fields"
         ](workspace_snapshot, execution_context)
@@ -1267,24 +1276,38 @@ async def execute_task(
                     context, document, target, execution_context
                 )
             )
-        transfer_service.validate_task_preflight(
-            transfer_receipt_id,
-            owner_id=asset_owner_key(context),
-            workflow_id=str(workflow_id),
-            workflow_version=int(document["version"]),
-            target=target,
-            bindings=task_input_bindings,
-            input_assets=task_input_assets,
-            workspace_id=str(execution_context["workspace_id"]),
-            workspace_revision=workspace_revision,
-            mapping_id=mapping_id,
-            mapping_root_id=mapping_root_id,
-            directory_id=str(
-                transfer_service.get_task_preflight(
-                    transfer_receipt_id, owner_id=asset_owner_key(context)
-                )["directory_id"]
-            ),
+        # 资产登记解析出的文件均已在本机校验可读；本机工作区沿用既有直接上传链路。
+        # NAS 工作区中的绑定素材属于跨机受管传输，必须有用户确认回执。
+        requires_transfer_confirmation = explicit_transfer_intent or (
+            bool(task_input_bindings)
+            and execution_context.get("workspace_mode") != MODE_LOCAL
         )
+        if requires_transfer_confirmation:
+            if not isinstance(transfer_receipt_id, str) or not transfer_receipt_id:
+                raise CleanroomException(
+                    409,
+                    "TASK_TRANSFER_CONFIRMATION_REQUIRED",
+                    "请先预检并确认任务素材与结果落点",
+                )
+            transfer_service = integration["service"]
+            owner_id = asset_owner_key(context)
+            preflight = transfer_service.get_task_preflight(
+                transfer_receipt_id, owner_id=owner_id
+            )
+            transfer_service.validate_task_preflight(
+                transfer_receipt_id,
+                owner_id=owner_id,
+                workflow_id=str(workflow_id),
+                workflow_version=int(document["version"]),
+                target=target,
+                bindings=task_input_bindings,
+                input_assets=task_input_assets,
+                workspace_id=str(execution_context["workspace_id"]),
+                workspace_revision=workspace_revision,
+                mapping_id=mapping_id,
+                mapping_root_id=mapping_root_id,
+                directory_id=body.get("directory_id", str(preflight["directory_id"])),
+            )
     # 执行来源只认请求显式携带的来源上下文；文档元数据里的旧来源不作为执行依据。
     source_context = _source_context(context, body.get("source_context") or {})
     # 原子预留必须先于任何外部副作用；未绑定ID的账本一律未知且禁止自动重发。

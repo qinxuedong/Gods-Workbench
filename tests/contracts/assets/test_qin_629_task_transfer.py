@@ -163,6 +163,7 @@ def test_task_execution_requires_receipt_and_uploads_one_copy_for_repeated_asset
         "workflow_id": workflow["workflow_id"],
         "expected_version": workflow["version"],
         "target": "local_comfy",
+        "transfer_receipt_id": "",
     }
     missing_receipt = client.post(
         "/api/god_workflow/execute",

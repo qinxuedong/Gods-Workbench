@@ -13,7 +13,7 @@ Phase 7 已取证前端存在大量调用后端**未实现**端点（真实 HTTP
 1. 前端：扫描 `web/` 下全部 `.js` / `.html`（排除 `vendor/`），
    提取字符串字面量（含模板串 `${ ... }` 嵌套）中以 `/api` 开头的路径；模板占位统一折叠为 `{p}`，
    查询串剥离，尾部斜杠归一化。
-2. 后端：解析 `gw/api/*.py` 的装饰器路由，`APIRouter(prefix=...)` 展开为完整路径。
+2. 后端：解析 `gw/api/*.py`、工作流领域路由与 `gw/transfer/routes.py` 的装饰器路由，`APIRouter(prefix=...)` 展开为完整路径。
 3. 契约：解析 `docs/contracts/*.yaml` 中成对出现的 `method:` / `path:`。
 
 修复/变更指引
@@ -34,6 +34,7 @@ API_DIRS = [
     # 工作流领域路由属于统一 gw 包，但按洁净室规则放在领域包内，避免新增平行 api 路由载体。
     REPO_ROOT / "gw" / "god_workflow",
 ]
+TRANSFER_ROUTES_FILE = REPO_ROOT / "gw" / "transfer" / "routes.py"
 VIDEO_TASKS_DIR = REPO_ROOT / "gw" / "video_tasks"
 CONTRACTS = [
     REPO_ROOT / "docs" / "contracts" / "PROJECTS-HUB-INTERFACE-CATALOG.yaml",
@@ -74,6 +75,17 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/god_workflow/settings",
         "/api/god_workflow/assets/list",
         "/api/god_workflow/assets/upload",
+        # 2026-11-21 QIN-629 PM 特批：登记 gw/transfer/routes.py 中已实现的十条传输路由。
+        "/api/transfer/context",
+        "/api/transfer/task-preflights",
+        "/api/transfer/task-preflights/{p}/confirm",
+        "/api/transfer/preflight",
+        "/api/transfer/jobs",
+        "/api/transfer/jobs/{p}/files/{p}",
+        "/api/transfer/jobs/{p}/commit",
+        "/api/transfer/jobs/{p}",
+        "/api/transfer/jobs/{p}/cancel",
+        "/api/transfer/jobs/{p}/retry",
         "/api/god_workflow/list",
         "/api/god_workflow/item/{p}",
         "/api/god_workflow/item/{p}/name",
@@ -947,11 +959,13 @@ def _frontend_api_paths() -> set:
 def _backend_routes() -> dict:
     """解析后端路由，返回 {归一化路径: [(METHOD, 文件名, 行号), ...]}。"""
     assert all(path.is_dir() for path in API_DIRS), f"缺少后端 API 目录: {API_DIRS}"
+    assert TRANSFER_ROUTES_FILE.is_file(), f"缺少任务传输路由文件: {TRANSFER_ROUTES_FILE}"
     assert VIDEO_TASKS_DIR.is_dir(), f"缺少视频任务路由目录: {VIDEO_TASKS_DIR}"
     routes = {}
     route_files = [
         path for api_dir in API_DIRS for path in sorted(api_dir.glob("*.py"))
     ]
+    route_files.append(TRANSFER_ROUTES_FILE)
     route_files += sorted(VIDEO_TASKS_DIR.glob("*.py"))
     for path in route_files:
         text = path.read_text(encoding="utf-8")
