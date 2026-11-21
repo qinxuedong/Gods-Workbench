@@ -912,11 +912,19 @@
       if (!quiet || !authGate.isAuthenticated()) window.dispatchEvent(new CustomEvent('gw-auth-state', { detail: { ...this.authState } }));
       if (!quiet && authGate.isAuthenticated()) { this.syncTelemetry(); this.syncOnlineStatus(); this.syncStageProgress(); }
 
-      if (this.authState.auth_mode === 'local_account' && this.authState.setup_required && !this.setupPromptShown) {
+      // QIN-633 个人本机可信直入守卫：
+      // 正在兑换或已认证时，绝不误弹「首次设置 · 创建管理员」；
+      // 若已认证且已建立本机身份，若 accountModal 打开则安全关闭。
+      const isBootstrapping = Boolean(window.GWTrustedLocal && (window.GWTrustedLocal.state === 'bootstrapping'));
+      if (this.authState.auth_mode === 'local_account' && this.authState.setup_required && !this.authState.authenticated && !isBootstrapping && !this.setupPromptShown) {
         this.setupPromptShown = true;
         this.openAccountModal();
       } else if (document.getElementById('accountModal')?.classList.contains('open')) {
-        this.renderAccountModalContent();
+        if (this.authState.authenticated && this.authState.trusted_local?.established) {
+          this.closeModal('accountModal');
+        } else {
+          this.renderAccountModalContent();
+        }
       }
       return this.authState;
       })();

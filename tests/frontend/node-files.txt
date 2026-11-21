@@ -138,6 +138,7 @@ tests/frontend/qin-628-workspace-task-context.test.mjs
 tests/frontend/qin-630-trusted-local.test.mjs
 tests/frontend/qin-631-native-select-pilot.test.mjs
 tests/frontend/qin-632-brand-assets.test.mjs
+tests/frontend/qin-633-personal-local-owner.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs
