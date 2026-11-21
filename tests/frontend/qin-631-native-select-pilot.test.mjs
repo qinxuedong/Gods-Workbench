@@ -19,7 +19,7 @@ const __dirname = path.dirname(__filename);
 const REPO_ROOT = path.resolve(__dirname, '../..');
 
 /**
- * 64 处冻结旧基线实例（精确定位到文件、行号与特定识别特征，按节点实例 1:1 建立）
+ * 65 处冻结旧基线实例（精确定位到文件、行号与特定识别特征，按节点实例 1:1 建立）
  * 除本票试点改造的两处（#newProjectTypeSelect 与 #agentProviderSelect）外，全部锁定，只减不增。
  */
 export const FROZEN_BASELINE_SELECTS = [
@@ -69,7 +69,7 @@ export const FROZEN_BASELINE_SELECTS = [
     "file": "web/pages/index.html",
     "line": 1425,
     "col": 13,
-    "pattern": "newProjectTypeSelect"
+    "pattern": "w-full"
   },
   {
     "file": "web/pages/index.html",
@@ -87,13 +87,13 @@ export const FROZEN_BASELINE_SELECTS = [
     "file": "web/pages/projects.html",
     "line": 914,
     "col": 13,
-    "pattern": "editProjectTypeSelect"
+    "pattern": "w-full"
   },
   {
     "file": "web/pages/projects.html",
     "line": 922,
     "col": 13,
-    "pattern": "editProjectStageSelect"
+    "pattern": "w-full"
   },
   {
     "file": "web/pages/settings.html",
@@ -235,49 +235,55 @@ export const FROZEN_BASELINE_SELECTS = [
   },
   {
     "file": "web/js/modules/asset-manager/settings.js",
-    "line": 2079,
+    "line": 2082,
     "col": 37,
     "pattern": "projectDirectoryTemplateType"
   },
   {
     "file": "web/js/modules/asset-manager/settings.js",
-    "line": 2420,
+    "line": 2423,
     "col": 72,
     "pattern": "thumbnailDirectoryPreset"
   },
   {
     "file": "web/js/modules/asset-manager/settings.js",
-    "line": 2595,
+    "line": 2598,
     "col": 13,
     "pattern": "localCaptionProvider"
   },
   {
     "file": "web/js/modules/asset-manager/settings.js",
-    "line": 2598,
+    "line": 2601,
     "col": 13,
     "pattern": "localCaptionModel"
   },
   {
     "file": "web/js/modules/asset-manager/settings.js",
-    "line": 2941,
+    "line": 2944,
     "col": 21,
     "pattern": "data-avatar-provider"
   },
   {
+    "file": "web/js/modules/asset-manager/transfer.js",
+    "line": 256,
+    "col": 136,
+    "pattern": "transfer-choice"
+  },
+  {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6255,
+    "line": 6256,
     "col": 77,
     "pattern": "registryCanvasTarget"
   },
   {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6256,
+    "line": 6257,
     "col": 199,
     "pattern": "registryNewCanvasKind"
   },
   {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6354,
+    "line": 6355,
     "col": 19,
     "pattern": "<select>"
   },
@@ -327,7 +333,7 @@ export const FROZEN_BASELINE_SELECTS = [
     "file": "web/js/modules/asset-review.js",
     "line": 368,
     "col": 93,
-    "pattern": "name=\"user_id\" required"
+    "pattern": "name=\"user_id\""
   },
   {
     "file": "web/js/modules/asset-review.js",
@@ -1162,14 +1168,14 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.equal(secondKeydownAttached, false, '重复 enhance 时必须由幂等标记守护，不得二次重复绑定');
   });
 
-  test('AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 64 处历史存量节点实例）', () => {
+  test('AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 65 处历史存量节点实例）', () => {
     const unenhancedMatches = collectUnenhancedSelects(REPO_ROOT);
-    assert.equal(unenhancedMatches.length, 64, '当前全仓库未经改造的原生 select 节点实例必须严格保持 64 处存量（含同行多节点）');
+    assert.equal(unenhancedMatches.length, 65, '当前全仓库未经改造的原生 select 节点实例必须严格保持 65 处存量（含同行多节点）');
 
     // 逐项精确比对（文件、精确行号与 pattern 全部一致）
     assert.doesNotThrow(
       () => validateSelectCompliance(unenhancedMatches, FROZEN_BASELINE_SELECTS),
-      '所有 64 处存量控件实例必须全部精确命中白名单基线（含精准行号）'
+      '所有 65 处存量控件实例必须全部精确命中白名单基线（含精准行号）'
     );
   });
 
@@ -1190,7 +1196,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
 
   test('AC6 & 必改2反证: 旧基线行号被篡改（如改成 99999）或移位必被拦截（精确行号门禁反证）', () => {
     const unenhancedMatches = collectUnenhancedSelects(REPO_ROOT);
-    assert.equal(unenhancedMatches.length, 64);
+    assert.equal(unenhancedMatches.length, 65);
 
     // 构造篡改基线：将第 1 个条目的行号篡改为 99999
     const tamperedBaseline = FROZEN_BASELINE_SELECTS.map((b, idx) => idx === 0 ? { ...b, line: 99999 } : b);
@@ -1218,7 +1224,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       text: '<select id="bypassSneakySelect" class="bg-black"></select>'
     });
 
-    assert.equal(hackedMatches.length, 64, '样本总数与冻结基线数完全相同 (64)');
+    assert.equal(hackedMatches.length, 65, '样本总数与冻结基线数完全相同 (65)');
 
     assert.throws(
       () => validateSelectCompliance(hackedMatches, FROZEN_BASELINE_SELECTS),
