@@ -1861,16 +1861,16 @@ public static class GwNative {
             Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
-        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
         $script:savedProcessEnvAppData = $env:APPDATA
         $env:LOCALAPPDATA = $script:processLocalAppData
         $env:APPDATA = $script:processAppData
         $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
-        $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
+        $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "roaming" })
         if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
             throw "LocalAppDataOverride is not empty and does not contain GodsWorkbench"
         }
+        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $dataRootForRun = Join-Path $script:processLocalAppData "GodsWorkbench"
         if (Test-Path -LiteralPath $dataRootForRun) {
             $dataItems = @(Get-ChildItem -LiteralPath $dataRootForRun -Force -ErrorAction SilentlyContinue)
