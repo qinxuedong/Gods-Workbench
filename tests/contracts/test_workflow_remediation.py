@@ -863,6 +863,30 @@ def test_selected_asset_bytes_reach_engine_before_generation(client, monkeypatch
         },
     )
     assert saved.status_code == 200, saved.text
+    transfer_context = client.get("/api/transfer/context", headers=HEADERS)
+    assert transfer_context.status_code == 200, transfer_context.text
+    preflight = client.post(
+        "/api/transfer/task-preflights",
+        headers=HEADERS,
+        json={
+            "workflow_id": workflow_id,
+            "expected_version": 2,
+            "target": "local_comfy",
+            "target_workspace_id": transfer_context.json()["workspace_id"],
+            "directory_id": transfer_context.json()["directory_id"],
+            "bindings": [
+                {"node_id": "1", "field": "image", "asset_id": asset_id}
+            ],
+        },
+    )
+    assert preflight.status_code == 200, preflight.text
+    preflight_body = preflight.json()
+    confirmed = client.post(
+        f"/api/transfer/task-preflights/{preflight_body['preflight_id']}/confirm",
+        headers=HEADERS,
+        json={"expected_version": preflight_body["version"]},
+    )
+    assert confirmed.status_code == 200, confirmed.text
     calls = []
 
     async def upload(payload, filename, content_type, **kwargs):
@@ -883,7 +907,11 @@ def test_selected_asset_bytes_reach_engine_before_generation(client, monkeypatch
     monkeypatch.setattr(comfy_executor, "upload_input", upload)
     monkeypatch.setattr(comfy_executor, "submit", submit)
     headers = {**HEADERS, "Idempotency-Key": "input-one"}
-    body = {"workflow_id": workflow_id, "expected_version": 2}
+    body = {
+        "workflow_id": workflow_id,
+        "expected_version": 2,
+        "transfer_receipt_id": confirmed.json()["transfer_receipt_id"],
+    }
     first = client.post("/api/god_workflow/execute", headers=headers, json=body)
     assert first.status_code == 202 and first.json()["status"] == "accepted", first.text
     second = client.post("/api/god_workflow/execute", headers=headers, json=body)

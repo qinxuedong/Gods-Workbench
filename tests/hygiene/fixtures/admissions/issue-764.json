@@ -1,7 +1,7 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 764,
-  "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope and design approval 2026-11-21",
+  "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope/design approval and single-test setup exception 2026-11-21",
   "files": [
     "gw/api/app.py",
     "gw/api/routes_transfer.py",
@@ -9,6 +9,7 @@
     "gw/transfer/service.py",
     "tests/contracts/assets/test_qin_629_explicit_transfer.py",
     "tests/contracts/assets/test_qin_629_task_transfer.py",
+    "tests/contracts/test_workflow_remediation.py",
     "tests/hygiene/fixtures/admissions/issue-764.json",
     "web/css/pages/asset-transfer.css",
     "web/js/modules/asset-manager.js",
@@ -27,7 +28,13 @@
       "classification": "curated_test_coverage",
       "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope and design approval 2026-11-21",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/test_workflow_remediation.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), PM comment #7058307374; setup-only change in test_selected_asset_bytes_reach_engine_before_generation",
+      "admission": "accepted"
     }
   ],
-  "notes": "QIN-629 显式上传与按任务传输；仅登记本票授权文件，不改基础账本。"
+  "notes": "QIN-629 显式上传与按任务传输；既有测试仅适配显式预检/确认 setup，原断言保留；仅登记本票授权文件，不改基础账本。"
 }
