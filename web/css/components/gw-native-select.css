@@ -15,7 +15,7 @@
   vertical-align: middle;
 }
 
-/* 2. 内部原生 select 控件重置与硬件触感适配 */
+/* 2. 内部原生 select 控件重置与硬件触感适配 (默认 Dark 主题：深底浅字) */
 .gw-select-shell .gw-native-select-input,
 .select-shell select,
 select.gw-native-select-input {
@@ -96,22 +96,36 @@ select.gw-native-select-input:focus {
   opacity: 0.6;
 }
 
-/* 8. 浅色主题支持 (Light Theme) */
+/* 8. 浅色主题支持 (Light Theme: 浅底深字契约) */
 html[data-theme="light"] .gw-select-shell .gw-native-select-input,
 html[data-theme="light"] .select-shell select,
-html[data-theme="light"] select.gw-native-select-input {
-  background-color: var(--gw-surface-card-end, var(--gw-control-bg));
-  border-color: var(--gw-border);
-  color: var(--gw-text);
+html[data-theme="light"] select.gw-native-select-input,
+body[data-theme="light"] .gw-select-shell .gw-native-select-input,
+body[data-theme="light"] .select-shell select,
+body[data-theme="light"] select.gw-native-select-input,
+html.theme-light .gw-select-shell .gw-native-select-input,
+html.theme-light .select-shell select,
+html.theme-light select.gw-native-select-input {
+  background-color: var(--card, rgb(255, 255, 255));
+  border-color: var(--line, rgb(209, 213, 219));
+  color: var(--text-main, rgb(17, 20, 26));
 }
 
 html[data-theme="light"] .gw-select-shell::after,
-html[data-theme="light"] .select-shell::after {
-  background-color: var(--gw-text-muted);
+html[data-theme="light"] .select-shell::after,
+body[data-theme="light"] .gw-select-shell::after,
+body[data-theme="light"] .select-shell::after,
+html.theme-light .gw-select-shell::after,
+html.theme-light .select-shell::after {
+  background-color: var(--text-muted, rgb(107, 114, 128));
 }
 
 html[data-theme="light"] .gw-select-shell:focus-within .gw-native-select-input,
-html[data-theme="light"] select.gw-native-select-input:focus {
+html[data-theme="light"] select.gw-native-select-input:focus,
+body[data-theme="light"] .gw-select-shell:focus-within .gw-native-select-input,
+body[data-theme="light"] select.gw-native-select-input:focus,
+html.theme-light .gw-select-shell:focus-within .gw-native-select-input,
+html.theme-light select.gw-native-select-input:focus {
   border-color: var(--gw-warning) !important;
   box-shadow: 0 0 0 1px var(--gw-warning), 0 2px 8px rgba(223, 195, 132, 0.2);
 }
