@@ -465,6 +465,107 @@ class StorageSettingsService:
             )
         return snapshot
 
+    def register_resource_folder_entry(
+        self, entry: dict[str, Any], name: str, expected_version: int, operation_id: str
+    ) -> StorageSettingsSnapshot:
+        """为单次资源文件夹登记写入可精确补偿的来源归属。"""
+        source_id = str(entry.get("id") or "").strip()
+        path = storage.validate_mount(storage.normalize_directory_path(str(entry.get("path") or "")))
+
+        def update(state: dict[str, Any]) -> StorageSettingsSnapshot:
+            revision = int(state.get("revision", 1))
+            if expected_version != revision:
+                raise _conflict(
+                    "VERSION_CONFLICT", expected_version, revision,
+                    f"存储设置版本冲突（期望 {expected_version}，当前 {revision}），请重新读取后重试",
+                )
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            if any(
+                str(item.get("id") or "") == source_id
+                or (item.get("path") and storage.directory_path_key(str(item["path"])) == storage.directory_path_key(path))
+                for item in entries
+            ):
+                raise CleanroomException(409, "ASSET_ROOT_ALREADY_REGISTERED", "该目录已登记为素材来源")
+            normalized_entry = copy.deepcopy(entry)
+            normalized_entry["path"] = path
+            entries.append(normalized_entry)
+            names = dict(state.get("local_library_names") or {})
+            names[source_id] = name
+            order = [str(item) for item in state.get("local_library_order") or [] if str(item) != source_id]
+            order.append(source_id)
+            dirs = copy.deepcopy(state.get("dirs") or {})
+            dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in entries if item.get("path")]
+            owners = dict(state.get("resource_folder_registration_owners") or {})
+            owners[source_id] = operation_id
+            registration_meta = dict(state.get("resource_folder_registration_meta") or {})
+            registration_meta[operation_id] = {
+                "configured_before": bool(state.get("configured", False)),
+                "registered_revision": revision + 1,
+            }
+            state.update({
+                "dirs": dirs,
+                "extra_local_entries": entries,
+                "local_library_names": names,
+                "local_library_order": order,
+                "resource_folder_registration_owners": owners,
+                "resource_folder_registration_meta": registration_meta,
+                "configured": True,
+                "revision": revision + 1,
+            })
+            return self._build_snapshot(state)
+
+        return self._state.mutate(update)
+
+    def finish_resource_folder_registration(
+        self, source_id: str, path: str, operation_id: str, *, rollback: bool
+    ) -> bool:
+        """清理登记标记；仅回滚仍由同一操作创建且身份未变的来源。"""
+        changed = False
+        target_key = storage.directory_path_key(path)
+
+        def update(state: dict[str, Any]) -> None:
+            nonlocal changed
+            owners = dict(state.get("resource_folder_registration_owners") or {})
+            if owners.get(source_id) != operation_id:
+                return
+            registration_meta = dict(state.get("resource_folder_registration_meta") or {})
+            meta = registration_meta.pop(operation_id, {})
+            entries = copy.deepcopy(state.get("extra_local_entries") or [])
+            exact = next((item for item in entries if str(item.get("id") or "") == source_id), None)
+            if exact is None or storage.directory_path_key(str(exact.get("path") or "")) != target_key:
+                owners.pop(source_id, None)
+                state["resource_folder_registration_owners"] = owners
+                state["resource_folder_registration_meta"] = registration_meta
+                changed = True
+                return
+            if rollback:
+                revision = int(state.get("revision", 1))
+                entries = [item for item in entries if str(item.get("id") or "") != source_id]
+                dirs = copy.deepcopy(state.get("dirs") or {})
+                dirs["extra_local_dirs"] = [str(item.get("path") or "") for item in entries if item.get("path")]
+                names = dict(state.get("local_library_names") or {})
+                names.pop(source_id, None)
+                order = [str(item) for item in state.get("local_library_order") or [] if str(item) != source_id]
+                read_only = dict(state.get("local_library_read_only") or {})
+                read_only.pop(source_id, None)
+                state.update({
+                    "dirs": dirs,
+                    "extra_local_entries": entries,
+                    "local_library_names": names,
+                    "local_library_order": order,
+                    "local_library_read_only": read_only,
+                })
+                if revision == meta.get("registered_revision"):
+                    state["configured"] = bool(meta.get("configured_before", False))
+            owners.pop(source_id, None)
+            state["resource_folder_registration_owners"] = owners
+            state["resource_folder_registration_meta"] = registration_meta
+            state["revision"] = int(state.get("revision", 1)) + 1
+            changed = True
+
+        self._state.mutate(update)
+        return changed
+
     def move_entries_to_removed(
         self, target_ids: set[str], target_paths: list[str]
     ) -> list[dict[str, Any]]:
@@ -1000,7 +1101,9 @@ class StorageAllowedRootsService:
             )
         return StorageAllowedRootsSnapshot(revision=int(state.get("revision", 1)), roots=roots)
 
-    def add_root(self, payload: StorageAllowedRootRequest) -> StorageAllowedRootsSnapshot:
+    def add_root(
+        self, payload: StorageAllowedRootRequest, *, registration_operation_id: str | None = None
+    ) -> StorageAllowedRootsSnapshot:
         # QIN-596：允许根写入口先做系统目录词法拒绝（先于 normalize——`C:`、
         # `\\NAS` 这类输入会被 normalize 先抛 400 INVALID_PATH，到不了清单）。
         rejection = storage.describe_resource_folder_rejection(payload.path)
@@ -1057,21 +1160,24 @@ class StorageAllowedRootsService:
                 raise CleanroomException(409, "ALLOWED_ROOT_ALREADY_REGISTERED", "该目录已登记为允许根")
 
             if existing_inactive is not None:
+                if registration_operation_id:
+                    raise CleanroomException(409, "MOUNT_ROOT_REMOVED", "已移除的允许根须先单独确认恢复")
                 existing_inactive["active"] = True
                 existing_inactive["path"] = normalized
                 existing_inactive["network_mount"] = storage._is_network_path(normalized)
                 reactivated_id = str(existing_inactive.get("id") or "")
             else:
                 root_id = storage.root_identity_id(Path(normalized))
-                state.setdefault("roots", []).append(
-                    {
+                record = {
                         "id": root_id,
                         "path": normalized,
                         "aliases": [],
                         "active": True,
                         "network_mount": storage._is_network_path(normalized),
                     }
-                )
+                if registration_operation_id:
+                    record["_resource_folder_registration_id"] = registration_operation_id
+                state.setdefault("roots", []).append(record)
             state["revision"] = current + 1
 
         self._state.mutate(update)
@@ -1079,6 +1185,36 @@ class StorageAllowedRootsService:
             default_storage_settings_service.restore_removed_entries({reactivated_id}, [normalized])
         _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
         return self.get_snapshot()
+
+    def finish_resource_folder_registration(
+        self, root_id: str, path: str, operation_id: str, *, rollback: bool
+    ) -> bool:
+        """仅处理登记操作标记的允许根；不会移出来源或触碰素材文件。"""
+        changed = False
+        target_key = storage.directory_path_key(path)
+
+        def update(state: dict[str, Any]) -> None:
+            nonlocal changed
+            records = _deduplicate_root_records(state.get("roots", []))
+            for record in records:
+                if (
+                    str(record.get("id") or "") == root_id
+                    and storage.directory_path_key(str(record.get("path") or "")) == target_key
+                    and record.get("_resource_folder_registration_id") == operation_id
+                ):
+                    if rollback and record.get("active") and not record.get("aliases"):
+                        records.remove(record)
+                    else:
+                        record.pop("_resource_folder_registration_id", None)
+                    state["roots"] = records
+                    state["revision"] = int(state.get("revision", 1)) + 1
+                    changed = True
+                    return
+
+        self._state.mutate(update)
+        if changed:
+            _DEFAULT_CASCADE_HOOKS["invalidate_caches"]()
+        return changed
 
     def remove_root(
         self, root_id: str, payload: StorageAllowedRootDeleteRequest

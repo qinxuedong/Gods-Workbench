@@ -10,6 +10,7 @@ const read = (relativePath) =>
 
 const assetVault = read("web/css/pages/asset-vault.css");
 const assetManager = readAssetManagerAggregate();
+const assetManagerSettings = read("web/js/modules/asset-manager/settings.js");
 const directorySettings = read("web/css/pages/directory-settings.css");
 const templateLayout = () => {
   const start = assetVault.indexOf("/* 项目目录模板管理浮窗");
@@ -69,20 +70,20 @@ test("目录设置移除空托管框并使用服务器目录即选即存", () =>
 });
 
 test("QIN-432 服务端字段优先原生选择器并保留页面内降级", () => {
-  assert.match(assetManager, /api\/settings\/directories\/pick-native/);
-  assert.match(assetManager, /pickServerDirectoryNative/);
+  assert.match(assetManagerSettings, /api\/settings\/directories\/pick-native/);
+  assert.match(assetManagerSettings, /pickServerDirectoryNative/);
   // QIN-474：选中即写入字段并自动保存，不再提示手动点保存；取消不改字段；不可用降级页面内浏览器。
-  assert.match(assetManager, /fillServerDirectoryFromNative/);
+  assert.match(assetManagerSettings, /fillServerDirectoryFromNative/);
   assert.match(
-    assetManager,
+    assetManagerSettings,
     /fillServerDirectoryFromNative\(key, pathValue\)\{[\s\S]*?saveDirectoryPath\(key, pathValue\)/,
   );
-  assert.doesNotMatch(assetManager, /点“保存目录”生效/);
-  assert.match(assetManager, /已切换页面内浏览/);
+  assert.doesNotMatch(assetManagerSettings, /点“保存目录”生效/);
+  assert.match(assetManagerSettings, /已切换页面内浏览/);
   // 非回环 403 与请求失败都进入降级路径。
   assert.match(
-    assetManager,
-    /pickServerDirectoryNative[\s\S]*?catch\(error\)[\s\S]*?openServerDirectoryBrowser\(key\)/,
+    assetManagerSettings,
+    /pickServerDirectoryNative[\s\S]*?catch\(error\)[\s\S]*?openServerDirectoryBrowser\(key, options\)/,
   );
 });
 

@@ -9,6 +9,7 @@ const read = (relativePath) =>
   readFileSync(path.join(repoRoot, relativePath), "utf8");
 
 const assetManager = readAssetManagerAggregate();
+const assetManagerSettings = read("web/js/modules/asset-manager/settings.js");
 const assetManagerCss = read("web/css/pages/asset-manager.css");
 
 const footerHtml = () => {
@@ -43,13 +44,13 @@ test("AC3 缓存根目录旁有文件夹选择按钮并复用统一选夹链路"
     assetManager,
     /function directoryFieldInput\(key\)\{[\s\S]*?THUMBNAIL_DIRECTORY_FIELD_KEY[\s\S]*?getElementById\('thumbnailDirectory'\)[\s\S]*?getElementById\('storageDir_' \+ key\)/,
   );
-  assert.match(assetManager, /const cacheRootPicker = canBrowseServerDirectories\(\)/);
+  assert.match(assetManagerSettings, /const cacheRootPicker = canBrowseServerDirectories\(\)/);
   assert.match(
-    assetManager,
+    assetManagerSettings,
     /data-directory-picker="' \+ THUMBNAIL_DIRECTORY_FIELD_KEY \+ '"/,
   );
   assert.match(
-    assetManager,
+    assetManagerSettings,
     /<input id="thumbnailDirectory"[\s\S]*?>\$\{cacheRootPicker\}<\/div><\/label>/,
   );
   // 点击选夹按 key 定位到缓存根输入框，而不是 storageDir_ 前缀字段。
@@ -58,8 +59,8 @@ test("AC3 缓存根目录旁有文件夹选择按钮并复用统一选夹链路"
     /directoryPicker\.dataset\.directoryPicker;[\s\S]*?const input = directoryFieldInput\(key\);/,
   );
   assert.match(
-    assetManager,
-    /pickServerDirectoryNative\(key\)\{[\s\S]*?const input = directoryFieldInput\(key\);/,
+    assetManagerSettings,
+    /async function pickServerDirectoryNative\(key, options=\{\}\)\{[\s\S]*?const input = directoryFieldInput\(key\);/,
   );
 });
 

@@ -1226,6 +1226,8 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
                     LUT_CUBE_INVALID:'LUT 文件格式无效，请检查文件头和采样数据',
                     LUT_CUBE_TOO_LARGE:'LUT 文件超过 64 MiB 上限',
                 })[job.error_code] || job.error_code || job.status;
+                await Promise.allSettled([loadAssetAllowedRootPaths(), refreshRegistryFacetData()]);
+                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
                 setStatus(`素材库“${sourceName}”索引失败：${message}`);
                 return job;
             }
@@ -7673,7 +7675,10 @@ async function assetOrganizeUndoLast(){
 /* ----- 右键菜单 ----- */
 function renderAssetOrganizeMenu(target){
     const label = assetOrganizeFolderLabel(target);
-    const rootActions = target.isRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
+    const canManageRoot = target.isRoot && canManageAllowedRoots()
+        && Boolean(assetRackRootDiskPath(target.rootId))
+        && [target.rootId, target.id, ...(target.aliases || [])].some(id => /^root_[a-f0-9]{24}$/i.test(String(id || '')));
+    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
         <button type="button" role="menuitem" class="is-danger" data-asset-organize-purge-root><i data-lucide="trash-2"></i><span>清除索引</span></button>` : '';
     return `<div class="asset-organize-menu" id="assetOrganizeMenu" role="menu" aria-label="文件夹整理">
         <div class="asset-organize-menu-title"><i data-lucide="folder"></i><span title="${escapeAttr(label)}">${escapeHtml(label)}</span></div>
@@ -8063,6 +8068,13 @@ async function handleClick(event){
     const directoryBrowserMount = target.closest?.('[data-server-directory-mount],[data-server-directory-mount-current]');
     if(directoryBrowserMount){
         const pathValue = directoryBrowserMount.dataset.serverDirectoryMount || directoryBrowserMount.dataset.serverDirectoryMountCurrent;
+        if(serverDirectoryBrowserState.key === 'boardSource' && typeof serverDirectoryBrowserState.onSelect === 'function'){
+            const onSelect = serverDirectoryBrowserState.onSelect;
+            setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false, saving:false, error:''});
+            await onSelect(pathValue);
+            gwCall('settings', 'renderServerDirectoryBrowserHost');
+            return;
+        }
         await gwCall('settings', 'saveDirectoryPath', serverDirectoryBrowserState.key || 'projects', pathValue, true);
         return;
     }
@@ -8256,6 +8268,44 @@ async function handleClick(event){
     }
     if(target.closest?.('[data-board-source-close]')){ gwCall('organize', 'closeBoardSourceModal'); return; }
     if(target.closest?.('[data-board-source-editor-cancel]')){ gwCall('organize', 'cancelBoardSourceEditor'); return; }
+    if(target.closest?.('[data-board-source-pick]')){
+        const generation = Number(boardSourceState.generation || 0) + 1;
+        boardSourceState.generation = generation;
+        boardSourceState.error = '';
+        boardSourceState.picking = true;
+        boardSourceState.validating = false;
+        gwCall('organize', 'renderBoardSourceModal');
+        await gwCall('settings', 'pickServerDirectoryNative', 'boardSource', {onSelect: async pathValue => {
+            if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+            boardSourceState.existingId = '';
+            boardSourceState.path = String(pathValue || '').trim();
+            boardSourceState.picking = false;
+            boardSourceState.validating = true;
+            gwCall('organize', 'renderBoardSourceModal');
+            try {
+                const validatedPath = await gwCall('settings', 'validateServerResourceDirectory', boardSourceState.path);
+                if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.path = String(validatedPath || boardSourceState.path).trim();
+                boardSourceState.validating = false;
+                gwCall('organize', 'renderBoardSourceModal');
+            } catch(error) {
+                if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.validating = false;
+                boardSourceState.error = Number(error?.status) === 400 || Number(error?.status) === 404 || Number(error?.status) >= 500
+                    ? '当前文件夹后端不可访问，需授权（共享）给后端'
+                    : (error?.message || '目录访问校验失败');
+                gwCall('organize', 'renderBoardSourceModal');
+                setStatus(boardSourceState.error);
+                return;
+            }
+            await gwCall('organize', 'confirmBoardSource', {atomicRegistration:true});
+        }});
+        if(boardSourceState.open && Number(boardSourceState.generation || 0) === generation){
+            boardSourceState.picking = false;
+            gwCall('organize', 'renderBoardSourceModal');
+        }
+        return;
+    }
     if(target.closest?.('[data-board-source-new]')){
         boardSourceState = {...boardSourceState, editor:'new', existingId:'', name:`${assetBoardById(boardSourceState.boardId)?.name || ''}素材`, path:''};
         gwCall('organize', 'renderBoardSourceModal');
@@ -10872,11 +10922,14 @@ document.addEventListener('change', event => {
         return;
     }
     if(event.target?.id === 'boardSourceExisting'){
-        const lib = localLibraries.find(item => item.id === event.target.value);
+        boardSourceState.existingId = event.target.value || '';
+        const lib = localLibraries.find(item => item.id === boardSourceState.existingId);
         const nameInput = document.getElementById('boardSourceName');
         const pathInput = document.getElementById('boardSourcePath');
         if(lib){ if(nameInput) nameInput.value = lib.name || '用户素材'; if(pathInput) pathInput.value = lib.path || ''; }
         else if(pathInput) pathInput.value = '';
+        boardSourceState.name = nameInput?.value || '';
+        boardSourceState.path = pathInput?.value || '';
         return;
     }
     if(!event.target?.closest?.('#storageSettingsOverlay')) return;
