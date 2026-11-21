@@ -1719,8 +1719,14 @@ mod tests {
             }
         }
 
-        assert!(orange_count >= 6, "tray icon must contain orange apostrophe pixels");
-        assert!(gold_count >= 100, "tray icon must contain gold G and border");
+        assert!(
+            orange_count >= 6,
+            "tray icon must contain orange apostrophe pixels"
+        );
+        assert!(
+            gold_count >= 100,
+            "tray icon must contain gold G and border"
+        );
         assert!(dark_count >= 400, "tray icon must contain dark background");
     }
 
