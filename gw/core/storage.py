@@ -2044,20 +2044,51 @@ def release_data_dir_lock(root: Path) -> None:
         lock.release()
 
 
+def _lock_file_actively_held(path: Path) -> bool:
+    """用操作系统锁实测文件是否被持有；身份元数据不可信时也返回真实结论。
+
+    只做非阻塞探测：能取得锁就立即释放，不写身份、不做陈旧锁恢复。打不开
+    文件或文件系统不支持锁时按「可能被持有」处理，调用方据此 fail-closed。
+    """
+    if not path.parent.exists():
+        return False
+    try:
+        handle = open(path, "a+", encoding="utf-8")
+    except OSError:
+        return True
+    try:
+        try:
+            _lock_handle(handle)
+        except OSError:
+            return True
+        with contextlib.suppress(OSError):
+            _unlock_handle(handle)
+        return False
+    finally:
+        with contextlib.suppress(OSError):
+            handle.close()
+
+
 def data_dir_lock_held_by_foreign_process(root: Path) -> bool:
     """判断某个数据根是否被本进程之外的存活宿主持有。
 
     本机写入口（如本机账户 CLI）在服务运行或迁移静默期间不能绕过跨进程
-    数据锁直接写库；同进程的 API/迁移自身仍可通过。跨机同根由锁身份里的
-    host 判定为外部持有，交给迁移流程拒绝。
+    数据锁直接写库；同进程的 API/迁移自身仍可通过。锁身份旁文件可能损坏
+    或被截断，因此不能以身份可读作为放行条件：身份不可信时直接探测操作
+    系统锁，仍被占用、打不开或文件系统不支持锁均按外部持有处理（fail-closed）。
     """
-    identity = read_lock_identity(Path(root) / ".gw-data.lock")
-    if not _identity_holder_alive(identity):
+    root = Path(root)
+    lock_path = root / ".gw-data.lock"
+    if is_data_dir_lock_held(root):
         return False
-    if str((identity or {}).get("host") or "") != _host_name():
-        return True
-    try:
-        pid = int((identity or {}).get("pid") or 0)
-    except (TypeError, ValueError):
-        return True
-    return pid != os.getpid()
+    identity = read_lock_identity(lock_path)
+    if identity:
+        try:
+            host = str(identity.get("host") or "")
+            pid = int(identity.get("pid") or 0)
+        except (TypeError, ValueError):
+            host = ""
+            pid = 0
+        if host == _host_name() and pid == os.getpid():
+            return False
+    return _lock_file_actively_held(lock_path)
