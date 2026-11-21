@@ -2597,7 +2597,8 @@ fn main() {
                             let is_local_workbench = if let Ok(u) = window.url() {
                                 let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
                                 let port = u.port().unwrap_or(80);
-                                (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077
+                                (host == "127.0.0.1" || host == "localhost" || host == "::1")
+                                    && port == 2077
                             } else {
                                 false
                             };
@@ -2661,8 +2662,14 @@ mod tests {
         assert_eq!(parsed.path(), "/static/pages/settings.html");
         let query_pairs: std::collections::HashMap<_, _> =
             parsed.query_pairs().into_owned().collect();
-        assert_eq!(query_pairs.get("section").map(String::as_str), Some("general"));
-        assert_eq!(query_pairs.get("action").map(String::as_str), Some("scan-nas"));
+        assert_eq!(
+            query_pairs.get("section").map(String::as_str),
+            Some("general")
+        );
+        assert_eq!(
+            query_pairs.get("action").map(String::as_str),
+            Some("scan-nas")
+        );
     }
 
     #[test]
