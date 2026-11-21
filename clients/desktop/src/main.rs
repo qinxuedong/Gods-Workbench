@@ -1565,19 +1565,27 @@ fn make_tray_icon() -> Image<'static> {
     const SIZE: u32 = 32;
     const DARK: [u8; 4] = [9, 10, 13, 255];
     const GOLD: [u8; 4] = [223, 195, 132, 255];
+    const ORANGE: [u8; 4] = [251, 90, 21, 255];
     const CLEAR: [u8; 4] = [0, 0, 0, 0];
     let mut pixels = vec![0; (SIZE * SIZE * 4) as usize];
     for y in 0..SIZE {
         for x in 0..SIZE {
-            let border = x < 3 || x >= 29 || y < 3 || y >= 29;
-            let letter_g = (y >= 8 && y < 11 && x >= 9 && x < 23)
-                || (x >= 8 && x < 11 && y >= 9 && y < 23)
-                || (y >= 20 && y < 23 && x >= 9 && x < 23)
-                || (x >= 21 && x < 24 && y >= 17 && y < 22)
-                || (y >= 15 && y < 18 && x >= 17 && x < 24);
-            let color = if border || letter_g {
+            let border = x < 2 || x >= 30 || y < 2 || y >= 30;
+            let letter_g = ((y >= 7 && y < 10 && x >= 7 && x < 21)
+                || (x >= 6 && x < 9 && y >= 8 && y < 24)
+                || (y >= 22 && y < 25 && x >= 7 && x < 21)
+                || (x >= 18 && x < 21 && y >= 16 && y < 23)
+                || (y >= 15 && y < 18 && x >= 13 && x < 21))
+                && !(y == 7 && x == 7)
+                && !(y == 24 && x == 7);
+            let apostrophe = (y >= 7 && y <= 8 && x >= 25 && x <= 26)
+                || (y >= 9 && y <= 10 && x >= 24 && x <= 25)
+                || (y >= 11 && y <= 12 && x >= 23 && x <= 24);
+            let color = if apostrophe {
+                ORANGE
+            } else if border || letter_g {
                 GOLD
-            } else if x >= 3 && x < 29 && y >= 3 && y < 29 {
+            } else if x >= 2 && x < 30 && y >= 2 && y < 30 {
                 DARK
             } else {
                 CLEAR
@@ -1689,6 +1697,32 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_make_tray_icon_includes_brand_colors_and_apostrophe() {
+        let icon = make_tray_icon();
+        assert_eq!(icon.width(), 32);
+        assert_eq!(icon.height(), 32);
+        let rgba = icon.rgba();
+        assert_eq!(rgba.len(), 32 * 32 * 4);
+
+        let mut orange_count = 0;
+        let mut gold_count = 0;
+        let mut dark_count = 0;
+
+        for pixel in rgba.chunks_exact(4) {
+            match pixel {
+                [251, 90, 21, 255] => orange_count += 1,
+                [223, 195, 132, 255] => gold_count += 1,
+                [9, 10, 13, 255] => dark_count += 1,
+                _ => {}
+            }
+        }
+
+        assert!(orange_count >= 6, "tray icon must contain orange apostrophe pixels");
+        assert!(gold_count >= 100, "tray icon must contain gold G and border");
+        assert!(dark_count >= 400, "tray icon must contain dark background");
+    }
 
     #[test]
     fn broad_lan_subnet_is_limited_to_local_slash_24() {

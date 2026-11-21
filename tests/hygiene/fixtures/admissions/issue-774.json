@@ -1,0 +1,36 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 774,
+  "authorization_basis": "GitHub Issue #774 QIN-632, 2026-11-21",
+  "files": [
+    "clients/desktop/build.rs",
+    "clients/desktop/src/main.rs",
+    "tests/frontend/c16-t3-pwa-installable.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-632-brand-assets.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-774.json",
+    "web/manifest.json",
+    "web/pages/agents.html",
+    "web/pages/assets.html",
+    "web/pages/canvas.html",
+    "web/pages/collab.html",
+    "web/pages/index.html",
+    "web/pages/production.html",
+    "web/pages/projects.html",
+    "web/pages/settings.html",
+    "web/pages/storyboard.html",
+    "web/pages/workflow-workbench.html",
+    "web/pages/workflow.html",
+    "web/pages/workshop.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-632-brand-assets.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #774 QIN-632, 2026-11-21",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-632: 品牌素材与统一接入（横字标整理、方形简标与 Windows 壳图标）；只写本票分片，硬计数保持 112。"
+}
