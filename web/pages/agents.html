@@ -24,6 +24,7 @@
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
+  <link rel="stylesheet" href="/static/css/components/gw-native-select.css">
   <style>
     .aura-trace-row { cursor: pointer; border: 1px solid transparent; border-radius: 8px; padding: 4px 6px; transition: border-color .16s ease, background-color .16s ease; }
     .aura-trace-row:hover, .aura-trace-row:focus-visible, .aura-trace-row.is-expanded { border-color: rgba(223,195,132,.28); background: rgba(255,255,255,.035); outline: none; }
@@ -281,9 +282,11 @@
           <!-- 服务端配置选择与显式计费告知：页面加载只读取配置，不生成模型请求。 -->
           <div class="grid grid-cols-2 gap-2 shrink-0">
             <label class="gw-type-body-sm font-mono text-slate-400">服务端 Provider
-              <select id="agentProviderSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-md text-slate-100" aria-label="服务端 Provider">
-                <option value="">配置读取中…</option>
-              </select>
+              <div class="gw-select-shell mt-1">
+                <select id="agentProviderSelect" data-gw-select data-gw-trigger="#agentPromptInput" class="gw-native-select-input" aria-label="服务端 Provider">
+                  <option value="">配置读取中…</option>
+                </select>
+              </div>
             </label>
             <label class="gw-type-body-sm font-mono text-slate-400">允许模型
               <select id="agentModelSelect" class="block w-full mt-1 rounded bg-black/50 border border-white/10 px-2 py-1 gw-type-body-md text-slate-100" aria-label="服务端允许模型">
@@ -368,6 +371,7 @@
   <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
   <script src="/static/js/core/hardware-telemetry.js?v=20261008-auth6"></script>
   <script src="/static/js/core/aura-trace.js?v=20260916"></script>
+  <script src="/static/js/core/gw-native-select.js"></script>
   <script src="/static/js/controllers/agents-controller.js"></script>
   <script src="/static/js/controllers/agent-tasks.js"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa"></script>

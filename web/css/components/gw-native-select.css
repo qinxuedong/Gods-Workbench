@@ -1,0 +1,131 @@
+/**
+ * Gods' Workbench - 原生公共下拉组件样式 (GWNativeSelect)
+ * 遵循黑金硬件设计系统，纯原生 CSS，零外部第三方依赖。
+ * 工单：QIN-631 / GitHub #771
+ */
+
+/* 1. 外层容器外壳 */
+.gw-select-shell,
+.select-shell {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  vertical-align: middle;
+}
+
+/* 2. 内部原生 select 控件重置与硬件触感适配 (默认 Dark 主题：深底浅字) */
+.gw-select-shell .gw-native-select-input,
+.select-shell select,
+select.gw-native-select-input {
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  display: block;
+  width: 100%;
+  max-width: 100%;
+  min-height: 40px;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 8px 36px 8px 12px;
+  font-family: inherit;
+  font-size: var(--gw-type-body-md);
+  line-height: var(--gw-leading-body-md);
+  font-weight: var(--gw-weight-regular);
+  background-color: var(--gw-control-bg);
+  border: 1px solid var(--gw-border);
+  border-radius: 8px;
+  color: var(--gw-text);
+  cursor: pointer;
+  text-overflow: ellipsis;
+  overflow: hidden;
+  white-space: nowrap;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, background-color 0.15s ease;
+}
+
+/* 3. 自定义指示箭头（内联 SVG 纯 CSS 遮罩，自适应弱化文本色） */
+.gw-select-shell::after,
+.select-shell::after {
+  content: "";
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 12px;
+  height: 12px;
+  pointer-events: none;
+  background-color: var(--gw-text-muted);
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat center / contain;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E") no-repeat center / contain;
+  transition: transform 0.15s ease, background-color 0.15s ease;
+}
+
+/* 4. 悬停状态 */
+.gw-select-shell:hover:not(.is-disabled) .gw-native-select-input:not(:disabled),
+.select-shell:hover select:not(:disabled) {
+  border-color: var(--gw-text-muted);
+}
+
+/* 5. 聚焦状态（香槟钛金高光环） */
+.gw-select-shell:focus-within .gw-native-select-input,
+.gw-select-shell .gw-native-select-input:focus,
+.select-shell:focus-within select,
+select.gw-native-select-input:focus {
+  border-color: var(--gw-warning) !important;
+  box-shadow: 0 0 0 1px var(--gw-warning), 0 2px 8px rgba(223, 195, 132, 0.15);
+}
+
+.gw-select-shell:focus-within::after,
+.select-shell:focus-within::after {
+  background-color: var(--gw-warning);
+}
+
+/* 6. 禁用状态 */
+.gw-select-shell.is-disabled,
+.gw-select-shell .gw-native-select-input:disabled,
+.select-shell select:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* 7. 加载中状态 */
+.gw-select-shell.is-loading::after {
+  opacity: 0.6;
+}
+
+/* 8. 浅色主题支持 (Light Theme: 浅底深字契约) */
+html[data-theme="light"] .gw-select-shell .gw-native-select-input,
+html[data-theme="light"] .select-shell select,
+html[data-theme="light"] select.gw-native-select-input,
+body[data-theme="light"] .gw-select-shell .gw-native-select-input,
+body[data-theme="light"] .select-shell select,
+body[data-theme="light"] select.gw-native-select-input,
+html.theme-light .gw-select-shell .gw-native-select-input,
+html.theme-light .select-shell select,
+html.theme-light select.gw-native-select-input {
+  background-color: var(--card, rgb(255, 255, 255));
+  border-color: var(--line, rgb(209, 213, 219));
+  color: var(--text-main, rgb(17, 20, 26));
+}
+
+html[data-theme="light"] .gw-select-shell::after,
+html[data-theme="light"] .select-shell::after,
+body[data-theme="light"] .gw-select-shell::after,
+body[data-theme="light"] .select-shell::after,
+html.theme-light .gw-select-shell::after,
+html.theme-light .select-shell::after {
+  background-color: var(--text-muted, rgb(107, 114, 128));
+}
+
+html[data-theme="light"] .gw-select-shell:focus-within .gw-native-select-input,
+html[data-theme="light"] select.gw-native-select-input:focus,
+body[data-theme="light"] .gw-select-shell:focus-within .gw-native-select-input,
+body[data-theme="light"] select.gw-native-select-input:focus,
+html.theme-light .gw-select-shell:focus-within .gw-native-select-input,
+html.theme-light select.gw-native-select-input:focus {
+  border-color: var(--gw-warning) !important;
+  box-shadow: 0 0 0 1px var(--gw-warning), 0 2px 8px rgba(223, 195, 132, 0.2);
+}

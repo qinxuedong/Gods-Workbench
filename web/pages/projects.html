@@ -30,6 +30,7 @@
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/project-date-range.css">
   <link rel="stylesheet" href="/static/css/pages/projects.css">
+  <link rel="stylesheet" href="/static/css/components/gw-native-select.css">
   <style>
     /* 搜索及真实打开的项目表单保持完整输入高度。 */
     #projectSearchInput, #newProjectNameInput, #newProjectTypeSelect, #editProjectNameInput, #editProjectTypeSelect, #editProjectStageSelect, #newProjectModal select { min-height:40px; line-height:var(--gw-leading-body-md); }
@@ -762,11 +763,13 @@
         <div class="grid grid-cols-2 gap-2">
           <div>
             <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">项目类型</label>
-            <select id="newProjectTypeSelect" class="w-full bg-[#0a0c10] border border-white/10 rounded-lg px-2 py-1.5 gw-type-body-md text-slate-200 focus:outline-none focus:border-[#dfc384]">
-              <option value="film">院线长片 (Film)</option>
-              <option value="series">连续短剧 (Series)</option>
-              <option value="other">概念艺术与PV (PV/Art)</option>
-            </select>
+            <div class="gw-select-shell">
+              <select id="newProjectTypeSelect" data-gw-select class="gw-native-select-input">
+                <option value="film">院线长片 (Film)</option>
+                <option value="series">连续短剧 (Series)</option>
+                <option value="other">概念艺术与PV (PV/Art)</option>
+              </select>
+            </div>
           </div>
           <div>
             <label class="block gw-type-body-sm font-mono text-slate-400 mb-1">色彩构图标准</label>
@@ -1031,6 +1034,7 @@
 <script src="/static/js/core/task-queue.js?v=20261008-auth6"></script>
   <script src="/static/js/modules/project-date-range.js"></script>
   <script src="/static/js/modules/project-artifact-links.js"></script>
+  <script src="/static/js/core/gw-native-select.js"></script>
   <script src="/static/js/controllers/projects-controller.js"></script>
 <script src="/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa"></script>
 </body>

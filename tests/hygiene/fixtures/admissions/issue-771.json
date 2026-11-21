@@ -1,0 +1,33 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 771,
+  "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20 (comment 7043461010)",
+  "files": [
+    "docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-631-native-select-pilot.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-771.json",
+    "web/css/components/gw-native-select.css",
+    "web/js/core/gw-native-select.js",
+    "web/pages/agents.html",
+    "web/pages/projects.html"
+  ],
+  "admitted_files": [
+    {
+      "path": "docs/contracts/NATIVE-SELECT-COMPONENT-CONTRACT.md",
+      "classification": "frozen_interface_contract",
+      "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20",
+      "sha256": "4ccc4f750ca09cc40392c22d306f96c3d2c38c9cd28c466e951af19c9178efed",
+      "admission": "accepted"
+    }
+  ],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-631-native-select-pilot.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #771, PM design approval 2026-11-20",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-631：交付原生公共下拉组件（GWNativeSelect 与 .gw-select-shell），在 projects.html（#newProjectTypeSelect）与 agents.html（#agentProviderSelect）两页试点复用，配套新增违规 CI 必失败与旧基线只减不增门禁；契约文档登记入 admitted_files，同步准入计数 112->113，基础卫生账本不动。"
+}
