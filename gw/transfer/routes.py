@@ -46,6 +46,7 @@ from gw.transfer.service import (
     TransferService,
     _ensure_directory,
     _error,
+    _is_link,
     default_transfer_service,
 )
 from gw.workspaces import context as workspace_context
@@ -96,6 +97,25 @@ class TransferActionRequest(TransferPayload):
 
 
 class RetryRequest(TransferPayload):
+    expected_version: int = Field(ge=1)
+
+
+class TaskInputBinding(TransferPayload):
+    node_id: str = Field(min_length=1, max_length=128)
+    field: str = Field(min_length=1, max_length=128)
+    asset_id: str = Field(min_length=1, max_length=128)
+
+
+class TaskPreflightRequest(TransferPayload):
+    workflow_id: str = Field(min_length=1, max_length=128)
+    expected_version: int = Field(ge=1)
+    target: str = Field(pattern=r"^(local_comfy|rh_cloud)$")
+    target_workspace_id: str = Field(min_length=1, max_length=128)
+    directory_id: str = Field(min_length=1, max_length=64)
+    bindings: list[TaskInputBinding] = Field(default_factory=list, max_length=512)
+
+
+class TaskPreflightConfirmRequest(TransferPayload):
     expected_version: int = Field(ge=1)
 
 
@@ -162,6 +182,143 @@ def _mapping_root_id(snapshot: dict[str, Any], context: dict[str, Any]) -> str |
     if not mapping or not mapping.get("root_identity_id"):
         raise _error(409, "WORKSPACE_MAPPING_REQUIRED", "目标工作区缺少已核验映射")
     return str(mapping["root_identity_id"])
+
+
+def _task_bindings(document: dict[str, Any]) -> list[dict[str, str]]:
+    bindings: list[dict[str, str]] = []
+    for node in document.get("nodes", []):
+        if not isinstance(node, dict) or node.get("id") is None:
+            raise _error(422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效")
+        node_id = str(node["id"])
+        metadata = node.get("metadata") or {}
+        input_assets = metadata.get("input_assets") or {}
+        if not isinstance(input_assets, dict):
+            raise _error(422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效")
+        for field, asset_id in input_assets.items():
+            if not isinstance(field, str) or not field or not isinstance(asset_id, str) or not asset_id:
+                raise _error(422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效")
+            bindings.append({"node_id": node_id, "field": field, "asset_id": asset_id})
+    return sorted(bindings, key=lambda item: (item["node_id"], item["field"], item["asset_id"]))
+
+
+def _mapped_comfy_input_name(
+    auth_context: Any,
+    asset_path: Path,
+    target: str,
+    execution_context: dict[str, Any],
+) -> str | None:
+    """仅当共享文件本身处于本机 ComfyUI 标准 input 目录时免传字节。"""
+    if target != "local_comfy" or not execution_context.get("access_path"):
+        return None
+    from urllib.parse import urlsplit
+
+    from gw.god_workflow import registry
+
+    settings = registry.read_settings(auth_context)
+    comfy_url = str(settings.get("comfy_url") or os.environ.get("GW_COMFYUI_URL") or "")
+    comfy_root = str(
+        settings.get("comfy_root_dir")
+        or os.environ.get("GW_COMFYUI_ROOT_DIR")
+        or ""
+    )
+    try:
+        host = (urlsplit(comfy_url).hostname or "").casefold()
+        if host not in {"localhost", "127.0.0.1", "::1"} or not comfy_root:
+            return None
+        mapping_root = Path(str(execution_context["access_path"])).expanduser().resolve(strict=True)
+        input_root = (Path(comfy_root).expanduser() / "input").resolve(strict=True)
+        candidate = asset_path.expanduser().resolve(strict=True)
+        if not input_root.is_dir() or not candidate.is_file() or not os.access(candidate, os.R_OK):
+            return None
+        if not candidate.is_relative_to(mapping_root) or not candidate.is_relative_to(input_root):
+            return None
+        current = candidate
+        while current != input_root:
+            if _is_link(current):
+                return None
+            current = current.parent
+        if _is_link(input_root):
+            return None
+        return candidate.relative_to(input_root).as_posix()
+    except (KeyError, OSError, RuntimeError, ValueError):
+        return None
+
+
+def _prepare_task_input_assets(
+    auth_context: Any,
+    document: dict[str, Any],
+    target: str,
+    execution_context: dict[str, Any],
+) -> tuple[list[dict[str, str]], list[dict[str, Any]], dict[str, tuple[Path, dict[str, Any]]]]:
+    from gw.god_workflow import registry
+
+    bindings = _task_bindings(document)
+    grouped: dict[str, list[dict[str, str]]] = {}
+    for binding in bindings:
+        grouped.setdefault(binding["asset_id"], []).append(
+            {"node_id": binding["node_id"], "field": binding["field"]}
+        )
+    assets: list[dict[str, Any]] = []
+    resolved_assets: dict[str, tuple[Path, dict[str, Any]]] = {}
+    for asset_id in sorted(grouped):
+        resolved = registry.resolve_asset_file(auth_context, asset_id)
+        if resolved is None:
+            raise _error(404, "INPUT_ASSET_NOT_FOUND", "输入素材已不存在或无权读取")
+        path, asset = resolved
+        try:
+            if not path.is_file() or not os.access(path, os.R_OK):
+                raise OSError("asset is not readable")
+            size_bytes = int(path.stat().st_size)
+        except (OSError, ValueError):
+            raise _error(404, "INPUT_ASSET_NOT_FOUND", "输入素材已不存在或无权读取") from None
+        if asset.get("size_bytes") is not None and int(asset["size_bytes"]) != size_bytes:
+            raise _error(409, "INPUT_ASSET_CHANGED", "输入素材内容状态已变化，请重新预检")
+        executor_name = _mapped_comfy_input_name(
+            auth_context, path, target, execution_context
+        )
+        assets.append(
+            {
+                "asset_id": asset_id,
+                "filename": str(asset.get("filename") or path.name),
+                "size_bytes": size_bytes,
+                "content_type": str(asset.get("content_type") or "application/octet-stream"),
+                "transfer_mode": "mapped" if executor_name else "upload",
+                "executor_name": executor_name,
+                "bindings": sorted(
+                    grouped[asset_id], key=lambda item: (item["node_id"], item["field"])
+                ),
+            }
+        )
+        resolved_assets[asset_id] = (path, asset)
+    return bindings, assets, resolved_assets
+
+
+def _task_context_fields(
+    snapshot: dict[str, Any], context: dict[str, Any]
+) -> tuple[int, str | None, str | None]:
+    return (
+        int(snapshot.get("revision", 0)),
+        context.get("mapping_id"),
+        _mapping_root_id(snapshot, context),
+    )
+
+
+def _current_task_document(
+    auth_context: Any,
+    workflow_id: str,
+    expected_version: int,
+    target: str,
+    execution_context: dict[str, Any],
+) -> tuple[dict[str, Any], list[dict[str, str]], list[dict[str, Any]]]:
+    from gw.god_workflow.routes import _resolve_workflow
+
+    _path, document = _resolve_workflow(auth_context, workflow_id, write=False)
+    if int(document.get("version", 0)) != int(expected_version):
+        raise _error(409, "TASK_PREFLIGHT_STALE", "工作流版本已变化，请重新预检")
+    bindings, input_assets, _resolved = _prepare_task_input_assets(
+        auth_context, document, target, execution_context
+    )
+    return document, bindings, input_assets
 
 
 def _visible_name_conflict(name: str) -> dict[str, Any] | None:
@@ -408,6 +565,133 @@ def get_transfer_context(
         "directory_label": "受管素材区",
         "source_label": "当前设备（本地选择）",
     }
+
+
+@router.post("/task-preflights", status_code=status.HTTP_200_OK)
+def preflight_task_transfer(
+    payload: TaskPreflightRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+    service: TransferService = Depends(get_transfer_service),
+):
+    owner_id = _authorize(authorization, x_user_role)
+    auth_context = current_auth_context.get()
+    if auth_context is None:
+        raise _error(401, "UNAUTHORIZED", "会话失效，请重新登录")
+    if payload.directory_id != TRANSFER_DIRECTORY_ID:
+        raise _error(400, "INVALID_TRANSFER_DIRECTORY", "目标目录标识无效")
+    with workspace_context.bind_execution_context(None):
+        snapshot, execution_context = _current_context(payload.target_workspace_id)
+    workspace_revision, mapping_id, mapping_root_id = _task_context_fields(
+        snapshot, execution_context
+    )
+    with workspace_context.bind_execution_context(execution_context):
+        document, bindings, input_assets = _current_task_document(
+            auth_context,
+            payload.workflow_id,
+            payload.expected_version,
+            payload.target,
+            execution_context,
+        )
+    client_bindings = sorted(
+        [item.model_dump() for item in payload.bindings],
+        key=lambda item: (item["node_id"], item["field"], item["asset_id"]),
+    )
+    if client_bindings != bindings:
+        raise _error(409, "TASK_BINDINGS_CHANGED", "工作流素材绑定已变化，请重新预检")
+    workspace = next(
+        item
+        for item in snapshot["workspaces"]
+        if item["workspace_id"] == snapshot["active_workspace_id"]
+    )
+    if execution_context.get("access_path"):
+        result_root = str(execution_context["access_path"])
+        result_prefix = [str(execution_context.get("data_namespace") or "")]
+    else:
+        result_root = str(execution_context["result_root"])
+        result_prefix = []
+    verification = execution_context.get("verification") or {}
+    mapping_status = {
+        "status": str(verification.get("status") or "not_applicable"),
+        "execution_machine_id": str(execution_context["execution_machine_id"]),
+    }
+    target_label = str(
+        execution_context.get("result_root_label") or workspace["display_name"]
+    )
+    preflight = service.create_task_preflight(
+        owner_id=owner_id,
+        workflow_id=payload.workflow_id,
+        workflow_version=int(document["version"]),
+        target=payload.target,
+        bindings=bindings,
+        input_assets=input_assets,
+        context=execution_context,
+        workspace_revision=workspace_revision,
+        mapping_root_id=mapping_root_id,
+        result_root=result_root,
+        result_prefix=result_prefix,
+        directory_id=payload.directory_id,
+        target_label=target_label,
+        mapping_status=mapping_status,
+    )
+    return {
+        **preflight,
+        "workspace_label": str(workspace["display_name"]),
+        "directory_label": "受管素材区",
+        "executor_label": (
+            "RunningHub 云端执行" if payload.target == "rh_cloud" else "本机 ComfyUI 执行"
+        ),
+    }
+
+
+@router.post(
+    "/task-preflights/{preflight_id}/confirm", status_code=status.HTTP_200_OK
+)
+def confirm_task_transfer_preflight(
+    preflight_id: str,
+    payload: TaskPreflightConfirmRequest,
+    authorization: str | None = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+    service: TransferService = Depends(get_transfer_service),
+):
+    owner_id = _authorize(authorization, x_user_role)
+    auth_context = current_auth_context.get()
+    if auth_context is None:
+        raise _error(401, "UNAUTHORIZED", "会话失效，请重新登录")
+    preflight = service.get_task_preflight(preflight_id, owner_id=owner_id)
+    if preflight.get("status") != "awaiting_confirmation":
+        raise _error(409, "TASK_TRANSFER_STATE_CONFLICT", "任务传输预检已确认或失效")
+    with workspace_context.bind_execution_context(None):
+        snapshot, execution_context = _current_context(
+            str(preflight.get("workspace_id") or "")
+        )
+    workspace_revision, mapping_id, mapping_root_id = _task_context_fields(
+        snapshot, execution_context
+    )
+    with workspace_context.bind_execution_context(execution_context):
+        document, bindings, input_assets = _current_task_document(
+            auth_context,
+            str(preflight["workflow_id"]),
+            int(preflight["workflow_version"]),
+            str(preflight["target"]),
+            execution_context,
+        )
+    confirmed = service.confirm_task_preflight(
+        preflight_id,
+        owner_id=owner_id,
+        expected_version=payload.expected_version,
+        workflow_id=str(document["workflow_id"]),
+        workflow_version=int(document["version"]),
+        target=str(preflight["target"]),
+        bindings=bindings,
+        input_assets=input_assets,
+        workspace_id=str(execution_context["workspace_id"]),
+        workspace_revision=workspace_revision,
+        mapping_id=mapping_id,
+        mapping_root_id=mapping_root_id,
+        directory_id=str(preflight["directory_id"]),
+    )
+    return {**confirmed, "transfer_receipt_id": preflight_id}
 
 
 @router.post("/preflight", status_code=status.HTTP_200_OK)
@@ -694,3 +978,19 @@ def _kind_from_name(name: str) -> str:
     if suffix in {".txt", ".md", ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv"}:
         return "document"
     return "unknown"
+
+
+def _install_task_transfer_integration() -> None:
+    """向工作流既有路由注入单向任务传输接口，避免反向包导入。"""
+    from gw.god_workflow import routes as workflow_routes
+
+    workflow_routes._qin629_task_transfer_integration = {
+        "service": default_transfer_service,
+        "current_context": _current_context,
+        "task_context_fields": _task_context_fields,
+        "task_bindings": _task_bindings,
+        "prepare_task_input_assets": _prepare_task_input_assets,
+    }
+
+
+_install_task_transfer_integration()

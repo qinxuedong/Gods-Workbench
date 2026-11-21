@@ -1187,19 +1187,104 @@ async def execute_task(
     else:
         raise unavailable("WORKFLOW_EXECUTOR_UNAVAILABLE", "不支持的执行目标")
     # 在任何素材上传前核对实际编译图，虚拟节点或未知字段不能产生外部副作用。
-    for node in document.get("nodes", []) if workflow_id else []:
-        for field in node.get("metadata", {}).get("input_assets", {}):
-            node_id = str(node["id"])
-            actual_field = widget_fields.get(node_id, {}).get(field, field)
-            compiled_node = prompt.get(node_id)
-            if not isinstance(
-                compiled_node, dict
-            ) or actual_field not in compiled_node.get("inputs", {}):
-                raise CleanroomException(
-                    422,
-                    "INPUT_ASSET_FIELD_UNRESOLVED",
-                    "输入素材字段无法映射到实际执行图，请补齐节点定义",
+    task_input_bindings: list[dict[str, str]] = []
+    if workflow_id:
+        integration = globals().get("_qin629_task_transfer_integration")
+        if isinstance(integration, dict) and callable(integration.get("task_bindings")):
+            task_input_bindings = integration["task_bindings"](document)
+        else:
+            for node in document.get("nodes", []):
+                if not isinstance(node, dict) or node.get("id") is None:
+                    raise CleanroomException(
+                        422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效"
+                    )
+                metadata = node.get("metadata") or {}
+                if not isinstance(metadata, dict):
+                    raise CleanroomException(
+                        422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效"
+                    )
+                input_assets = metadata.get("input_assets") or {}
+                if not isinstance(input_assets, dict):
+                    raise CleanroomException(
+                        422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效"
+                    )
+                for field, asset_id in input_assets.items():
+                    if not isinstance(field, str) or not field or not isinstance(asset_id, str) or not asset_id:
+                        raise CleanroomException(
+                            422, "INVALID_WORKFLOW_INPUT_BINDINGS", "工作流节点素材绑定无效"
+                        )
+                    task_input_bindings.append(
+                        {
+                            "node_id": str(node["id"]),
+                            "field": field,
+                            "asset_id": asset_id,
+                        }
+                    )
+            task_input_bindings.sort(
+                key=lambda item: (item["node_id"], item["field"], item["asset_id"])
+            )
+    for binding in task_input_bindings:
+        node_id = binding["node_id"]
+        actual_field = widget_fields.get(node_id, {}).get(
+            binding["field"], binding["field"]
+        )
+        compiled_node = prompt.get(node_id)
+        if not isinstance(compiled_node, dict) or actual_field not in compiled_node.get("inputs", {}):
+            raise CleanroomException(
+                422,
+                "INPUT_ASSET_FIELD_UNRESOLVED",
+                "输入素材字段无法映射到实际执行图，请补齐节点定义",
+            )
+    transfer_receipt_id = None
+    transfer_service = None
+    task_input_assets: list[dict[str, Any]] = []
+    resolved_input_assets: dict[str, tuple[Path, dict[str, Any]]] = {}
+    if workflow_id and (task_input_bindings or "transfer_receipt_id" in body):
+        transfer_receipt_id = body.get("transfer_receipt_id")
+        if not isinstance(transfer_receipt_id, str) or not transfer_receipt_id:
+            raise CleanroomException(
+                409,
+                "TASK_TRANSFER_CONFIRMATION_REQUIRED",
+                "请先预检并确认任务素材与结果落点",
+            )
+        from gw.core.asset_visibility import asset_owner_key
+        from gw.workspaces import context as workspace_context
+
+        integration = globals().get("_qin629_task_transfer_integration")
+        if not isinstance(integration, dict):
+            raise unavailable(
+                "TASK_TRANSFER_UNAVAILABLE", "任务传输服务未就绪，请稍后重试"
+            )
+        transfer_service = integration["service"]
+        with workspace_context.bind_execution_context(None):
+            workspace_snapshot, execution_context = integration["current_context"]()
+        workspace_revision, mapping_id, mapping_root_id = integration[
+            "task_context_fields"
+        ](workspace_snapshot, execution_context)
+        with workspace_context.bind_execution_context(execution_context):
+            task_input_bindings, task_input_assets, resolved_input_assets = (
+                integration["prepare_task_input_assets"](
+                    context, document, target, execution_context
                 )
+            )
+        transfer_service.validate_task_preflight(
+            transfer_receipt_id,
+            owner_id=asset_owner_key(context),
+            workflow_id=str(workflow_id),
+            workflow_version=int(document["version"]),
+            target=target,
+            bindings=task_input_bindings,
+            input_assets=task_input_assets,
+            workspace_id=str(execution_context["workspace_id"]),
+            workspace_revision=workspace_revision,
+            mapping_id=mapping_id,
+            mapping_root_id=mapping_root_id,
+            directory_id=str(
+                transfer_service.get_task_preflight(
+                    transfer_receipt_id, owner_id=asset_owner_key(context)
+                )["directory_id"]
+            ),
+        )
     # 执行来源只认请求显式携带的来源上下文；文档元数据里的旧来源不作为执行依据。
     source_context = _source_context(context, body.get("source_context") or {})
     # 原子预留必须先于任何外部副作用；未绑定ID的账本一律未知且禁止自动重发。
@@ -1232,38 +1317,75 @@ async def execute_task(
                 workflow_version=document.get("version") if workflow_id else None,
                 prompt_snapshot=prompt,
                 node_info_snapshot=node_info,
+                transfer_receipt_id=transfer_receipt_id,
+            )
+            if transfer_receipt_id and transfer_service is not None:
+                transfer_service.bind_task_job(
+                    transfer_receipt_id,
+                    owner_id=asset_owner_key(context),
+                    job_id=str(task["job_id"]),
+                )
+            remote_input_names: dict[str, str] = {}
+            for item in task_input_assets:
+                asset_id = str(item["asset_id"])
+                if item.get("transfer_mode") == "mapped":
+                    remote_input_names[asset_id] = str(item["executor_name"])
+                    continue
+                path, asset = resolved_input_assets[asset_id]
+                filename = asset_id + str(asset.get("extension") or "")
+                if target == "local_comfy":
+                    remote_name = await _comfy_call(
+                        context,
+                        comfy_executor.upload_input,
+                        path.read_bytes(),
+                        filename,
+                        str(asset.get("content_type") or "application/octet-stream"),
+                        subfolder=registry.principal_digest(
+                            context.identity_domain, context.subject
+                        ),
+                        task=task,
+                    )
+                else:
+                    remote_name = await platforms.upload_rh_input(
+                        path.read_bytes(),
+                        filename,
+                        str(asset.get("content_type") or "application/octet-stream"),
+                        api_key,
+                        domain=snapshot["domain"],
+                    )
+                remote_input_names[asset_id] = remote_name
+            for binding in task_input_bindings:
+                node_id = binding["node_id"]
+                field = binding["field"]
+                actual_field = widget_fields.get(node_id, {}).get(field, field)
+                remote_name = remote_input_names[binding["asset_id"]]
+                prompt[node_id]["inputs"][actual_field] = remote_name
+                entry = next(
+                    (
+                        value
+                        for value in node_info
+                        if str(value.get("nodeId")) == node_id
+                        and value.get("fieldName") == actual_field
+                    ),
+                    None,
+                )
+                if entry is None:
+                    node_info.append(
+                        {
+                            "nodeId": node_id,
+                            "fieldName": actual_field,
+                            "fieldValue": remote_name,
+                        }
+                    )
+                else:
+                    entry["fieldValue"] = remote_name
+            task = registry.update_task(
+                context,
+                task["job_id"],
+                prompt_snapshot=prompt,
+                node_info_snapshot=node_info,
             )
             if target == "local_comfy":
-                for node in document.get("nodes", []) if workflow_id else []:
-                    for field, asset_id in (
-                        node.get("metadata", {}).get("input_assets", {}).items()
-                    ):
-                        resolved = registry.resolve_asset_file(context, str(asset_id))
-                        if resolved is None:
-                            raise CleanroomException(
-                                404,
-                                "INPUT_ASSET_NOT_FOUND",
-                                "输入素材已不存在或无权读取",
-                            )
-                        path, asset = resolved
-                        remote_name = await _comfy_call(
-                            context,
-                            comfy_executor.upload_input,
-                            path.read_bytes(),
-                            str(asset_id) + asset.get("extension", ""),
-                            asset["content_type"],
-                            subfolder=registry.principal_digest(
-                                context.identity_domain, context.subject
-                            ),
-                            task=task,
-                        )
-                        actual_field = widget_fields.get(str(node["id"]), {}).get(
-                            field, field
-                        )
-                        prompt[str(node["id"])]["inputs"][actual_field] = remote_name
-                task = registry.update_task(
-                    context, task["job_id"], prompt_snapshot=prompt
-                )
                 submission_started = True
                 result = await _comfy_call(
                     context,
@@ -1274,43 +1396,6 @@ async def execute_task(
                 )
                 remote_id = result.get("prompt_id")
             else:
-                for node in document.get("nodes", []) if workflow_id else []:
-                    for field, asset_id in (
-                        node.get("metadata", {}).get("input_assets", {}).items()
-                    ):
-                        resolved = registry.resolve_asset_file(context, str(asset_id))
-                        if resolved is None:
-                            raise CleanroomException(
-                                404,
-                                "INPUT_ASSET_NOT_FOUND",
-                                "输入素材已不存在或无权读取",
-                            )
-                        path, asset = resolved
-                        remote_name = await platforms.upload_rh_input(
-                            path.read_bytes(),
-                            str(asset_id) + asset.get("extension", ""),
-                            asset["content_type"],
-                            api_key,
-                            domain=snapshot["domain"],
-                        )
-                        actual_field = widget_fields.get(str(node["id"]), {}).get(
-                            field, field
-                        )
-                        entry = next(
-                            (
-                                value
-                                for value in node_info
-                                if value["nodeId"] == str(node["id"])
-                                and value["fieldName"] == actual_field
-                            ),
-                            None,
-                        )
-                        if entry is None:
-                            raise CleanroomException(
-                                400, "INVALID_REQUEST", "输入素材绑定的字段不存在"
-                            )
-                        entry["fieldValue"] = remote_name
-                        prompt[str(node["id"])]["inputs"][actual_field] = remote_name
                 task = registry.update_task(
                     context,
                     task["job_id"],
@@ -1912,11 +1997,99 @@ async def _collect_task_outputs(
     collected: list[dict[str, Any]] = []
     if len(outputs) > 32:
         return [{"registered": False, "code": "OUTPUT_COUNT_EXCEEDED"}]
+    transfer_receipt_id = task.get("transfer_receipt_id") if isinstance(task, dict) else None
+    transfer_service = None
+    owner_id = None
+    if transfer_receipt_id:
+        from gw.core.asset_visibility import asset_owner_key
+        integration = globals().get("_qin629_task_transfer_integration")
+        transfer_service = (
+            integration.get("service") if isinstance(integration, dict) else None
+        )
+        owner_id = asset_owner_key(context)
+    existing_outputs = {
+        str(item.get("output_key")): item
+        for item in (task.get("outputs", []) if isinstance(task, dict) else [])
+        if isinstance(item, dict) and item.get("output_key")
+    }
     # QIN-600：本轮产物的提示词来自任务提交时的执行图快照，逐产物复用同一份。
     generation = _task_generation(task)
     for item in outputs:
         filename = str(item.get("filename") or "")
         if not filename:
+            continue
+        output_key = hashlib.sha256(
+            json.dumps(
+                {
+                    "target": "local_comfy",
+                    "filename": filename,
+                    "subfolder": str(item.get("subfolder") or ""),
+                    "type": str(item.get("type") or "output"),
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        prior_output = existing_outputs.get(output_key)
+        if transfer_service is not None:
+            try:
+                prior_output = transfer_service.get_task_output(
+                    transfer_receipt_id,
+                    owner_id=owner_id,
+                    job_id=task_id,
+                    output_key=output_key,
+                ) or prior_output
+            except CleanroomException as exc:
+                collected.append(
+                    {"filename": filename, "registered": False, "code": exc.code}
+                )
+                continue
+        if isinstance(prior_output, dict) and prior_output.get("asset_id"):
+            resolved = registry.resolve_asset_file(context, str(prior_output["asset_id"]))
+            if resolved is None:
+                collected.append(
+                    {
+                        "filename": filename,
+                        "registered": False,
+                        "code": "OUTPUT_ASSET_NOT_FOUND",
+                    }
+                )
+                continue
+            _path, asset = resolved
+            return_result = None
+            if transfer_service is not None:
+                try:
+                    return_result = transfer_service.return_registered_output(
+                        transfer_receipt_id,
+                        owner_id=owner_id,
+                        job_id=task_id,
+                        output_key=output_key,
+                        asset_id=str(asset["asset_id"]),
+                        filename=str(asset.get("filename") or filename),
+                        source_path=_path,
+                        size_bytes=int(asset.get("size_bytes", _path.stat().st_size)),
+                        executor=str((task or {}).get("target") or "local_comfy"),
+                    )
+                except CleanroomException as exc:
+                    return_result = {"status": "failed", "error": exc.code}
+            collected.append(
+                {
+                    "filename": filename,
+                    "output_key": output_key,
+                    "registered": True,
+                    **asset,
+                    **(
+                        {
+                            "return_status": return_result.get("status"),
+                            "return_error": return_result.get("error"),
+                            "return_path": return_result.get("relative_path"),
+                        }
+                        if return_result is not None
+                        else {}
+                    ),
+                }
+            )
             continue
         try:
             payload, media_type = await _comfy_call(
@@ -1963,7 +2136,44 @@ async def _collect_task_outputs(
                 }
             )
             continue
-        collected.append({"filename": filename, "registered": True, **asset})
+        return_result = None
+        if transfer_service is not None:
+            resolved = registry.resolve_asset_file(context, str(asset["asset_id"]))
+            if resolved is None:
+                return_result = {"status": "failed", "error": "OUTPUT_ASSET_NOT_FOUND"}
+            else:
+                source_path, _stored_asset = resolved
+                try:
+                    return_result = transfer_service.return_registered_output(
+                        transfer_receipt_id,
+                        owner_id=owner_id,
+                        job_id=task_id,
+                        output_key=output_key,
+                        asset_id=str(asset["asset_id"]),
+                        filename=str(asset.get("filename") or filename),
+                        source_path=source_path,
+                        size_bytes=int(asset.get("size_bytes", len(payload))),
+                        executor=str((task or {}).get("target") or "local_comfy"),
+                    )
+                except CleanroomException as exc:
+                    return_result = {"status": "failed", "error": exc.code}
+        collected.append(
+            {
+                "filename": filename,
+                "output_key": output_key,
+                "registered": True,
+                **asset,
+                **(
+                    {
+                        "return_status": return_result.get("status"),
+                        "return_error": return_result.get("error"),
+                        "return_path": return_result.get("relative_path"),
+                    }
+                    if return_result is not None
+                    else {}
+                ),
+            }
+        )
     return collected
 
 
@@ -2151,6 +2361,22 @@ async def _collect_rh_task_outputs(
     generation = _task_generation(task)
     # 同一份白名单同时用于 URL 校验与解析钉定（fake-ip 借道只认它）。
     allowed_hosts = _output_allowed_hosts(platform)
+    transfer_receipt_id = task.get("transfer_receipt_id") if isinstance(task, dict) else None
+    transfer_service = None
+    owner_id = None
+    if transfer_receipt_id:
+        from gw.core.asset_visibility import asset_owner_key
+
+        integration = globals().get("_qin629_task_transfer_integration")
+        transfer_service = (
+            integration.get("service") if isinstance(integration, dict) else None
+        )
+        owner_id = asset_owner_key(context)
+    existing_outputs = {
+        str(entry.get("output_key")): entry
+        for entry in (task.get("outputs", []) if isinstance(task, dict) else [])
+        if isinstance(entry, dict) and entry.get("output_key")
+    }
     for item in outputs:
         if not isinstance(item, dict):
             collected.append({"registered": False, "code": "INVALID_OUTPUT_DESCRIPTOR"})
@@ -2165,6 +2391,74 @@ async def _collect_rh_task_outputs(
                 url.split("?")[0].rsplit("/", 1)[-1]
                 or f"rh_output_{len(collected) + 1}.png"
             )
+        output_key = hashlib.sha256(
+            json.dumps(
+                {"target": "rh_cloud", "url": url, "filename": filename},
+                ensure_ascii=False,
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode("utf-8")
+        ).hexdigest()
+        prior_output = existing_outputs.get(output_key)
+        if transfer_service is not None:
+            try:
+                prior_output = transfer_service.get_task_output(
+                    transfer_receipt_id,
+                    owner_id=owner_id,
+                    job_id=task_id,
+                    output_key=output_key,
+                ) or prior_output
+            except CleanroomException as exc:
+                collected.append(
+                    {"filename": filename, "registered": False, "code": exc.code}
+                )
+                continue
+        if isinstance(prior_output, dict) and prior_output.get("asset_id"):
+            resolved = registry.resolve_asset_file(context, str(prior_output["asset_id"]))
+            if resolved is None:
+                collected.append(
+                    {
+                        "filename": filename,
+                        "registered": False,
+                        "code": "OUTPUT_ASSET_NOT_FOUND",
+                    }
+                )
+                continue
+            source_path, asset = resolved
+            return_result = None
+            if transfer_service is not None:
+                try:
+                    return_result = transfer_service.return_registered_output(
+                        transfer_receipt_id,
+                        owner_id=owner_id,
+                        job_id=task_id,
+                        output_key=output_key,
+                        asset_id=str(asset["asset_id"]),
+                        filename=str(asset.get("filename") or filename),
+                        source_path=source_path,
+                        size_bytes=int(asset.get("size_bytes", source_path.stat().st_size)),
+                        executor=str((task or {}).get("target") or platform),
+                    )
+                except CleanroomException as exc:
+                    return_result = {"status": "failed", "error": exc.code}
+            collected.append(
+                {
+                    "filename": filename,
+                    "output_key": output_key,
+                    "registered": True,
+                    **asset,
+                    **(
+                        {
+                            "return_status": return_result.get("status"),
+                            "return_error": return_result.get("error"),
+                            "return_path": return_result.get("relative_path"),
+                        }
+                        if return_result is not None
+                        else {}
+                    ),
+                }
+            )
+            continue
         parts = None
         try:
             if not allowed_hosts:
@@ -2219,7 +2513,44 @@ async def _collect_rh_task_outputs(
                 }
             )
             continue
-        collected.append({"filename": filename, "registered": True, **asset})
+        return_result = None
+        if transfer_service is not None:
+            resolved = registry.resolve_asset_file(context, str(asset["asset_id"]))
+            if resolved is None:
+                return_result = {"status": "failed", "error": "OUTPUT_ASSET_NOT_FOUND"}
+            else:
+                source_path, _stored_asset = resolved
+                try:
+                    return_result = transfer_service.return_registered_output(
+                        transfer_receipt_id,
+                        owner_id=owner_id,
+                        job_id=task_id,
+                        output_key=output_key,
+                        asset_id=str(asset["asset_id"]),
+                        filename=str(asset.get("filename") or filename),
+                        source_path=source_path,
+                        size_bytes=int(asset.get("size_bytes", len(content))),
+                        executor=str((task or {}).get("target") or platform),
+                    )
+                except CleanroomException as exc:
+                    return_result = {"status": "failed", "error": exc.code}
+        collected.append(
+            {
+                "filename": filename,
+                "output_key": output_key,
+                "registered": True,
+                **asset,
+                **(
+                    {
+                        "return_status": return_result.get("status"),
+                        "return_error": return_result.get("error"),
+                        "return_path": return_result.get("relative_path"),
+                    }
+                    if return_result is not None
+                    else {}
+                ),
+            }
+        )
     return collected
 
 

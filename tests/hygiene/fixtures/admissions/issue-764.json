@@ -1,13 +1,14 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 764,
-  "authorization_basis": "GitHub Issue #764 (QIN-629), PM design approval 2026-11-20",
+  "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope and design approval 2026-11-21",
   "files": [
     "gw/api/app.py",
     "gw/api/routes_transfer.py",
     "gw/transfer/routes.py",
     "gw/transfer/service.py",
     "tests/contracts/assets/test_qin_629_explicit_transfer.py",
+    "tests/contracts/assets/test_qin_629_task_transfer.py",
     "tests/hygiene/fixtures/admissions/issue-764.json",
     "web/css/pages/asset-transfer.css",
     "web/js/modules/asset-manager.js",
@@ -20,7 +21,13 @@
       "classification": "curated_test_coverage",
       "authorization_basis": "GitHub Issue #764 (QIN-629), 2026-11-20",
       "admission": "accepted"
+    },
+    {
+      "path": "tests/contracts/assets/test_qin_629_task_transfer.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #764 (QIN-629), PM R3 scope and design approval 2026-11-21",
+      "admission": "accepted"
     }
   ],
-  "notes": "QIN-629 显式确认上传与受管暂存首阶段；只登记本票文件。"
+  "notes": "QIN-629 显式上传与按任务传输；仅登记本票授权文件，不改基础账本。"
 }
