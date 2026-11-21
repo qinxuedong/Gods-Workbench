@@ -2605,7 +2605,7 @@ fn main() {
                                 }
                             } else {
                                 let mut scan_url = local_url.clone();
-                                scan_url.set_query(Some("view=remote&rescan=1"));
+                                scan_url.set_query(Some("rescan=1"));
                                 let _ = window.navigate(scan_url);
                             }
                             let _ = window.show();

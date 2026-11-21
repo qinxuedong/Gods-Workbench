@@ -278,7 +278,9 @@
       if (saved && inputUrl) {
         inputUrl.value = saved;
       }
-    }).catch(() => {});
+    }).catch(err => {
+      console.warn('读取上次远端地址失败', err);
+    });
 
     // 连接远端
     btnConnect?.addEventListener('click', async () => {
