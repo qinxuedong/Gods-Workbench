@@ -209,3 +209,9 @@ test("AC10: 设置页通用面板接入远端工作台拟物卡与安全降级",
   assert.match(settingsJs, /invoke\('launch_local_backend'\)/);
   assert.match(settingsJs, /action=scan-nas/);
 });
+
+test("AC11: 托盘 Find NAS 路由指向 /static/pages/settings.html 且标签具备浅色高对比度", () => {
+  const mainRs = readFileSync("clients/desktop/src/main.rs", "utf8");
+  assert.match(mainRs, /\/static\/pages\/settings\.html\?section=general&action=scan-nas/);
+  assert.match(settingsHtml, /text-slate-200[^>]*><label for="remoteServerUrl"/);
+});

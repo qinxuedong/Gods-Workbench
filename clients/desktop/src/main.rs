@@ -2600,7 +2600,7 @@ fn main() {
                             };
 
                             if is_local_workbench {
-                                if let Ok(settings_url) = Url::parse("http://127.0.0.1:2077/pages/settings.html?panel=general&action=scan-nas") {
+                                if let Ok(settings_url) = Url::parse("http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas") {
                                     let _ = window.navigate(settings_url);
                                 }
                             } else {

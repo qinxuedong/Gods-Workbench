@@ -149,7 +149,7 @@
     q('#defaultPage').value=preferences.default_page||'index';
     document.querySelectorAll('[data-setting]').forEach(toggle=>{const name=toggle.dataset.setting;const fallback=['task_refresh','restore_page'].includes(name);const on=preferences[name]??fallback;toggle.classList.toggle('on',on);toggle.setAttribute('aria-pressed',String(on));});
     syncThemeToggle();
-    setSection(new URLSearchParams(location.search).get('section')||new URLSearchParams(location.hash.slice(1)).get('section')||'general');
+    setSection(new URLSearchParams(location.search).get('section')||new URLSearchParams(location.search).get('panel')||new URLSearchParams(location.hash.slice(1)).get('section')||'general');
   }
   window.addEventListener('studio-theme-change', event => {
     syncThemeToggle(event.detail?.theme);
