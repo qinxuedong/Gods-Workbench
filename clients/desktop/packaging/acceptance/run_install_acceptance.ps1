@@ -83,6 +83,8 @@ $script:remoteBackendPids = New-Object System.Collections.ArrayList
 $script:remoteBackendEvidence = [ordered]@{}
 $script:ui = [ordered]@{}
 $script:settingsDodEvidence = [ordered]@{}
+$script:savedProcessEnvLocalAppData = ""
+$script:savedProcessEnvAppData = ""
 
 function Add-Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = "")
