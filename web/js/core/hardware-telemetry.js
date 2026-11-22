@@ -1658,7 +1658,7 @@
             <input id="localRecoverySaved" type="checkbox" data-floating-ignore-draft="true" data-no-draft="true" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">
             我已妥善保存这些恢复码
           </label>
-          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="HardwareDeck.finishTrustedLocalRecovery(); HardwareDeck.closeModal('accountModal')">
+          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" data-floating-close onclick="HardwareDeck.finishTrustedLocalRecovery(); HardwareDeck.closeModal('accountModal')">
             已保存，进入工作台
           </button>
         </div>`;

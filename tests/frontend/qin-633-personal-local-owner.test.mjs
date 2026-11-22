@@ -740,11 +740,30 @@ function createFloatingDeckHarness() {
         focus() {}
         blur() {}
         click() {
-            const evt = { type: 'click', target: this, defaultPrevented: false, preventDefault() { this.defaultPrevented = true; }, stopImmediatePropagation() {} };
+            const path = [];
+            let cur = this;
+            while (cur) {
+                path.push(cur);
+                cur = cur.parentElement;
+            }
+            if (this.ownerDocument) {
+                path.push(this.ownerDocument);
+                if (this.ownerDocument.defaultView) path.push(this.ownerDocument.defaultView);
+            }
+            const evt = {
+                type: 'click',
+                target: this,
+                composedPath: () => path,
+                defaultPrevented: false,
+                preventDefault() { this.defaultPrevented = true; },
+                stopImmediatePropagation() { this._stopped = true; }
+            };
             if (this.ownerDocument) {
                 this.ownerDocument.dispatchEvent(evt);
             }
-            this.dispatchEvent(evt);
+            if (!evt._stopped) {
+                this.dispatchEvent(evt);
+            }
         }
         get innerHTML() { return this._innerHTML; }
         set innerHTML(html) {
@@ -832,6 +851,7 @@ function createFloatingDeckHarness() {
         location: { reload() {} },
         getComputedStyle(el) { return { display: 'block', visibility: 'visible' }; },
     };
+    doc.defaultView = win;
 
     const context = {
         window: win,
@@ -887,13 +907,44 @@ test('AC1/R4-F1回归: 真实 FloatingDismissal 浮层守卫下，保存确认�
     deck.handleRecoveryCodeAcknowledgement();
     assert.equal(continueBtn.disabled, false, '勾选保存确认后继续按钮必须解禁');
 
-    // 4. 用户点击继续按钮，关闭弹窗进入工作台
-    deck.finishTrustedLocalRecovery();
+    // 4. 核心：通过继续按钮真实点击事件（包含 composedPath 与捕获阶段拦截），触发 FloatingDismissal 守卫判定
+    continueBtn.click();
 
     // 5. 核心验证：守卫绝不弹出“有未保存的修改，确认放弃并关闭？”，弹窗顺利关闭
     assert.equal(confirmCalls.length, 0, '确认保存进入工作台操作绝不得触发未保存修改确认框');
     assert.equal(modal.classList.contains('open'), false, '弹窗必须已成功关闭（移除 open 类）');
     assert.equal(win.FloatingDismissal.hasOpen(), false, 'FloatingDismissal 栈中应无打开的浮层');
+});
+
+test('AC1/R5-F1回归: 突变防御测试验证——若人为移除草稿排除过滤，按钮真实点击必会触发 confirm 拦截', async () => {
+    const { win, doc, deck, confirmCalls } = createFloatingDeckHarness();
+
+    // 突变注入：故意移除排除逻辑，模拟 R4 故障重现
+    deck.snapshotDraft = function(content) {
+        if (!content || !content.querySelectorAll) return '[]';
+        const inputs = Array.from(content.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"]'));
+        return JSON.stringify(inputs.map(el => [el.id || el.name, el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.isContentEditable ? el.textContent : el.value]));
+    };
+
+    const sampleCodes = [
+        'RC-1111-2222', 'RC-3333-4444', 'RC-5555-6666', 'RC-7777-8888',
+        'RC-9999-0000', 'RC-AAAA-BBBB', 'RC-CCCC-DDDD', 'RC-EEEE-FFFF'
+    ];
+
+    deck.renderTrustedLocalRecoveryCodes(sampleCodes);
+
+    const checkbox = doc.getElementById('localRecoverySaved');
+    const continueBtn = doc.getElementById('localRecoveryContinue');
+
+    checkbox.checked = true;
+    deck.handleRecoveryCodeAcknowledgement();
+
+    // 触发真实按钮点击
+    continueBtn.click();
+
+    // 核心反证：当缺少排除逻辑时，保存确认勾选框必会被误判为未保存草稿并触发 confirm 拦截
+    assert.equal(confirmCalls.length, 1, '移除排除过滤时真实按钮点击必须触发 window.confirm 拦截');
+    assert.match(confirmCalls[0], /有未保存的修改，确认放弃并关闭？/);
 });
 
 test('AC1/R4-F1回归: 验证通用浮层守卫具有真实防御能力，表单未保存修改时确实会触发 confirm 拦截', async () => {
