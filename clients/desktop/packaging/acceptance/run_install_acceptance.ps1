@@ -1613,8 +1613,8 @@ function Invoke-SettingsDodMatrix {
 })()
 "@
         Start-Sleep -Milliseconds 350
-        $loading1500 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); return { disabled: !!(b && b.disabled), text: b ? b.textContent.trim() : '' }; })()"
-        Require-Check "settings-dod.slow-1500-loading" ($loading1500.disabled -and $loading1500.text -match "连接中") "1500ms slow request did not show loading state"
+        $loading1500 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); const t = b ? b.textContent.trim() : ''; return { disabled: !!(b && b.disabled), isLoadingText: t.indexOf('\u8fde\u63a5\u4e2d') !== -1, text: t, errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+        Require-Check "settings-dod.slow-1500-loading" ($loading1500.disabled -and $loading1500.isLoadingText) ("1500ms slow request did not show loading state (disabled=$($loading1500.disabled), errVisible=$($loading1500.errVisible), errText=$($loading1500.errText))")
 
         $err1500 = $null
         $deadline1500 = (Get-Date).AddSeconds(6)
@@ -1632,8 +1632,8 @@ function Invoke-SettingsDodMatrix {
         Set-FakeRemoteMode -ModePath $slowModePath -Mode "slow-5000"
         $null = Invoke-CdpExpression -Connection $Connection -Expression "(() => { document.querySelector('#btnConnectRemote').click(); })()"
         Start-Sleep -Milliseconds 1500
-        $loading5000 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); return { disabled: !!(b && b.disabled), text: b ? b.textContent.trim() : '' }; })()"
-        Require-Check "settings-dod.slow-5000-loading" ($loading5000.disabled -and $loading5000.text -match "连接中") "5000ms slow request did not keep loading state"
+        $loading5000 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); const t = b ? b.textContent.trim() : ''; return { disabled: !!(b && b.disabled), isLoadingText: t.indexOf('\u8fde\u63a5\u4e2d') !== -1, text: t, errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+        Require-Check "settings-dod.slow-5000-loading" ($loading5000.disabled -and $loading5000.isLoadingText) ("5000ms slow request did not keep loading state (disabled=$($loading5000.disabled), errVisible=$($loading5000.errVisible), errText=$($loading5000.errText))")
 
         $err5000 = $null
         $deadline5000 = (Get-Date).AddSeconds(8)

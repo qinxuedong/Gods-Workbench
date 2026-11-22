@@ -5,6 +5,6 @@
   "windows": ["main"],
   "permissions": ["core:default"],
   "remote": {
-    "urls": ["http://*:*", "https://*:*"]
+    "urls": ["http://*:*", "https://*:*", "http://*:*/*", "https://*:*/*"]
   }
 }
