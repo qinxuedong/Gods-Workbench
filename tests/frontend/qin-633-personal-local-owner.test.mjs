@@ -46,19 +46,49 @@ function bootstrapHarness() {
     return {context, replaced, requests, events, instance: context.GWTrustedLocal};
 }
 
-function makeElement(id = '') {
+function makeElement(id = '', elementsMap = null) {
     const classSet = new Set();
     const attrs = new Map();
-    return {
+    let _innerHTML = '';
+    const el = {
         id,
-        innerHTML: '',
+        get innerHTML() { return _innerHTML; },
+        set innerHTML(html) {
+            _innerHTML = String(html || '');
+            if (elementsMap) {
+                const matches = _innerHTML.matchAll(/<([a-z0-9-]+)\s+[^>]*id=["']([^"']+)["'][^>]*>/gi);
+                for (const match of matches) {
+                    const tagString = match[0];
+                    const childId = match[2];
+                    let child = elementsMap.get(childId);
+                    if (!child) {
+                        child = makeElement(childId, elementsMap);
+                        elementsMap.set(childId, child);
+                    }
+                    if (/\bdisabled\b/i.test(tagString)) {
+                        child.disabled = true;
+                    }
+                }
+            }
+        },
         textContent: '',
         style: {},
         classList: {
             add(v) { classSet.add(v); },
             remove(v) { classSet.delete(v); },
+            toggle(v, force) {
+                if (force === undefined) {
+                    classSet.has(v) ? classSet.delete(v) : classSet.add(v);
+                } else if (force) {
+                    classSet.add(v);
+                } else {
+                    classSet.delete(v);
+                }
+            },
             contains(v) { return classSet.has(v); },
         },
+        disabled: false,
+        checked: false,
         setAttribute(k, v) { attrs.set(k, String(v)); },
         getAttribute(k) { return attrs.get(k) || null; },
         removeAttribute(k) { attrs.delete(k); },
@@ -67,12 +97,13 @@ function makeElement(id = '') {
         focus() {},
         remove() {},
     };
+    return el;
 }
 
 function deckHarness(options = {}) {
     const elements = new Map();
-    const dialog = makeElement('accountModalDialog');
-    const modal = makeElement('accountModal');
+    const dialog = makeElement('accountModalDialog', elements);
+    const modal = makeElement('accountModal', elements);
     elements.set('accountModalDialog', dialog);
     elements.set('accountModal', modal);
 
@@ -314,4 +345,127 @@ test('bootstrap.js: 收到 200 响应时正确迁移到 entered 并派发广播'
 
     const enteredEvents = h.events.filter(e => e.type === 'gw-trusted-local' && e.detail?.state === 'entered');
     assert.equal(enteredEvents.length, 1);
+});
+
+test('bootstrap.js: 收到 200 响应且携带 recovery_codes 时在 result, instance 与事件中完整透传', async () => {
+    const h = bootstrapHarness();
+    h.context.location.hash = `#gw_trusted=${TICKET}`;
+    const mockCodes = ['RC-1111-2222', 'RC-3333-4444', 'RC-5555-6666'];
+    h.context.responder = () => Promise.resolve({
+        status: 200,
+        ok: true,
+        json: () => Promise.resolve({
+            user_id: 'u-1',
+            username: 'local-owner',
+            recovery_codes: mockCodes,
+        }),
+    });
+
+    const instance = h.context.GWTrustedLocal.create({
+        window: h.context,
+        slowThresholdMs: 20,
+        timeoutMs: 120,
+    });
+
+    const result = await instance.start();
+    assert.equal(result.state, 'entered');
+    assert.deepEqual(result.recovery_codes, mockCodes);
+    assert.deepEqual(instance.recovery_codes, mockCodes);
+
+    const enteredEvents = h.events.filter(e => e.type === 'gw-trusted-local' && e.detail?.state === 'entered');
+    assert.equal(enteredEvents.length, 1);
+    assert.deepEqual(enteredEvents[0].detail.recovery_codes, mockCodes);
+});
+
+// ---------------------------------------------------------------------------
+// AC1 & AC4: 空库受信首启恢复码展示与用户交互确认
+// ---------------------------------------------------------------------------
+
+test('AC1: 可信首启直入且携带 recovery_codes 时，安全展示一次性恢复码弹窗供用户保存', async () => {
+    const mockCodes = ['RC-AAA1-BBB2', 'RC-CCC3-DDD4', 'RC-EEE5-FFF6', 'RC-GGG7-HHH8'];
+    const {deck, dialog, modal, openedModals} = deckHarness({
+        statusResponse: {
+            auth_mode: 'local_account',
+            authenticated: true,
+            principal: {username: 'local-owner', role: 'admin'},
+            setup_required: false,
+            trusted_local: {
+                enabled: true,
+                established: true,
+                needs_manual_claim: false,
+                mode: 'trusted_local',
+            },
+        },
+    });
+    deck.authState.trusted_local.recovery_codes = mockCodes;
+
+    await deck.syncAuth();
+
+    assert.equal(openedModals.includes('accountModal'), true);
+    assert.equal(modal.classList.contains('open'), true);
+    assert.match(dialog.innerHTML, /本机管理员已建立 · 请妥善保存恢复码/);
+    assert.match(dialog.innerHTML, /RC-AAA1-BBB2/);
+    assert.match(dialog.innerHTML, /RC-GGG7-HHH8/);
+    assert.match(dialog.innerHTML, /复制全部/);
+    assert.match(dialog.innerHTML, /我已妥善保存这些恢复码/);
+    assert.match(dialog.innerHTML, /已保存，进入工作台/);
+});
+
+test('AC1: 恢复码弹窗未勾选保存确认前禁用继续按钮，勾选后解禁，点击进入工作台安全关闭弹窗', async () => {
+    const mockCodes = ['RC-1111-2222', 'RC-3333-4444'];
+    const {deck, elements, closedModals} = deckHarness({
+        statusResponse: {
+            auth_mode: 'local_account',
+            authenticated: true,
+            principal: {username: 'local-owner', role: 'admin'},
+            setup_required: false,
+            trusted_local: {
+                enabled: true,
+                established: true,
+                needs_manual_claim: false,
+                mode: 'trusted_local',
+            },
+        },
+    });
+    deck.authState.trusted_local.recovery_codes = mockCodes;
+    await deck.syncAuth();
+
+    const checkbox = elements.get('localRecoverySaved');
+    const continueBtn = elements.get('localRecoveryContinue');
+    assert.ok(checkbox, '应存在已保存确认复选框');
+    assert.ok(continueBtn, '应存在继续按钮');
+
+    // 初始状态禁用
+    assert.equal(continueBtn.disabled, true);
+
+    // 模拟用户勾选已保存
+    checkbox.checked = true;
+    deck.handleRecoveryCodeAcknowledgement();
+    assert.equal(continueBtn.disabled, false);
+
+    // 模拟点击进入工作台关闭弹窗
+    deck.closeModal('accountModal');
+    assert.equal(closedModals.includes('accountModal'), true);
+});
+
+test('AC2: 已有账户自动接管或二次启动（recovery_codes 为空）时，绝不弹出恢复码弹窗', async () => {
+    const {deck, openedModals} = deckHarness({
+        statusResponse: {
+            auth_mode: 'local_account',
+            authenticated: true,
+            principal: {username: 'chief_admin', role: 'admin'},
+            setup_required: false,
+            trusted_local: {
+                enabled: true,
+                established: true,
+                needs_manual_claim: false,
+                mode: 'trusted_local',
+                recovery_codes: [],
+            },
+        },
+    });
+    deck.authState.trusted_local.recovery_codes = [];
+
+    await deck.syncAuth();
+    assert.equal(openedModals.includes('accountModal'), false);
 });

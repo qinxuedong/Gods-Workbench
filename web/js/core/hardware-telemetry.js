@@ -857,7 +857,8 @@
         needs_manual_claim: false,
         mode: 'disabled',
         bootstrap_state: 'idle',
-        message: ''
+        message: '',
+        recovery_codes: []
       }
     },
 
@@ -914,17 +915,27 @@
 
       // QIN-633 个人本机可信直入守卫：
       // 正在兑换或已认证时，绝不误弹「首次设置 · 创建管理员」；
-      // 若已认证且已建立本机身份，若 accountModal 打开则安全关闭。
+      // 若已认证且已建立本机身份：
+      // 1. 若携带有首启一次性恢复码且尚未展示，安全展示恢复码保存弹窗；
+      // 2. 否则若 accountModal 打开且展示的不是恢复码，安全关闭。
       const isBootstrapping = Boolean(window.GWTrustedLocal && (window.GWTrustedLocal.state === 'bootstrapping'));
+      const pendingCodes = this.authState.trusted_local?.recovery_codes;
+      const hasRecoveryCodes = Array.isArray(pendingCodes) && pendingCodes.length > 0;
       if (this.authState.auth_mode === 'local_account' && this.authState.setup_required && !this.authState.authenticated && !isBootstrapping && !this.setupPromptShown) {
         this.setupPromptShown = true;
         this.openAccountModal();
-      } else if (document.getElementById('accountModal')?.classList.contains('open')) {
-        if (this.authState.authenticated && this.authState.trusted_local?.established) {
-          this.closeModal('accountModal');
-        } else {
-          this.renderAccountModalContent();
+      } else if (this.authState.authenticated && this.authState.trusted_local?.established) {
+        if (hasRecoveryCodes && !this.recoveryCodesShown) {
+          this.recoveryCodesShown = true;
+          this.renderTrustedLocalRecoveryCodes(pendingCodes);
+        } else if (document.getElementById('accountModal')?.classList.contains('open')) {
+          const isRecoveryDialog = Boolean(document.getElementById('localRecoveryCodes'));
+          if (!isRecoveryDialog) {
+            this.closeModal('accountModal');
+          }
         }
+      } else if (document.getElementById('accountModal')?.classList.contains('open')) {
+        this.renderAccountModalContent();
       }
       return this.authState;
       })();
@@ -948,6 +959,10 @@
       const state = String(detail?.state || trusted.state || 'idle');
       this.authState.trusted_local.bootstrap_state = state;
       this.authState.trusted_local.message = String(detail?.message || '');
+      const codes = Array.isArray(detail?.recovery_codes)
+        ? detail.recovery_codes
+        : (Array.isArray(trusted.recovery_codes) ? trusted.recovery_codes : []);
+      this.authState.trusted_local.recovery_codes = codes;
       return detail;
     },
 
@@ -1177,6 +1192,8 @@
     renderAccountModalContent: function() {
       const dialog = document.getElementById('accountModalDialog');
       if (!dialog) return;
+      // 若当前正处于可信首启恢复码展示中，保留该弹窗内容，不被常规账户卡片覆盖
+      if (document.getElementById('localRecoveryCodes')) return;
       // 本函数内的 HTML 转义（renderProjectCalendar 里的 esc 是局部作用域，不可复用）。
       const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, char => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[char]));
       const user = this.authState.authenticated ? this.authState.principal : null;
@@ -1574,6 +1591,42 @@
           <label class="flex items-center gap-2 gw-type-body-sm text-slate-300"><input id="localRecoverySaved" type="checkbox" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">我已保存这些恢复码</label>
           <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="window.location.reload()">保存后继续登录</button>
         </div>`;
+    },
+
+    /**
+     * QIN-633: 受信本机首启一次性恢复码安全展示。
+     *
+     * 空库首次建立本机所有者后，系统生成不可知随机密码并随票据兑换返回 8 个恢复码。
+     * 本方法向用户一次性安全展示恢复码列表，要求勾选保存确认后方可关闭弹窗进入工作台；
+     * 绝不要求输入当前密码、绝不触发创建管理员或认领表单。
+     */
+    renderTrustedLocalRecoveryCodes: function(codes) {
+      const dialog = document.getElementById('accountModalDialog');
+      if (!dialog || !Array.isArray(codes) || codes.length === 0) return;
+      const items = codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
+      dialog.innerHTML = `
+        <div class="space-y-3" data-gw-trusted-recovery="true">
+          <div class="flex items-center justify-between pb-2 border-b border-white/10">
+            <h3 class="gw-type-section font-bold text-slate-100">本机管理员已建立 · 请妥善保存恢复码</h3>
+            <span class="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-300 font-mono">一次性凭证</span>
+          </div>
+          <p class="gw-type-body-sm text-amber-200">
+            本机所有者已免密直入。这些恢复码只显示一次；若日后本机环境失效，可使用恢复码重置密码以恢复管理权。
+          </p>
+          <ol id="localRecoveryCodes" class="grid grid-cols-2 gap-1 font-mono gw-type-body-sm text-slate-100">${items}</ol>
+          <div class="flex flex-wrap gap-2">
+            <button id="localRecoveryCopyAll" type="button" class="hw-btn" onclick="HardwareDeck.copyRecoveryCodes(document.getElementById('localRecoveryCodes'), this, document.getElementById('localRecoveryCopyStatus'))">复制全部</button>
+          </div>
+          <p id="localRecoveryCopyStatus" class="gw-type-body-sm text-slate-300" role="status" aria-live="polite"></p>
+          <label class="flex items-center gap-2 gw-type-body-sm text-slate-300">
+            <input id="localRecoverySaved" type="checkbox" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">
+            我已妥善保存这些恢复码
+          </label>
+          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="HardwareDeck.closeModal('accountModal')">
+            已保存，进入工作台
+          </button>
+        </div>`;
+      this.openModal('accountModal');
     },
 
     copyRecoveryCodes: async function(list, button, status) {

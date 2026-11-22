@@ -163,9 +163,10 @@ def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
             "/api/asset-auth/local/setup", json={"username": "owner", "password": PASSWORD}
         )
         assert created.status_code == 201, created.text
-    ticket = issue_ticket()
+    # QIN-633: 已有账户时自动接管直入（特批方案 A 替换旧 409 行为断言）
+    ticket_auto = issue_ticket()
     with make_client() as client:
-        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket_auto})
         assert redeemed.status_code == 200, redeemed.text
         assert redeemed.json()["authenticated"] is True
         assert redeemed.json()["principal"]["username"] == "owner"
@@ -173,26 +174,34 @@ def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
         assert state["authenticated"] is True
         assert state["trusted_local"]["established"] is True
 
-    # 解绑后测试手动 trusted-claim：认证失败不改数据、认证成功建立绑定
+    # 解绑后测试手动 trusted-claim：认证失败不改数据、原票据保持可用
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: PASSWORD)
     assert local_accounts_cli.main(["trusted-unclaim", "--username", "owner"]) == 0
     assert read_table("trusted_local_owners") == []
 
+    # 在执行失败认领前签发票据 ticket
+    ticket = issue_ticket()
+
+    # 错误密码认证失败：返回 1，且未建立所有者绑定
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: "错误密码")
     assert local_accounts_cli.main(["trusted-claim", "--username", "owner"]) == 1
     assert read_table("trusted_local_owners") == []
 
+    # 正确密码认证成功：建立 password_auth 绑定
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: PASSWORD)
     assert local_accounts_cli.main(["trusted-claim", "--username", "owner"]) == 0
     owners = read_table("trusted_local_owners")
     assert len(owners) == 1
     assert owners[0]["claim_method"] == "password_auth"
 
-    ticket2 = issue_ticket()
+    # 核心安全断言：错误密码认领失败并未使此前签发的票据失效，该 ticket 依然可用并成功兑换
     with make_client() as client:
-        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket2})
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
         assert redeemed.status_code == 200, redeemed.text
+        assert redeemed.json()["authenticated"] is True
+        assert redeemed.json()["principal"]["username"] == "owner"
         state = client.get("/api/asset-auth/status").json()
+        assert state["authenticated"] is True
         assert state["trusted_local"]["established"] is True
 
 

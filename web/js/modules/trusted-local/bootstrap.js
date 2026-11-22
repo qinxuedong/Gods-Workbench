@@ -157,6 +157,23 @@
             .catch(function () { return {code: '', message: ''}; });
     }
 
+    /** 读取成功响应正文；读不到返回空对象。 */
+    function readSuccessPayload(response) {
+        if (!response) return Promise.resolve({});
+        var reader = typeof response.clone === 'function'
+            ? response.clone()
+            : response;
+        if (typeof reader.json !== 'function') {
+            return Promise.resolve({});
+        }
+        return Promise.resolve()
+            .then(function () { return reader.json(); })
+            .then(function (data) {
+                return (data && typeof data === 'object') ? data : {};
+            })
+            .catch(function () { return {}; });
+    }
+
     /** 构造一个受信本机引导实例；参数用于测试注入时序与传输。 */
     function createTrustedLocalBootstrap(options) {
         var config = options || {};
@@ -183,6 +200,8 @@
             state: STATE.IDLE,
             /** 失败原因（只含错误码与文案，绝不含票据）。 */
             error: null,
+            /** 首启一次性恢复码（仅空库首次建立所有者时非空）。 */
+            recovery_codes: [],
             /** 递增代号：避免过期回调覆盖新状态。 */
             generation: 0,
             /** 是否已越过慢档阈值。 */
@@ -202,12 +221,16 @@
             instance.generation += 1;
             instance.state = nextState;
             instance.error = payload.error || null;
+            instance.recovery_codes = Array.isArray(payload.recovery_codes)
+                ? payload.recovery_codes
+                : [];
             dispatch({
                 state: nextState,
                 error: instance.error,
                 generation: instance.generation,
                 slow: instance.slow,
-                message: payload.message || ''
+                message: payload.message || '',
+                recovery_codes: instance.recovery_codes
             });
         }
 
@@ -238,7 +261,14 @@
             var status = response && typeof response.status === 'number'
                 ? response.status
                 : 0;
-            if (status >= 200 && status < 300) return Promise.resolve({kind: 'ok'});
+            if (status >= 200 && status < 300) {
+                return readSuccessPayload(response).then(function (payload) {
+                    var codes = Array.isArray(payload && payload.recovery_codes)
+                        ? payload.recovery_codes
+                        : [];
+                    return {kind: 'ok', recovery_codes: codes};
+                });
+            }
             return readErrorPayload(response).then(function (payload) {
                 if (payload.code === 'TRUSTED_LOCAL_CLAIM_REQUIRED') {
                     return {kind: 'claim', code: payload.code, message: payload.message};
@@ -318,7 +348,12 @@
                     return Promise.resolve({state: STATE.FALLBACK_PASSWORD, reason: 'timeout'});
                 }
                 return singleAttempt(ticket, remaining).then(function (outcome) {
-                    if (outcome.kind === 'ok') return {state: STATE.ENTERED};
+                    if (outcome.kind === 'ok') {
+                        return {
+                            state: STATE.ENTERED,
+                            recovery_codes: outcome.recovery_codes || []
+                        };
+                    }
                     if (outcome.kind === 'claim') {
                         return {
                             state: STATE.NEEDS_CLAIM,
@@ -356,17 +391,20 @@
                 clearTimer(slowTimer);
                 // 终态一律清空内存中的票据：用过、过期或被拒都不再需要保留。
                 instance.ticket = '';
+                instance.recovery_codes = outcome.recovery_codes || [];
                 setState(outcome.state, {
                     error: outcome.state === STATE.FAILED
                         ? (outcome.code || 'TRUSTED_LOCAL_BOOTSTRAP_INVALID')
                         : null,
-                    message: outcome.message || ''
+                    message: outcome.message || '',
+                    recovery_codes: outcome.recovery_codes || []
                 });
                 return {
                     state: outcome.state,
                     code: outcome.code || '',
                     message: outcome.message || '',
                     reason: outcome.reason || '',
+                    recovery_codes: outcome.recovery_codes || [],
                     generation: instance.generation
                 };
             });
@@ -419,6 +457,7 @@
         instance.extractTrustedTicket = extractTrustedTicket;
         instance.stripTrustedFragment = stripTrustedFragment;
         instance.readErrorPayload = readErrorPayload;
+        instance.readSuccessPayload = readSuccessPayload;
         instance.create = createTrustedLocalBootstrap;
         return instance;
     }
