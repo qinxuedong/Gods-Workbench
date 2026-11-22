@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-pick-client-folder"
+description = "Enables the pick_client_folder command without any pre-configured scope."
+commands.allow = ["pick_client_folder"]
+
+[[permission]]
+identifier = "deny-pick-client-folder"
+description = "Denies the pick_client_folder command without any pre-configured scope."
+commands.deny = ["pick_client_folder"]

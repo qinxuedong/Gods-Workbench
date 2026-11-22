@@ -3,7 +3,19 @@
   "identifier": "default",
   "description": "Local discovery screen and connected server pages capabilities. Custom bridge commands validate the window origin in Rust (QIN-432 AC10).",
   "windows": ["main"],
-  "permissions": ["core:default"],
+  "permissions": [
+    "core:default",
+    "allow-discover-lan",
+    "allow-last-server",
+    "allow-connect-to-server",
+    "allow-launch-local-backend",
+    "allow-get-diagnostics",
+    "allow-pick-client-folder",
+    "allow-pick-client-upload-files",
+    "allow-read-client-file",
+    "allow-get-client-setting",
+    "allow-set-client-setting"
+  ],
   "remote": {
     "urls": ["http://*:*", "https://*:*", "http://*:*/*", "https://*:*/*"]
   }
