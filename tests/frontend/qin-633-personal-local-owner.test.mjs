@@ -102,22 +102,50 @@ function makeElement(id = '', elementsMap = null) {
 
 function deckHarness(options = {}) {
     const elements = new Map();
-    const dialog = makeElement('accountModalDialog', elements);
-    const modal = makeElement('accountModal', elements);
-    elements.set('accountModalDialog', dialog);
-    elements.set('accountModal', modal);
+    let modal = null;
+    let dialog = null;
+    if (options.presetModal !== false) {
+        dialog = makeElement('accountModalDialog', elements);
+        modal = makeElement('accountModal', elements);
+        elements.set('accountModalDialog', dialog);
+        elements.set('accountModal', modal);
+    }
 
     const document = {
         readyState: 'loading',
         addEventListener() {},
         getElementById(id) { return elements.get(id) || null; },
-        querySelector() { return null; },
+        querySelector(selector) {
+            if (selector === '.hw-modal-backdrop.open') {
+                for (const el of elements.values()) {
+                    if (el.classList?.contains('hw-modal-backdrop') && el.classList?.contains('open')) {
+                        return el;
+                    }
+                }
+            }
+            return null;
+        },
         querySelectorAll() { return []; },
-        createElement(tag) { return makeElement(); },
+        createElement(tag) {
+            const el = makeElement('', elements);
+            return new Proxy(el, {
+                set(target, prop, value) {
+                    target[prop] = value;
+                    if (prop === 'id' && value) {
+                        elements.set(value, target);
+                    }
+                    return true;
+                }
+            });
+        },
         createRange() { return {selectNodeContents() {}}; },
         body: {
             style: {},
-            appendChild() {},
+            appendChild(child) {
+                if (child?.id) {
+                    elements.set(child.id, child);
+                }
+            },
         },
     };
 
@@ -468,4 +496,88 @@ test('AC2: 已有账户自动接管或二次启动（recovery_codes 为空）时
 
     await deck.syncAuth();
     assert.equal(openedModals.includes('accountModal'), false);
+});
+
+test('AC1/P1回归: 初始 DOM 无弹窗节点时，可信首启直入携带 recovery_codes 能自动创建 modal 并正确展示', async () => {
+    // 初始 DOM 绝无预置 modal 或 dialog 节点
+    const harness = deckHarness({
+        presetModal: false,
+        statusResponse: {
+            auth_mode: 'local_account',
+            authenticated: true,
+            principal: {username: 'local-owner', role: 'admin'},
+            setup_required: false,
+            trusted_local: {
+                enabled: true,
+                established: true,
+                needs_manual_claim: false,
+                mode: 'trusted_local',
+            },
+        },
+    });
+
+    assert.equal(harness.document.getElementById('accountModal'), null, '初始不得存在 accountModal 节点');
+    assert.equal(harness.document.getElementById('accountModalDialog'), null, '初始不得存在 accountModalDialog 节点');
+
+    const sampleCodes = ['RC-1111-2222', 'RC-3333-4444', 'RC-5555-6666', 'RC-7777-8888'];
+    harness.deck.authState.trusted_local = {
+        enabled: true,
+        established: true,
+        recovery_codes: sampleCodes,
+    };
+
+    assert.equal(harness.deck.recoveryCodesShown, false);
+
+    await harness.deck.syncAuth();
+
+    // 验证：自动创建了 modal 和 dialog 节点
+    const modal = harness.document.getElementById('accountModal');
+    const dialog = harness.document.getElementById('accountModalDialog');
+    assert.ok(modal, 'syncAuth 必须自动创建 accountModal 节点');
+    assert.ok(dialog, 'syncAuth 必须自动创建 accountModalDialog 节点');
+    assert.ok(harness.openedModals.includes('accountModal'), 'accountModal 必须被显式打开');
+    assert.match(dialog.innerHTML, /本机管理员已建立 · 请妥善保存恢复码/);
+    assert.match(dialog.innerHTML, /RC-1111-2222/);
+    assert.equal(harness.deck.recoveryCodesShown, true, '成功展示后方可置 recoveryCodesShown 为 true');
+});
+
+test('AC1/P1回归: 若初次渲染因故未成功展示恢复码，不得预先标记 recoveryCodesShown，后续 syncAuth 必须补显', async () => {
+    const harness = deckHarness({
+        presetModal: false,
+        statusResponse: {
+            auth_mode: 'local_account',
+            authenticated: true,
+            principal: {username: 'local-owner', role: 'admin'},
+            setup_required: false,
+            trusted_local: {
+                enabled: true,
+                established: true,
+                needs_manual_claim: false,
+                mode: 'trusted_local',
+            },
+        },
+    });
+
+    const sampleCodes = ['RC-AAAA-BBBB'];
+    harness.deck.authState.trusted_local = {
+        enabled: true,
+        established: true,
+        recovery_codes: sampleCodes,
+    };
+
+    // 模拟初次渲染时 ensureAccountModal 失败（如 document.body 尚未就绪）
+    const origEnsure = harness.deck.ensureAccountModal;
+    harness.deck.ensureAccountModal = () => null;
+
+    await harness.deck.syncAuth();
+    assert.equal(harness.deck.recoveryCodesShown, false, '渲染失败时绝对不得标记为已展示');
+
+    // 恢复正常环境后再次 syncAuth
+    harness.deck.ensureAccountModal = origEnsure;
+    await harness.deck.syncAuth();
+
+    assert.equal(harness.deck.recoveryCodesShown, true, '恢复后二次 syncAuth 必须成功补显并标记已展示');
+    const dialog = harness.document.getElementById('accountModalDialog');
+    assert.ok(dialog);
+    assert.match(dialog.innerHTML, /RC-AAAA-BBBB/);
 });

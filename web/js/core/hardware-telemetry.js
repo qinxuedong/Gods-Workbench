@@ -835,6 +835,9 @@
     },
 
     // 5. Real Account & Auth Router Integration (/api/asset-auth)
+    setupPromptShown: false,
+    recoveryCodesShown: false,
+
     authState: {
       // 字段与后端 GET /api/asset-auth/status 的真实契约逐字对应（见 api/routes_auth.py）。
       auth_mode: 'local_account',
@@ -926,8 +929,10 @@
         this.openAccountModal();
       } else if (this.authState.authenticated && this.authState.trusted_local?.established) {
         if (hasRecoveryCodes && !this.recoveryCodesShown) {
-          this.recoveryCodesShown = true;
-          this.renderTrustedLocalRecoveryCodes(pendingCodes);
+          const shown = this.renderTrustedLocalRecoveryCodes(pendingCodes);
+          if (shown) {
+            this.recoveryCodesShown = true;
+          }
         } else if (document.getElementById('accountModal')?.classList.contains('open')) {
           const isRecoveryDialog = Boolean(document.getElementById('localRecoveryCodes'));
           if (!isRecoveryDialog) {
@@ -1170,8 +1175,7 @@
       });
     },
 
-    // 呼出原生拟物账户认证与管理模态框
-    openAccountModal: function() {
+    ensureAccountModal: function() {
       let modal = document.getElementById('accountModal');
       if (!modal) {
         modal = document.createElement('div');
@@ -1182,9 +1186,16 @@
             <!-- 动态渲染内容 -->
           </div>
         `;
-        document.body.appendChild(modal);
+        if (document.body) {
+          document.body.appendChild(modal);
+        }
       }
+      return document.getElementById('accountModalDialog');
+    },
 
+    // 呼出原生拟物账户认证与管理模态框
+    openAccountModal: function() {
+      this.ensureAccountModal();
       this.renderAccountModalContent();
       this.openModal('accountModal');
     },
@@ -1601,8 +1612,9 @@
      * 绝不要求输入当前密码、绝不触发创建管理员或认领表单。
      */
     renderTrustedLocalRecoveryCodes: function(codes) {
-      const dialog = document.getElementById('accountModalDialog');
-      if (!dialog || !Array.isArray(codes) || codes.length === 0) return;
+      if (!Array.isArray(codes) || codes.length === 0) return false;
+      const dialog = this.ensureAccountModal();
+      if (!dialog) return false;
       const items = codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
       dialog.innerHTML = `
         <div class="space-y-3" data-gw-trusted-recovery="true">
@@ -1624,6 +1636,7 @@
           </button>
         </div>`;
       this.openModal('accountModal');
+      return true;
     },
 
     copyRecoveryCodes: async function(list, button, status) {
