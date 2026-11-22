@@ -1606,10 +1606,7 @@
       const items = codes.map(code => `<li class="rounded bg-black/40 border border-white/10 px-2 py-1"><code>${escapeHtml(code)}</code></li>`).join('');
       dialog.innerHTML = `
         <div class="space-y-3" data-gw-trusted-recovery="true">
-          <div class="flex items-center justify-between pb-2 border-b border-white/10">
-            <h3 class="gw-type-section font-bold text-slate-100">本机管理员已建立 · 请妥善保存恢复码</h3>
-            <span class="px-2 py-0.5 rounded text-xs bg-amber-500/20 text-amber-300 font-mono">一次性凭证</span>
-          </div>
+          <h3 class="gw-type-section font-bold text-slate-100">本机管理员已建立 · 请妥善保存恢复码</h3>
           <p class="gw-type-body-sm text-amber-200">
             本机所有者已免密直入。这些恢复码只显示一次；若日后本机环境失效，可使用恢复码重置密码以恢复管理权。
           </p>
