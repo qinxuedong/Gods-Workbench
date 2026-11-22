@@ -19,6 +19,11 @@ on:
         required: false
         default: 大版本发布全量验证
         type: string
+      version:
+        description: 非 Tag 手动构建的产品版本（X.Y.Z，须与发布计划一致）
+        required: false
+        default: ""
+        type: string
 
 # 发布构建不做并发取消：同一 Tag 重跑应排队执行完毕，不中途掐断产物。
 concurrency:
@@ -211,14 +216,75 @@ jobs:
           path: ${{ runner.temp }}/gw-tauri-cli
           key: tauri-cli-${{ runner.os }}-${{ runner.arch }}-${{ steps.rust-cache-key.outputs.version }}-${{ steps.rust-cache-key.outputs.host }}-2.12.3
 
+      - name: 配置 Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 解析同一正式版本
+        id: release-version
+        shell: pwsh
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:GITHUB_REF_TYPE -eq 'tag') {
+            $tag = $env:GITHUB_REF_NAME
+            if ($tag -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+              throw "发布 Tag 必须是 vX.Y.Z 或 vX.Y.Z-suffix：$tag"
+            }
+            $version = $tag.Substring(1)
+          } elseif ($env:INPUT_VERSION) {
+            $version = $env:INPUT_VERSION.Trim()
+            if ($version -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z.-]+)?$') {
+              throw "手动构建版本必须是 X.Y.Z 或 X.Y.Z-suffix：$version"
+            }
+          } else {
+            throw '非 Tag 手动构建必须在 version 输入中填写产品版本'
+          }
+          "product_version=$version" >> $env:GITHUB_ENV
+          "build_id=$env:GITHUB_SHA" >> $env:GITHUB_ENV
+          Write-Host "同一正式版本：$version（build $env:GITHUB_SHA）"
+
+      - name: 装配内置后端与随包清单
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          python clients/desktop/packaging/build_release.py `
+            --version $env:product_version `
+            --build-id $env:build_id `
+            --output build/desktop-release `
+            --download-wheels `
+            --install-dir "$env:LOCALAPPDATA\Gods Workbench"
+
+      - name: 校验桌面、清单与后端版本一致
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $evidence = Get-Content build/desktop-release/release-evidence.json -Raw | ConvertFrom-Json
+          $config = Get-Content build/desktop-release/tauri.release.conf.json -Raw | ConvertFrom-Json
+          if ($evidence.product_version -ne $env:product_version) { throw '证据产品版本与发布版本不一致' }
+          if ($evidence.manifest.product_version -ne $env:product_version) { throw '随包清单产品版本与发布版本不一致' }
+          if ($config.version -ne $env:product_version) { throw '桌面发布配置版本与发布版本不一致' }
+          if ($evidence.app_version -ne "$env:product_version+gw.$env:build_id") { throw '后端带来源版本与构建标识不一致' }
+          Write-Host '版本一致性门通过'
+
       - name: Build Windows NSIS installer
         working-directory: clients/desktop
-        run: cargo tauri build --bundles nsis --ci -- --locked
+        shell: pwsh
+        run: |
+          $config = Join-Path $env:GITHUB_WORKSPACE 'build/desktop-release/tauri.release.conf.json'
+          if (-not (Test-Path -LiteralPath $config)) { throw '缺少发布配置' }
+          cargo tauri build --config $config --bundles nsis --ci -- --locked
 
-      - name: Upload Windows installer
+      - name: Upload Windows installer and release evidence
         uses: actions/upload-artifact@v4
         with:
           name: gods-workbench-desktop-windows
-          path: clients/desktop/target/release/bundle/nsis/*-setup.exe
+          path: |
+            clients/desktop/target/release/bundle/nsis/*-setup.exe
+            build/desktop-release/release-evidence.json
+            build/desktop-release/staging/backend/bundle-manifest.json
+            build/desktop-release/staging/backend/runtime-inventory.json
           if-no-files-found: error
           retention-days: 30

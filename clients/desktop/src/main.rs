@@ -1,5 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod compat;
+mod sha256;
+mod trusted;
+
+use compat::{BundleManifest, HandshakeReport, TrustedStatus};
 use futures_util::future::join_all;
 use if_addrs::{get_if_addrs, IfAddr};
 use reqwest::{Client, Url};
@@ -16,7 +21,7 @@ use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
-    AppHandle, Manager, State, WebviewWindow, WindowEvent,
+    AppHandle, Manager, RunEvent, State, WebviewWindow, WindowEvent,
 };
 use tauri_plugin_dialog::DialogExt;
 
@@ -41,6 +46,44 @@ struct ClientConfig {
 /// 会话级白名单：只允许读取本轮通过对话框明确选中的文件。
 struct ClientSessionState(Mutex<HashSet<PathBuf>>);
 
+#[derive(Debug, Clone, Serialize)]
+struct LaunchResult {
+    destination: String,
+    auto_login: bool,
+    notice: String,
+}
+
+#[derive(Default)]
+struct DiagnosticsInner {
+    handshake: Option<HandshakeReport>,
+    trusted: TrustedStatus,
+    bundled_backend_version: String,
+    manifest_error: String,
+    program_data_non_overlapping: Option<bool>,
+    notice: String,
+    last_error: String,
+}
+
+#[derive(Default)]
+struct ClientDiagnostics(Mutex<DiagnosticsInner>);
+
+#[derive(Debug, Serialize)]
+struct DiagnosticsView {
+    desktop_version: String,
+    build_mode: String,
+    bundled_backend_version: String,
+    capability_profile: String,
+    capability_digest: String,
+    manifest_error: String,
+    handshake: Option<HandshakeReport>,
+    trusted: TrustedStatus,
+    program_data_non_overlapping: Option<bool>,
+    notice: String,
+    last_error: String,
+    backend_phase: String,
+    backend_pid: Option<u32>,
+}
+
 /// 托管的本地后端子进程生命周期阶段。
 #[derive(Debug, PartialEq, Eq, Clone, Copy)]
 enum BackendPhase {
@@ -48,6 +91,17 @@ enum BackendPhase {
     Launching,
     Running,
     Failed,
+}
+
+impl BackendPhase {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Idle => "idle",
+            Self::Launching => "launching",
+            Self::Running => "running",
+            Self::Failed => "failed",
+        }
+    }
 }
 
 struct BackendStateInner {
@@ -85,17 +139,21 @@ fn instance_lock_path() -> PathBuf {
     std::env::temp_dir().join("ai.godsworkbench.desktop.instance.json")
 }
 
-/// 唤醒状态共享结构：允许在 Tauri 窗口尚未完成初始化前安全捕获唤醒通知。
+/// 唤醒状态共享结构：允许在 Tauri 窗口尚未完成初始化前安全捕获唤醒、退出与诊断请求。
 struct WakeupState {
     app_handle: Mutex<Option<AppHandle>>,
     pending_wakeups: std::sync::atomic::AtomicUsize,
+    pending_quit: std::sync::atomic::AtomicBool,
+    lock_path: PathBuf,
 }
 
 impl WakeupState {
-    fn new() -> Self {
+    fn new(lock_path: PathBuf) -> Self {
         Self {
             app_handle: Mutex::new(None),
             pending_wakeups: std::sync::atomic::AtomicUsize::new(0),
+            pending_quit: std::sync::atomic::AtomicBool::new(false),
+            lock_path,
         }
     }
 
@@ -114,7 +172,57 @@ impl WakeupState {
             .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     }
 
+    fn trigger_quit(&self) {
+        let app = self.app_handle.lock().ok().and_then(|guard| guard.clone());
+        if let Some(app) = app {
+            release_own_instance_lock(&self.lock_path);
+            let backend = app.state::<ManagedBackendState>();
+            stop_managed_backend(&backend);
+            app.exit(0);
+            return;
+        }
+        self.pending_quit
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+    }
+
+    fn trigger_find_nas(&self) {
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                if let Some(registry) = app.try_state::<TrayMenuRegistry>() {
+                    if let Ok(id_guard) = registry.find_nas_id.lock() {
+                        if let Some(menu_id) = id_guard.as_deref() {
+                            handle_tray_menu_event(app, menu_id, &self.lock_path);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    fn status_json(&self) -> Option<String> {
+        let app = self
+            .app_handle
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone())?;
+        let diagnostics = app.state::<ClientDiagnostics>();
+        let backend = app.state::<ManagedBackendState>();
+        let view = diagnostics_view(&app, &diagnostics, &backend).ok()?;
+        serde_json::to_string(&view).ok()
+    }
+
     fn attach_app(&self, app: AppHandle) {
+        let pending_quit = self
+            .pending_quit
+            .swap(false, std::sync::atomic::Ordering::SeqCst);
+        if pending_quit {
+            release_own_instance_lock(&self.lock_path);
+            let backend = app.state::<ManagedBackendState>();
+            stop_managed_backend(&backend);
+            app.exit(0);
+            return;
+        }
+
         let pending = self
             .pending_wakeups
             .swap(0, std::sync::atomic::Ordering::SeqCst);
@@ -151,16 +259,21 @@ fn is_process_alive(pid: u32) -> bool {
             dwProcessId: u32,
         ) -> *mut std::ffi::c_void;
         fn CloseHandle(hObject: *mut std::ffi::c_void) -> i32;
+        fn WaitForSingleObject(hHandle: *mut std::ffi::c_void, dwMilliseconds: u32) -> u32;
     }
     const PROCESS_QUERY_LIMITED_INFORMATION: u32 = 0x1000;
     const SYNCHRONIZE: u32 = 0x00100000;
+    const WAIT_TIMEOUT: u32 = 258;
     unsafe {
         let handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | SYNCHRONIZE, 0, pid);
         if handle.is_null() {
             return false;
         }
+        // OpenProcess still succeeds while another handle keeps a terminated
+        // process object alive; wait on the handle to observe real termination.
+        let wait = WaitForSingleObject(handle, 0);
         CloseHandle(handle);
-        true
+        wait == WAIT_TIMEOUT
     }
 }
 
@@ -447,25 +560,51 @@ fn report_fatal_error(message: &str) {
     eprintln!("神工坊桌面端启动错误: {message}");
 }
 
-fn try_wake_existing_instance(port: u16, token: &str) -> bool {
+fn try_instance_command(port: u16, token: &str, command: &str) -> Option<String> {
     let addr = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-    let mut stream = match std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)) {
-        Ok(s) => s,
-        Err(_) => return false,
-    };
-    let _ = stream.set_read_timeout(Some(Duration::from_millis(800)));
-    let _ = stream.set_write_timeout(Some(Duration::from_millis(800)));
+    let mut stream =
+        std::net::TcpStream::connect_timeout(&addr, Duration::from_millis(300)).ok()?;
+    let _ = stream.set_read_timeout(Some(Duration::from_millis(1500)));
+    let _ = stream.set_write_timeout(Some(Duration::from_millis(1500)));
     use std::io::{BufRead, BufReader, Write};
-    if writeln!(stream, "WAKEUP {}", token).is_err() {
-        return false;
-    }
+    writeln!(stream, "{command} {token}").ok()?;
     let _ = stream.flush();
     let mut reader = BufReader::new(&mut stream);
     let mut reply = String::new();
-    if reader.read_line(&mut reply).is_ok() && reply.trim() == "WAKEN" {
-        return true;
+    reader.read_line(&mut reply).ok()?;
+    Some(reply.trim().to_string())
+}
+
+fn try_wake_existing_instance(port: u16, token: &str) -> bool {
+    matches!(
+        try_instance_command(port, token, "WAKEUP").as_deref(),
+        Some("WAKEN")
+    )
+}
+
+fn try_request_existing_quit(port: u16, token: &str) -> Result<(), String> {
+    match try_instance_command(port, token, "QUIT").as_deref() {
+        Some("BYE") => Ok(()),
+        Some(other) => Err(format!("桌面端拒绝了退出请求（应答: {other}）")),
+        None => Err("桌面端未响应退出请求".into()),
     }
-    false
+}
+
+fn try_request_existing_status(port: u16, token: &str) -> Result<String, String> {
+    match try_instance_command(port, token, "STATUS") {
+        Some(reply) if reply.starts_with("STATUS ") => Ok(reply["STATUS ".len()..].to_string()),
+        Some(reply) if reply == "STATUS-UNAVAILABLE" => Err("桌面端诊断状态尚未就绪".into()),
+        Some(other) => Err(format!("桌面端返回了无法识别的诊断应答: {other}")),
+        None => Err("桌面端未响应诊断请求".into()),
+    }
+}
+
+fn try_request_existing_find_nas(port: u16, token: &str) -> Result<(), String> {
+    match try_instance_command(port, token, "FIND_NAS").as_deref() {
+        Some("NAVIGATING") => Ok(()),
+        Some(other) => Err(format!("桌面端拒绝了 Find NAS 请求（应答: {other}）")),
+        None => Err("桌面端未响应 Find NAS 请求".into()),
+    }
 }
 
 fn initialize_primary_listener(
@@ -503,7 +642,7 @@ fn initialize_primary_listener(
         .try_clone()
         .map_err(|e| format!("Cannot clone listener socket for wakeup thread: {e}"))?;
 
-    let wakeup_state = Arc::new(WakeupState::new());
+    let wakeup_state = Arc::new(WakeupState::new(lock_path.to_path_buf()));
     let wakeup_clone = wakeup_state.clone();
     let expected_token = token.clone();
 
@@ -517,11 +656,34 @@ fn initialize_primary_listener(
                 let mut line = String::new();
                 if reader.read_line(&mut line).is_ok() {
                     let parts: Vec<&str> = line.trim().split_whitespace().collect();
-                    if parts.len() == 2 && parts[0] == "WAKEUP" && parts[1] == expected_token {
-                        // 优先写回 WAKEN 并 flush，让发起方立即收到应答完成唤醒退出，不依赖 UI 或主线程状态
-                        let _ = writeln!(stream, "WAKEN");
-                        let _ = stream.flush();
-                        wakeup_clone.trigger_wakeup();
+                    if parts.len() == 2 && parts[1] == expected_token {
+                        match parts[0] {
+                            "WAKEUP" => {
+                                // 优先写回应答并 flush，让发起方立即完成，不依赖 UI 或主线程状态
+                                let _ = writeln!(stream, "WAKEN");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_wakeup();
+                            }
+                            "QUIT" => {
+                                let _ = writeln!(stream, "BYE");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_quit();
+                            }
+                            "STATUS" => {
+                                let reply = match wakeup_clone.status_json() {
+                                    Some(json) => format!("STATUS {json}"),
+                                    None => "STATUS-UNAVAILABLE".to_string(),
+                                };
+                                let _ = writeln!(stream, "{reply}");
+                                let _ = stream.flush();
+                            }
+                            "FIND_NAS" => {
+                                let _ = writeln!(stream, "NAVIGATING");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_find_nas();
+                            }
+                            _ => {}
+                        }
                     }
                 }
             }
@@ -694,6 +856,7 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
 
     #[cfg(windows)]
     let venv_candidates = [
+        backend_root.join("python").join("python.exe"),
         backend_root
             .join(".venv")
             .join("Scripts")
@@ -702,6 +865,7 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
     ];
     #[cfg(not(windows))]
     let venv_candidates = [
+        backend_root.join("python").join("bin").join("python3"),
         backend_root.join(".venv").join("bin").join("python"),
         backend_root.join("venv").join("bin").join("python"),
     ];
@@ -734,18 +898,46 @@ fn find_python_executable(backend_root: &Path) -> Result<PathBuf, String> {
     )
 }
 
+fn looks_like_backend_root(path: &Path) -> bool {
+    path.join("run.py").is_file() && path.join("gw").is_dir()
+}
+
+fn installed_backend_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Ok(exe_path) = std::env::current_exe() {
+        if let Some(exe_dir) = exe_path.parent() {
+            candidates.push(exe_dir.join("backend"));
+            candidates.push(exe_dir.join("resources").join("backend"));
+            candidates.push(
+                exe_dir
+                    .parent()
+                    .unwrap_or(exe_dir)
+                    .join("Resources")
+                    .join("backend"),
+            );
+        }
+    }
+    candidates
+}
+
 fn find_backend_root() -> Result<PathBuf, String> {
     for var in ["GW_BACKEND_ROOT", "GW_ROOT_DIR"] {
         if let Ok(dir_str) = std::env::var(var) {
             let p = PathBuf::from(dir_str.trim());
-            if p.join("run.py").is_file() && p.join("gw").is_dir() {
+            if looks_like_backend_root(&p) {
                 return Ok(p);
             }
         }
     }
 
+    for candidate in installed_backend_candidates() {
+        if looks_like_backend_root(&candidate) {
+            return Ok(candidate);
+        }
+    }
+
     if let Ok(cwd) = std::env::current_dir() {
-        if cwd.join("run.py").is_file() && cwd.join("gw").is_dir() {
+        if looks_like_backend_root(&cwd) {
             return Ok(cwd);
         }
     }
@@ -754,7 +946,7 @@ fn find_backend_root() -> Result<PathBuf, String> {
         let mut current = exe_path.parent();
         for _ in 0..6 {
             if let Some(dir) = current {
-                if dir.join("run.py").is_file() && dir.join("gw").is_dir() {
+                if looks_like_backend_root(dir) {
                     return Ok(dir.to_path_buf());
                 }
                 current = dir.parent();
@@ -765,9 +957,318 @@ fn find_backend_root() -> Result<PathBuf, String> {
     }
 
     Err(
-        "未找到神工坊后端源码根目录（未发现 run.py 与 gw 目录）。请配置 GW_BACKEND_ROOT 环境变量。"
+        "未找到神工坊后端根目录（未发现 run.py 与 gw 目录）。请配置 GW_BACKEND_ROOT 环境变量。"
             .into(),
     )
+}
+
+fn load_installed_manifest() -> Result<Option<BundleManifest>, String> {
+    for candidate in installed_backend_candidates() {
+        if compat::manifest_path(&candidate).exists() {
+            return compat::load_bundle_manifest(&candidate);
+        }
+    }
+    match find_backend_root() {
+        Ok(root) => compat::load_bundle_manifest(&root),
+        Err(_) => Ok(None),
+    }
+}
+
+fn production_data_root() -> Result<PathBuf, String> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())?;
+    Ok(base.join("GodsWorkbench"))
+}
+
+fn install_directory() -> Result<PathBuf, String> {
+    std::env::current_exe()
+        .ok()
+        .and_then(|path| path.parent().map(Path::to_path_buf))
+        .ok_or_else(|| "无法确定桌面端安装目录".to_string())
+}
+
+#[cfg(windows)]
+const PATH_SEPARATOR: char = '\\';
+#[cfg(not(windows))]
+const PATH_SEPARATOR: char = '/';
+
+fn strip_verbatim_prefix(path: &Path) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(rest) = text.strip_prefix(r"\\?\") {
+            if let Some(unc) = rest.strip_prefix(r"UNC\") {
+                return PathBuf::from(format!(r"\\{unc}"));
+            }
+            return PathBuf::from(rest);
+        }
+    }
+    path.to_path_buf()
+}
+
+fn canonicalize_with_missing(path: &Path) -> PathBuf {
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    let mut current = path.to_path_buf();
+    loop {
+        if let Ok(resolved) = fs::canonicalize(&current) {
+            let mut result = strip_verbatim_prefix(&resolved);
+            for part in missing.iter().rev() {
+                result.push(part);
+            }
+            return result;
+        }
+        let Some(name) = current.file_name().map(|name| name.to_os_string()) else {
+            return path.to_path_buf();
+        };
+        missing.push(name);
+        if !current.pop() {
+            return path.to_path_buf();
+        }
+    }
+}
+
+fn comparison_key(path: &Path) -> String {
+    let canonical = strip_verbatim_prefix(path);
+    let separator = PATH_SEPARATOR.to_string();
+    let normalized = canonical.to_string_lossy().replace(['/', '\\'], &separator);
+    let trimmed = normalized.trim_end_matches(PATH_SEPARATOR);
+    let value = if trimmed.is_empty() {
+        normalized.as_str()
+    } else {
+        trimmed
+    };
+    #[cfg(windows)]
+    {
+        value.to_lowercase()
+    }
+    #[cfg(not(windows))]
+    {
+        value.to_string()
+    }
+}
+
+fn path_is_within(child: &Path, parent: &Path) -> bool {
+    let child_key = comparison_key(child);
+    let parent_key = comparison_key(parent);
+    if child_key == parent_key {
+        return true;
+    }
+    let prefix = if parent_key.ends_with(PATH_SEPARATOR) {
+        parent_key
+    } else {
+        format!("{parent_key}{PATH_SEPARATOR}")
+    };
+    child_key.starts_with(&prefix)
+}
+
+fn paths_non_overlapping(left: &Path, right: &Path) -> bool {
+    !path_is_within(left, right) && !path_is_within(right, left)
+}
+
+fn program_data_non_overlapping() -> Result<bool, String> {
+    let install = canonicalize_with_missing(&install_directory()?);
+    let data = canonicalize_with_missing(&production_data_root()?);
+    Ok(paths_non_overlapping(&install, &data))
+}
+
+fn upgrade_journal_path() -> Option<PathBuf> {
+    let base = std::env::var_os("LOCALAPPDATA")
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())?;
+    Some(
+        base.join("ai.godsworkbench.desktop")
+            .join("upgrade")
+            .join("journal.txt"),
+    )
+}
+
+fn commit_upgrade_journal_at(journal: &Path) {
+    let Ok(state) = fs::read_to_string(journal) else {
+        return;
+    };
+    if matches!(state.trim(), "installed" | "verified") {
+        let _ = fs::write(journal, "committed");
+    }
+}
+
+fn commit_upgrade_journal() {
+    if let Some(journal) = upgrade_journal_path() {
+        commit_upgrade_journal_at(&journal);
+    }
+}
+
+fn new_handshake_client() -> Result<Client, String> {
+    Client::builder()
+        .connect_timeout(Duration::from_secs(2))
+        .timeout(Duration::from_secs(5))
+        .no_proxy()
+        .build()
+        .map_err(|error| format!("无法创建本机握手客户端: {error}"))
+}
+
+fn update_diagnostics(diagnostics: &ClientDiagnostics, update: impl FnOnce(&mut DiagnosticsInner)) {
+    if let Ok(mut guard) = diagnostics.0.lock() {
+        update(&mut guard);
+    }
+}
+
+fn record_manifest_result(
+    diagnostics: &ClientDiagnostics,
+    result: &Result<Option<BundleManifest>, String>,
+) {
+    update_diagnostics(diagnostics, |inner| match result {
+        Ok(Some(manifest)) => {
+            inner.bundled_backend_version = manifest.app_version();
+            inner.manifest_error.clear();
+        }
+        Ok(None) => {
+            inner.bundled_backend_version = "unknown".into();
+            inner.manifest_error.clear();
+        }
+        Err(error) => {
+            inner.bundled_backend_version = "unknown".into();
+            inner.manifest_error = error.clone();
+        }
+    });
+}
+
+fn record_handshake(diagnostics: &ClientDiagnostics, report: &HandshakeReport) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.handshake = Some(report.clone());
+        inner.notice.clear();
+        inner.last_error.clear();
+    });
+}
+
+fn record_trusted(diagnostics: &ClientDiagnostics, status: &TrustedStatus) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.trusted = status.clone();
+    });
+}
+
+fn record_notice(diagnostics: &ClientDiagnostics, notice: &str) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.notice = notice.to_string();
+    });
+}
+
+fn record_error(diagnostics: &ClientDiagnostics, error: &str) {
+    update_diagnostics(diagnostics, |inner| {
+        inner.last_error = error.to_string();
+        inner.notice.clear();
+    });
+}
+
+struct TrustedAttempt {
+    status: TrustedStatus,
+    ticket: Option<String>,
+}
+
+fn trusted_unavailable(reason: impl Into<String>) -> TrustedAttempt {
+    TrustedAttempt {
+        status: TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+        ticket: None,
+    }
+}
+
+fn attempt_trusted_entry(
+    report: &HandshakeReport,
+    manifest: Option<&BundleManifest>,
+    non_overlap: bool,
+) -> TrustedAttempt {
+    if !report.local {
+        return trusted_unavailable("仅 loopback 本机后端支持受信登录");
+    }
+    if manifest.is_none() {
+        return trusted_unavailable("开发源构建不签发本机票据");
+    }
+    if !report.verified {
+        let summary = report.failure_summary();
+        return trusted_unavailable(if summary.is_empty() {
+            "本机后端未通过版本与能力验证".to_string()
+        } else {
+            format!("本机后端未通过版本与能力验证：{summary}")
+        });
+    }
+    if !report.trusted_bootstrap_available {
+        return trusted_unavailable("后端未提供受信本机兑换接口（QIN-630 未部署）");
+    }
+    if !non_overlap {
+        return trusted_unavailable("安装目录与数据根存在包含关系");
+    }
+    let backend_root = match find_backend_root() {
+        Ok(root) => root,
+        Err(error) => return trusted_unavailable(error),
+    };
+    let python = match find_python_executable(&backend_root) {
+        Ok(python) => python,
+        Err(error) => return trusted_unavailable(error),
+    };
+    let auth_dir = match production_data_root() {
+        Ok(root) => root.join("auth"),
+        Err(error) => return trusted_unavailable(error),
+    };
+    match trusted::verify_acl(&python, &backend_root, &auth_dir) {
+        Ok(acl) if acl.ok => {}
+        Ok(acl) => return trusted_unavailable(acl.reason),
+        Err(error) => return trusted_unavailable(error),
+    }
+    match trusted::issue_ticket(&python, &backend_root, "127.0.0.1", 2077) {
+        Ok(ticket) => TrustedAttempt {
+            status: TrustedStatus {
+                available: true,
+                auto_login: true,
+                reason: String::new(),
+            },
+            ticket: Some(ticket),
+        },
+        Err(error) => trusted_unavailable(error),
+    }
+}
+
+async fn trusted_attempt_for(
+    report: &HandshakeReport,
+    manifest: Option<BundleManifest>,
+    non_overlap: bool,
+) -> Result<TrustedAttempt, String> {
+    let report = report.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        attempt_trusted_entry(&report, manifest.as_ref(), non_overlap)
+    })
+    .await
+    .map_err(|error| format!("受信本机预检任务失败: {error}"))
+}
+
+fn local_notice_for(report: &HandshakeReport, manifest_present: bool) -> String {
+    if report.verified {
+        return String::new();
+    }
+    let summary = report.failure_summary();
+    let prefix = if manifest_present {
+        "本机后端为未验证实例，安装版不以兼容名义放行"
+    } else {
+        "开发源构建，仅用于本机开发"
+    };
+    if summary.is_empty() {
+        format!("{prefix}，请使用密码登录。")
+    } else {
+        format!("{prefix}：{summary}。请使用密码登录或修复安装。")
+    }
+}
+
+fn remote_failure_message(report: &HandshakeReport) -> String {
+    let summary = report.failure_summary();
+    if summary.is_empty() {
+        "无法验证服务器兼容性。请升级服务器或改用匹配的桌面安装版。".to_string()
+    } else {
+        format!("无法验证服务器兼容性：{summary}。请升级服务器或改用匹配的桌面安装版。")
+    }
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -809,6 +1310,8 @@ fn spawn_backend_process(
         .arg("--prod")
         .env("GW_HOST", "127.0.0.1")
         .env("GW_PORT", "2077")
+        // 安装目录只读使用：避免运行期把 __pycache__ 写进程序目录并导致卸载残留。
+        .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped());
@@ -870,13 +1373,14 @@ fn drain_process_output(child: &mut std::process::Child) -> ProcessOutputTracker
     ProcessOutputTracker { recent_stderr }
 }
 
+#[cfg(test)]
 async fn wait_for_backend_ready(
     client: &Client,
     child: &mut std::process::Child,
     tracker: &ProcessOutputTracker,
+    base: &Url,
     timeout: Duration,
 ) -> Result<(), String> {
-    let local_base = Url::parse("http://127.0.0.1:2077/").unwrap();
     let start = std::time::Instant::now();
 
     while start.elapsed() < timeout {
@@ -890,7 +1394,7 @@ async fn wait_for_backend_ready(
             return Err(err_msg);
         }
 
-        if check_health(client, &local_base).await.is_ok() {
+        if check_health(client, base).await.is_ok() {
             return Ok(());
         }
 
@@ -963,7 +1467,7 @@ fn origins_match(current: &str, saved: &str) -> bool {
     }
 }
 
-/// 客户端桥接命令只对本地发现页与当前已连接的服务器页面开放（QIN-432 AC10）。
+/// 客户端桥接命令只对本地发现页、本地 2077 服务端以及当前已连接的服务器页面开放（QIN-432 / QIN-626 AC10）。
 fn ensure_client_bridge_window(app: &AppHandle, window: &WebviewWindow) -> Result<(), String> {
     if ensure_local_ui(window).is_ok() {
         return Ok(());
@@ -971,6 +1475,11 @@ fn ensure_client_bridge_window(app: &AppHandle, window: &WebviewWindow) -> Resul
     let current = window
         .url()
         .map_err(|error| format!("Cannot read window URL: {error}"))?;
+    let host = current.host_str().unwrap_or_default().to_ascii_lowercase();
+    let port = current.port().unwrap_or(80);
+    if (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077 {
+        return Ok(());
+    }
     let saved = last_saved_server_url(app)?;
     let saved = saved.ok_or_else(|| {
         "Client bridge commands are only available for the connected server page.".to_string()
@@ -1125,13 +1634,31 @@ async fn check_health(client: &Client, base: &Url) -> Result<(), String> {
     Ok(())
 }
 
-fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Cannot locate the client settings directory: {error}"))?;
+fn client_settings_dir_from(
+    appdata_override: Option<std::ffi::OsString>,
+    identifier: &str,
+    fallback: Result<PathBuf, tauri::Error>,
+) -> Result<PathBuf, String> {
+    // 优先尊重 APPDATA 环境变量，确保自动化验收隔离模式下客户端配置落入沙箱而不触碰真实用户漫游目录
+    if let Some(appdata) = appdata_override.filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(appdata).join(identifier));
+    }
+    fallback.map_err(|error| format!("Cannot locate the client settings directory: {error}"))
+}
+
+fn client_settings_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = client_settings_dir_from(
+        std::env::var_os("APPDATA"),
+        app.config().identifier.as_str(),
+        app.path().app_config_dir(),
+    )?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Cannot create the client settings directory: {error}"))?;
+    Ok(directory)
+}
+
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = client_settings_dir(app)?;
     Ok(directory.join("server.json"))
 }
 
@@ -1152,12 +1679,7 @@ fn client_setting_key_is_allowed(key: &str) -> bool {
 }
 
 fn client_config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Cannot locate the client settings directory: {error}"))?;
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Cannot create the client settings directory: {error}"))?;
+    let directory = client_settings_dir(app)?;
     Ok(directory.join("client.json"))
 }
 
@@ -1300,8 +1822,11 @@ fn set_client_setting(
 }
 
 #[tauri::command]
-async fn discover_lan(window: WebviewWindow) -> Result<Vec<DiscoveryResult>, String> {
-    ensure_local_ui(&window)?;
+async fn discover_lan(
+    app: AppHandle,
+    window: WebviewWindow,
+) -> Result<Vec<DiscoveryResult>, String> {
+    ensure_client_bridge_window(&app, &window)?;
     let client = new_http_client()?;
     let probes = scan_targets()
         .into_iter()
@@ -1317,7 +1842,7 @@ async fn discover_lan(window: WebviewWindow) -> Result<Vec<DiscoveryResult>, Str
 
 #[tauri::command]
 fn last_server(app: AppHandle, window: WebviewWindow) -> Result<Option<String>, String> {
-    ensure_local_ui(&window)?;
+    ensure_client_bridge_window(&app, &window)?;
     let path = config_path(&app)?;
     let content = match fs::read(path) {
         Ok(content) => content,
@@ -1334,31 +1859,174 @@ fn last_server(app: AppHandle, window: WebviewWindow) -> Result<Option<String>, 
 async fn connect_to_server(
     app: AppHandle,
     window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
     server_url: String,
-) -> Result<String, String> {
-    ensure_local_ui(&window)?;
-    let base = normalize_server_url(&server_url)?;
-    let client = new_http_client()?;
-    check_health(&client, &base).await?;
-    save_server_url(&app, base.as_str())?;
-    let mut destination = base;
-    destination.set_path("/static/pages/index.html");
-    Ok(destination.to_string())
+) -> Result<LaunchResult, String> {
+    let result = connect_to_server_inner(&app, &window, &diagnostics, &server_url).await;
+    if let Err(error) = &result {
+        record_error(&diagnostics, error);
+    }
+    result
+}
+
+async fn connect_to_server_inner(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    diagnostics: &ClientDiagnostics,
+    server_url: &str,
+) -> Result<LaunchResult, String> {
+    ensure_client_bridge_window(app, window)?;
+    let base = normalize_server_url(server_url)?;
+    let manifest_result = load_installed_manifest();
+    record_manifest_result(diagnostics, &manifest_result);
+    let manifest = manifest_result?;
+    let non_overlap = match manifest.as_ref() {
+        Some(_) => {
+            let ok = program_data_non_overlapping()?;
+            update_diagnostics(diagnostics, |inner| {
+                inner.program_data_non_overlapping = Some(ok);
+            });
+            if !ok {
+                return Err(
+                    "安装目录与数据根存在包含关系，已拒绝连接。请卸载后重新安装到独立目录。".into(),
+                );
+            }
+            true
+        }
+        None => false,
+    };
+
+    let client = new_handshake_client()?;
+    let report = compat::evaluate(&client, &base, manifest.as_ref()).await?;
+    record_handshake(diagnostics, &report);
+
+    if !report.verified {
+        if !report.local {
+            return Err(remote_failure_message(&report));
+        }
+        let notice = local_notice_for(&report, manifest.is_some());
+        record_trusted(
+            diagnostics,
+            &TrustedStatus {
+                available: false,
+                auto_login: false,
+                reason: "本机后端未验证，不签发受信票据".into(),
+            },
+        );
+        record_notice(diagnostics, &notice);
+        save_server_url(app, base.as_str())?;
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    if report.local {
+        commit_upgrade_journal();
+    }
+
+    save_server_url(app, base.as_str())?;
+
+    if report.local && manifest.is_some() && report.trusted_bootstrap_available {
+        let attempt = trusted_attempt_for(&report, manifest.clone(), non_overlap).await?;
+        record_trusted(diagnostics, &attempt.status);
+        if let Some(ticket) = attempt.ticket {
+            let destination = trusted::destination_with_ticket(&base, &ticket)?;
+            let notice = "已通过受信本机一次性票据自动进入。".to_string();
+            record_notice(diagnostics, &notice);
+            return Ok(LaunchResult {
+                destination,
+                auto_login: true,
+                notice,
+            });
+        }
+        let notice = format!(
+            "自动进入不可用：{}。请使用密码登录。",
+            attempt.status.reason
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    let reason = if !report.local {
+        "远程/NAS 连接永不注入本机票据"
+    } else if manifest.is_none() {
+        "开发源构建不签发本机票据"
+    } else {
+        "后端未提供受信本机兑换接口"
+    };
+    record_trusted(
+        diagnostics,
+        &TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+    );
+    let notice = if report.local {
+        format!("{reason}，请使用密码登录。")
+    } else {
+        String::new()
+    };
+    record_notice(diagnostics, &notice);
+    Ok(LaunchResult {
+        destination: trusted::destination_without_ticket(&base),
+        auto_login: false,
+        notice,
+    })
 }
 
 #[tauri::command]
 async fn launch_local_backend(
     app: AppHandle,
     window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
     backend_state: State<'_, ManagedBackendState>,
-) -> Result<String, String> {
-    ensure_local_ui(&window)?;
+) -> Result<LaunchResult, String> {
+    let result = launch_local_backend_inner(&app, &window, &diagnostics, &backend_state).await;
+    if let Err(error) = &result {
+        record_error(&diagnostics, error);
+    }
+    result
+}
+
+async fn launch_local_backend_inner(
+    app: &AppHandle,
+    window: &WebviewWindow,
+    diagnostics: &ClientDiagnostics,
+    backend_state: &ManagedBackendState,
+) -> Result<LaunchResult, String> {
+    ensure_client_bridge_window(app, window)?;
+    let manifest_result = load_installed_manifest();
+    record_manifest_result(diagnostics, &manifest_result);
+    let manifest = manifest_result?;
+    let non_overlap = match manifest.as_ref() {
+        Some(_) => {
+            let ok = program_data_non_overlapping()?;
+            update_diagnostics(diagnostics, |inner| {
+                inner.program_data_non_overlapping = Some(ok);
+            });
+            if !ok {
+                return Err(
+                    "安装目录与数据根存在包含关系，已拒绝启动。请卸载后重新安装到独立目录。".into(),
+                );
+            }
+            true
+        }
+        None => false,
+    };
+
     let client = new_http_client()?;
 
     match check_local_port_2077(&client).await {
         LocalPortStatus::HealthyInstance => {
-            save_server_url(&app, "http://127.0.0.1:2077")?;
-            return Ok("http://127.0.0.1:2077/static/pages/index.html".to_string());
+            return finalize_local_connection(app, diagnostics, manifest.as_ref(), non_overlap)
+                .await;
         }
         LocalPortStatus::OccupiedForeign => {
             return Err("端口 2077 已被其他程序占用，无法启动本机后端。请先检查并关闭占用 2077 端口的程序。".into());
@@ -1557,8 +2225,387 @@ async fn launch_local_backend(
         }
     }
 
-    save_server_url(&app, "http://127.0.0.1:2077")?;
-    Ok("http://127.0.0.1:2077/static/pages/index.html".to_string())
+    finalize_local_connection(app, diagnostics, manifest.as_ref(), non_overlap).await
+}
+
+async fn finalize_local_connection(
+    app: &AppHandle,
+    diagnostics: &ClientDiagnostics,
+    manifest: Option<&BundleManifest>,
+    non_overlap: bool,
+) -> Result<LaunchResult, String> {
+    let base = Url::parse("http://127.0.0.1:2077/").map_err(|_| "本机后端地址无效".to_string())?;
+    let client = new_handshake_client()?;
+    let report = compat::evaluate(&client, &base, manifest).await?;
+    record_handshake(diagnostics, &report);
+    save_server_url(app, "http://127.0.0.1:2077")?;
+
+    if !report.verified {
+        let notice = local_notice_for(&report, manifest.is_some());
+        record_trusted(
+            diagnostics,
+            &TrustedStatus {
+                available: false,
+                auto_login: false,
+                reason: "本机后端未验证，不签发受信票据".into(),
+            },
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    commit_upgrade_journal();
+
+    if manifest.is_some() && report.trusted_bootstrap_available {
+        let attempt = trusted_attempt_for(&report, manifest.cloned(), non_overlap).await?;
+        record_trusted(diagnostics, &attempt.status);
+        if let Some(ticket) = attempt.ticket {
+            let destination = trusted::destination_with_ticket(&base, &ticket)?;
+            let notice = "已通过受信本机一次性票据自动进入。".to_string();
+            record_notice(diagnostics, &notice);
+            return Ok(LaunchResult {
+                destination,
+                auto_login: true,
+                notice,
+            });
+        }
+        let notice = format!(
+            "自动进入不可用：{}。请使用密码登录。",
+            attempt.status.reason
+        );
+        record_notice(diagnostics, &notice);
+        return Ok(LaunchResult {
+            destination: trusted::destination_without_ticket(&base),
+            auto_login: false,
+            notice,
+        });
+    }
+
+    let reason = if manifest.is_none() {
+        "开发源构建不签发本机票据"
+    } else {
+        "后端未提供受信本机兑换接口"
+    };
+    record_trusted(
+        diagnostics,
+        &TrustedStatus {
+            available: false,
+            auto_login: false,
+            reason: reason.into(),
+        },
+    );
+    let notice = format!("{reason}，请使用密码登录。");
+    record_notice(diagnostics, &notice);
+    Ok(LaunchResult {
+        destination: trusted::destination_without_ticket(&base),
+        auto_login: false,
+        notice,
+    })
+}
+
+fn diagnostics_view(
+    app: &AppHandle,
+    diagnostics: &ClientDiagnostics,
+    backend: &ManagedBackendState,
+) -> Result<DiagnosticsView, String> {
+    let needs_manifest = {
+        let guard = diagnostics
+            .0
+            .lock()
+            .map_err(|_| "客户端诊断状态不可用".to_string())?;
+        guard.bundled_backend_version.is_empty() && guard.manifest_error.is_empty()
+    };
+    if needs_manifest {
+        let manifest_result = load_installed_manifest();
+        record_manifest_result(diagnostics, &manifest_result);
+    }
+    let guard = diagnostics
+        .0
+        .lock()
+        .map_err(|_| "客户端诊断状态不可用".to_string())?;
+    let (backend_phase, backend_pid) = backend
+        .0
+        .lock()
+        .map(|state| {
+            (
+                state.phase.as_str().to_string(),
+                state.child.as_ref().map(|child| child.id()),
+            )
+        })
+        .unwrap_or_else(|_| ("unknown".into(), None));
+    Ok(DiagnosticsView {
+        desktop_version: app.package_info().version.to_string(),
+        build_mode: if cfg!(debug_assertions) {
+            "debug".into()
+        } else {
+            "release".into()
+        },
+        bundled_backend_version: if guard.bundled_backend_version.is_empty() {
+            "unknown".into()
+        } else {
+            guard.bundled_backend_version.clone()
+        },
+        capability_profile: compat::CAPABILITY_PROFILE.into(),
+        capability_digest: compat::capability_digest(),
+        manifest_error: guard.manifest_error.clone(),
+        handshake: guard.handshake.clone(),
+        trusted: guard.trusted.clone(),
+        program_data_non_overlapping: guard.program_data_non_overlapping,
+        notice: guard.notice.clone(),
+        last_error: guard.last_error.clone(),
+        backend_phase,
+        backend_pid,
+    })
+}
+
+#[tauri::command]
+fn get_diagnostics(
+    app: AppHandle,
+    window: WebviewWindow,
+    diagnostics: State<'_, ClientDiagnostics>,
+    backend: State<'_, ManagedBackendState>,
+) -> Result<DiagnosticsView, String> {
+    ensure_client_bridge_window(&app, &window)?;
+    diagnostics_view(&app, &diagnostics, &backend)
+}
+
+enum CliCommand {
+    Run,
+    Quit,
+    FindNas,
+    Diagnostics(PathBuf),
+    Invalid(String),
+}
+
+fn parse_cli_command<I>(args: I) -> CliCommand
+where
+    I: IntoIterator<Item = String>,
+{
+    let mut args = args.into_iter();
+    let Some(first) = args.next() else {
+        return CliCommand::Run;
+    };
+    match first.as_str() {
+        "--quit" => {
+            if args.next().is_some() {
+                CliCommand::Invalid("--quit 不接受额外参数".into())
+            } else {
+                CliCommand::Quit
+            }
+        }
+        "--find-nas" => {
+            if args.next().is_some() {
+                CliCommand::Invalid("--find-nas 不接受额外参数".into())
+            } else {
+                CliCommand::FindNas
+            }
+        }
+        "--diagnostics" => match args.next() {
+            Some(path) if !path.trim().is_empty() => {
+                if args.next().is_some() {
+                    CliCommand::Invalid("--diagnostics 只接受一个输出路径".into())
+                } else {
+                    CliCommand::Diagnostics(PathBuf::from(path))
+                }
+            }
+            _ => CliCommand::Invalid("--diagnostics 需要输出路径".into()),
+        },
+        other => CliCommand::Invalid(format!("未知的命令行参数: {other}")),
+    }
+}
+
+fn write_control_json(path: &Path, value: serde_json::Value) -> Result<(), String> {
+    let bytes = serde_json::to_vec_pretty(&value)
+        .map_err(|error| format!("无法序列化诊断结果: {error}"))?;
+    fs::write(path, bytes).map_err(|error| format!("无法写入诊断结果: {error}"))
+}
+
+fn run_quit_command() -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return 0,
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("桌面端实例锁无法解析: {error}");
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        return 0;
+    }
+    if let Err(error) = try_request_existing_quit(lock.port, &lock.token) {
+        eprintln!("{error}");
+        return 1;
+    }
+    let deadline = std::time::Instant::now() + Duration::from_secs(20);
+    while std::time::Instant::now() < deadline {
+        if !is_process_alive(lock.pid) && !lock_path.exists() {
+            return 0;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    }
+    eprintln!("桌面端在退出请求后仍未完成清理");
+    1
+}
+
+fn run_find_nas_command() -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("桌面端未运行，无法触发 Find NAS");
+            return 1;
+        }
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("桌面端实例锁无法解析: {error}");
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        eprintln!("桌面端进程已失效");
+        return 1;
+    }
+    if let Err(error) = try_request_existing_find_nas(lock.port, &lock.token) {
+        eprintln!("{error}");
+        return 1;
+    }
+    0
+}
+
+fn run_diagnostics_command(path: &Path) -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            let payload = serde_json::json!({ "running": false });
+            return match write_control_json(path, payload) {
+                Ok(()) => 0,
+                Err(error) => {
+                    eprintln!("{error}");
+                    1
+                }
+            };
+        }
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            let payload = serde_json::json!({
+                "running": false,
+                "invalid_lock": true,
+                "error": error.to_string(),
+            });
+            let _ = write_control_json(path, payload);
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        let payload = serde_json::json!({ "running": false, "stale_lock": true });
+        return match write_control_json(path, payload) {
+            Ok(()) => 0,
+            Err(error) => {
+                eprintln!("{error}");
+                1
+            }
+        };
+    }
+    let status = match try_request_existing_status(lock.port, &lock.token) {
+        Ok(status) => status,
+        Err(error) => {
+            let payload = serde_json::json!({ "running": true, "error": error });
+            let _ = write_control_json(path, payload);
+            return 1;
+        }
+    };
+    let diagnostics: serde_json::Value =
+        serde_json::from_str(&status).unwrap_or(serde_json::Value::Null);
+    let payload = serde_json::json!({ "running": true, "diagnostics": diagnostics });
+    match write_control_json(path, payload) {
+        Ok(()) => 0,
+        Err(error) => {
+            eprintln!("{error}");
+            1
+        }
+    }
+}
+
+pub const TRAY_MENU_ID_FIND_NAS: &str = "scan";
+
+struct TrayMenuRegistry {
+    find_nas_id: Mutex<Option<String>>,
+}
+
+pub const TRAY_FIND_NAS_SETTINGS_URL: &str =
+    "http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas";
+
+fn handle_tray_menu_event(app: &AppHandle, menu_id: &str, active_lock_path: &Path) -> bool {
+    match menu_id {
+        "open" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            true
+        }
+        TRAY_MENU_ID_FIND_NAS => {
+            if let Some(window) = app.get_webview_window("main") {
+                handle_find_nas_navigation(&window);
+            }
+            true
+        }
+        "quit" => {
+            release_own_instance_lock(active_lock_path);
+            let state = app.state::<ManagedBackendState>();
+            stop_managed_backend(&state);
+            app.exit(0);
+            true
+        }
+        _ => false,
+    }
+}
+
+fn handle_find_nas_navigation(window: &WebviewWindow) {
+    let is_local_workbench = if let Ok(u) = window.url() {
+        let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+        let port = u.port().unwrap_or(80);
+        (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077
+    } else {
+        false
+    };
+
+    if is_local_workbench {
+        if let Ok(settings_url) = Url::parse(TRAY_FIND_NAS_SETTINGS_URL) {
+            let _ = window.navigate(settings_url);
+        }
+    } else if let Ok(mut scan_url) = window.url() {
+        scan_url.set_query(Some("rescan=1"));
+        let _ = window.navigate(scan_url);
+    }
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
 }
 
 fn make_tray_icon() -> Image<'static> {
@@ -1598,6 +2645,17 @@ fn make_tray_icon() -> Image<'static> {
 }
 
 fn main() {
+    match parse_cli_command(std::env::args().skip(1)) {
+        CliCommand::Quit => std::process::exit(run_quit_command()),
+        CliCommand::FindNas => std::process::exit(run_find_nas_command()),
+        CliCommand::Diagnostics(path) => std::process::exit(run_diagnostics_command(&path)),
+        CliCommand::Invalid(message) => {
+            eprintln!("{message}");
+            std::process::exit(2);
+        }
+        CliCommand::Run => {}
+    }
+
     let lock_path = instance_lock_path();
     let (_listener, _token, wakeup_state, active_lock_path) =
         match arbitrate_single_instance(&lock_path) {
@@ -1616,15 +2674,19 @@ fn main() {
             }
         };
 
+    let run_lock_path = active_lock_path.clone();
+
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
         .manage(ClientSessionState(Mutex::new(HashSet::new())))
         .manage(ManagedBackendState::default())
+        .manage(ClientDiagnostics::default())
         .invoke_handler(tauri::generate_handler![
             discover_lan,
             last_server,
             connect_to_server,
             launch_local_backend,
+            get_diagnostics,
             pick_client_folder,
             pick_client_upload_files,
             read_client_file,
@@ -1637,9 +2699,6 @@ fn main() {
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| std::io::Error::other("Missing main window"))?;
-            let local_url = window
-                .url()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
             let hide_window = window.clone();
             window.on_window_event(move |event| {
                 if let WindowEvent::CloseRequested { api, .. } = event {
@@ -1649,54 +2708,68 @@ fn main() {
             });
 
             let open = MenuItem::with_id(app, "open", "Open Workbench", true, None::<&str>)?;
-            let scan = MenuItem::with_id(app, "scan", "Find NAS", true, None::<&str>)?;
+            let scan =
+                MenuItem::with_id(app, TRAY_MENU_ID_FIND_NAS, "Find NAS", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            app.manage(TrayMenuRegistry {
+                find_nas_id: Mutex::new(Some(scan.id().as_ref().to_string())),
+            });
             let menu = Menu::with_items(app, &[&open, &scan, &quit])?;
             TrayIconBuilder::new()
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("Gods Workbench")
                 .icon(make_tray_icon())
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "open" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "scan" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let mut scan_url = local_url.clone();
-                            scan_url.set_query(Some("rescan=1"));
-                            let _ = window.navigate(scan_url);
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "quit" => {
-                        if let Ok(content) = fs::read(&active_lock_path) {
-                            if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
-                                if lock.pid == std::process::id() {
-                                    let _ = fs::remove_file(&active_lock_path);
-                                }
-                            }
-                        }
-                        let state = app.state::<ManagedBackendState>();
-                        stop_managed_backend(&state);
-                        app.exit(0);
-                    }
-                    _ => {}
+                .on_menu_event(move |app, event| {
+                    let _ = handle_tray_menu_event(app, event.id().as_ref(), &active_lock_path);
                 })
                 .build(app)?;
             Ok(())
         })
-        .run(tauri::generate_context!())
-        .expect("Failed to launch Gods Workbench desktop client");
+        .build(tauri::generate_context!())
+        .expect("Failed to launch Gods Workbench desktop client")
+        .run(move |app, event| {
+            if let RunEvent::ExitRequested { .. } = event {
+                release_own_instance_lock(&run_lock_path);
+                let state = app.state::<ManagedBackendState>();
+                stop_managed_backend(&state);
+            }
+        });
+}
+
+fn release_own_instance_lock(path: &Path) {
+    if let Ok(content) = fs::read(path) {
+        if let Ok(lock) = serde_json::from_slice::<InstanceLock>(&content) {
+            if lock.pid == std::process::id() {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_tray_find_nas_settings_url_contract() {
+        let parsed =
+            Url::parse(TRAY_FIND_NAS_SETTINGS_URL).expect("valid tray find nas settings url");
+        assert_eq!(parsed.scheme(), "http");
+        assert_eq!(parsed.host_str(), Some("127.0.0.1"));
+        assert_eq!(parsed.port(), Some(2077));
+        assert_eq!(parsed.path(), "/static/pages/settings.html");
+        let query_pairs: std::collections::HashMap<_, _> =
+            parsed.query_pairs().into_owned().collect();
+        assert_eq!(
+            query_pairs.get("section").map(String::as_str),
+            Some("general")
+        );
+        assert_eq!(
+            query_pairs.get("action").map(String::as_str),
+            Some("scan-nas")
+        );
+    }
 
     #[test]
     fn test_make_tray_icon_includes_brand_colors_and_apostrophe() {
@@ -1879,8 +2952,8 @@ mod tests {
 
     #[test]
     fn server_urls_default_to_nas_port_and_reject_non_local_hosts() {
-        let url = normalize_server_url("http://192.168.0.10").unwrap();
-        assert_eq!(url.as_str(), "http://192.168.0.10:2077/");
+        let url = normalize_server_url("http://gw-nas.local").unwrap();
+        assert_eq!(url.as_str(), "http://gw-nas.local:2077/");
         let secure_url = normalize_server_url("https://nas.local/").unwrap();
         assert_eq!(secure_url.as_str(), "https://nas.local/");
         assert!(normalize_server_url("https://nas.local:8443/").is_ok());
@@ -2002,6 +3075,29 @@ mod tests {
         assert!(!is_process_alive(99_999_999));
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn terminated_process_with_open_handle_is_not_alive() {
+        let mut child = std::process::Command::new("cmd.exe")
+            .args(["/C", "exit", "0"])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .expect("spawn short-lived process");
+        let pid = child.id();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while child.try_wait().expect("query helper process").is_none() {
+            assert!(std::time::Instant::now() < deadline, "helper did not exit");
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !is_process_alive(pid),
+            "terminated process with an open handle must not count as alive"
+        );
+        drop(child);
+    }
+
     #[test]
     fn test_single_instance_wakeup_behavior() {
         let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind listener");
@@ -2032,6 +3128,94 @@ mod tests {
         assert!(woken, "Instance should be successfully woken");
         let server_verified = handle.join().expect("join server thread");
         assert!(server_verified, "Server thread verified wakeup command");
+    }
+
+    #[test]
+    fn test_cli_control_commands_are_parsed_strictly() {
+        assert!(matches!(
+            parse_cli_command(std::iter::empty::<String>()),
+            CliCommand::Run
+        ));
+        assert!(matches!(
+            parse_cli_command(["--quit".to_string()]),
+            CliCommand::Quit
+        ));
+        assert!(matches!(
+            parse_cli_command(["--find-nas".to_string()]),
+            CliCommand::FindNas
+        ));
+        match parse_cli_command(["--diagnostics".to_string(), "status.json".to_string()]) {
+            CliCommand::Diagnostics(path) => assert_eq!(path, PathBuf::from("status.json")),
+            _ => panic!("diagnostics command should be recognized"),
+        }
+        assert!(matches!(
+            parse_cli_command(["--diagnostics".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--quit".to_string(), "extra".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--find-nas".to_string(), "extra".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--unknown".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+    }
+
+    #[test]
+    fn test_instance_control_quit_and_status_protocol() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind listener");
+        let port = listener.local_addr().expect("local addr").port();
+        let token = "test_control_token_789".to_string();
+        let expected_token = token.clone();
+
+        let handle = std::thread::spawn(move || {
+            use std::io::{BufRead, BufReader, Write};
+            let mut commands = Vec::new();
+            for (index, stream) in listener.incoming().enumerate() {
+                let Ok(mut stream) = stream else { break };
+                let mut reader = BufReader::new(&mut stream);
+                let mut line = String::new();
+                if reader.read_line(&mut line).is_err() {
+                    break;
+                }
+                commands.push(line.trim().to_string());
+                let parts: Vec<&str> = line.trim().split_whitespace().collect();
+                if parts.len() != 2 || parts[1] != expected_token {
+                    break;
+                }
+                let reply = match parts[0] {
+                    "QUIT" => "BYE",
+                    "STATUS" => "STATUS {\"backend_phase\":\"running\"}",
+                    "FIND_NAS" => "NAVIGATING",
+                    _ => break,
+                };
+                let _ = writeln!(stream, "{reply}");
+                let _ = stream.flush();
+                if index == 2 {
+                    break;
+                }
+            }
+            commands
+        });
+
+        try_request_existing_quit(port, &token).expect("quit request");
+        let status = try_request_existing_status(port, &token).expect("status request");
+        assert_eq!(status, "{\"backend_phase\":\"running\"}");
+        try_request_existing_find_nas(port, &token).expect("find nas request");
+        let commands = handle.join().expect("join control server");
+        assert_eq!(
+            commands,
+            vec![
+                format!("QUIT {token}"),
+                format!("STATUS {token}"),
+                format!("FIND_NAS {token}")
+            ]
+        );
     }
 
     #[test]
@@ -2334,11 +3518,13 @@ mod tests {
         let tracker = drain_process_output(&mut child);
         let client = reqwest::Client::new();
 
-        // 传入 150 毫秒的超短超时
+        // 指向本机关闭端口，避免真实 2077 服务干扰超时判定
+        let closed = Url::parse("http://127.0.0.1:9/").unwrap();
         let res = tauri::async_runtime::block_on(wait_for_backend_ready(
             &client,
             &mut child,
             &tracker,
+            &closed,
             Duration::from_millis(150),
         ));
 
@@ -2349,6 +3535,38 @@ mod tests {
             exit_status.is_some(),
             "Child should be killed after timeout"
         );
+    }
+
+    #[test]
+    fn upgrade_journal_commits_only_after_verified_install() {
+        let temp = std::env::temp_dir().join(format!(
+            "gw_journal_test_{}_{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir_all(&temp).unwrap();
+        let journal = temp.join("journal.txt");
+
+        for state in ["installed", "verified"] {
+            fs::write(&journal, state).unwrap();
+            commit_upgrade_journal_at(&journal);
+            assert_eq!(fs::read_to_string(&journal).unwrap(), "committed");
+        }
+
+        for state in ["prepare", "backed_up", "rolled_back", "committed"] {
+            fs::write(&journal, state).unwrap();
+            commit_upgrade_journal_at(&journal);
+            assert_eq!(fs::read_to_string(&journal).unwrap(), state);
+        }
+
+        fs::remove_file(&journal).unwrap();
+        commit_upgrade_journal_at(&journal);
+        assert!(!journal.exists());
+
+        let _ = fs::remove_dir_all(&temp);
     }
 
     #[test]
@@ -2620,5 +3838,36 @@ mod tests {
         let _ = foreign_child.kill();
         let _ = foreign_child.wait();
         let _ = fs::remove_file(&test_lock_path);
+    }
+
+    #[test]
+    fn test_client_settings_dir_respects_appdata_override() {
+        let override_dir = std::ffi::OsString::from(r"C:\sandbox\Roaming");
+        let resolved = client_settings_dir_from(
+            Some(override_dir),
+            "ai.godsworkbench.desktop",
+            Ok(PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")),
+        )
+        .expect("override should resolve");
+        assert_eq!(
+            resolved,
+            PathBuf::from(r"C:\sandbox\Roaming\ai.godsworkbench.desktop")
+        );
+
+        let fallback = client_settings_dir_from(
+            None,
+            "ai.godsworkbench.desktop",
+            Ok(PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")),
+        )
+        .expect("fallback should resolve");
+        assert_eq!(
+            fallback,
+            PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")
+        );
+    }
+
+    #[test]
+    fn test_tray_find_nas_menu_id_constant() {
+        assert_eq!(TRAY_MENU_ID_FIND_NAS, "scan");
     }
 }

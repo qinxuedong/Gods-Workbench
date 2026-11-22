@@ -133,6 +133,7 @@ tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs
 tests/frontend/qin-621-lut-library-import-delete-preview.test.mjs
 tests/frontend/qin-622-topbar-height-center-collapse.test.mjs
 tests/frontend/qin-625-resource-folder-regression.test.mjs
+tests/frontend/qin-626-desktop-installer-ui.test.mjs
 tests/frontend/qin-628-workspace-mapping-form.test.mjs
 tests/frontend/qin-628-workspace-task-context.test.mjs
 tests/frontend/qin-630-trusted-local.test.mjs

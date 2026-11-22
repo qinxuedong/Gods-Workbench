@@ -63,8 +63,21 @@ fn generated_windows_icon() -> PathBuf {
 }
 
 fn main() {
-    let attributes = tauri_build::Attributes::new().windows_attributes(
-        tauri_build::WindowsAttributes::new().window_icon_path(generated_windows_icon()),
-    );
+    let attributes = tauri_build::Attributes::new()
+        .app_manifest(tauri_build::AppManifest::new().commands(&[
+            "discover_lan",
+            "last_server",
+            "connect_to_server",
+            "launch_local_backend",
+            "get_diagnostics",
+            "pick_client_folder",
+            "pick_client_upload_files",
+            "read_client_file",
+            "get_client_setting",
+            "set_client_setting",
+        ]))
+        .windows_attributes(
+            tauri_build::WindowsAttributes::new().window_icon_path(generated_windows_icon()),
+        );
     tauri_build::try_build(attributes).expect("failed to run tauri-build");
 }

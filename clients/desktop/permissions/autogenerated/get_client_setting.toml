@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-get-client-setting"
+description = "Enables the get_client_setting command without any pre-configured scope."
+commands.allow = ["get_client_setting"]
+
+[[permission]]
+identifier = "deny-get-client-setting"
+description = "Denies the get_client_setting command without any pre-configured scope."
+commands.deny = ["get_client_setting"]

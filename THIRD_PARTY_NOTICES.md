@@ -167,3 +167,35 @@ OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 
 ### Creative Commons Attribution 4.0 International (CC-BY-4.0)
 You are free to share and adapt the material for any purpose, even commercially, under the condition that appropriate credit is given and a link to the license is provided: https://creativecommons.org/licenses/by/4.0/
+
+---
+
+## 6. Windows 安装版内置运行时（QIN-626）
+
+本章仅登记 Windows NSIS 安装包实际随包的 Python 运行时组件；不删改前述任何声明，也不构成法律合规通过结论。
+
+| 组件 | 精确版本 | 许可 | 版权 / 来源 | 随包许可引用 |
+| :--- | :--- | :--- | :--- | :--- |
+| **CPython embeddable** | 3.11.9 (win-amd64) | Python-2.0 | Python Software Foundation（[python.org](https://www.python.org/ftp/python/3.11.9/python-3.11.9-embed-amd64.zip)） | `backend/licenses/CPython-3.11.9/LICENSE.txt` |
+| **FastAPI** | 0.141.1 | MIT | Sebastián Ramírez / FastAPI contributors | 随包 `dist-info` 许可文件或元数据 |
+| **Starlette** | 1.7.0 | BSD-3-Clause | Encode OSS Ltd. | 随包 `dist-info` 许可文件或元数据 |
+| **Uvicorn** | 0.54.0 | BSD-3-Clause | Encode OSS Ltd. | 随包 `dist-info` 许可文件或元数据 |
+| **Pydantic / pydantic-core** | 2.13.5 / 2.46.5 | MIT | Pydantic Services Inc. 与 Samuel Colvin | 随包 `dist-info` 许可文件或元数据 |
+| **AnyIO** | 4.15.1 | MIT | Alex Grönholm | 随包 `dist-info` 许可文件或元数据 |
+| **HTTPX / HTTPCore** | 0.28.1 / 1.0.9 | BSD-3-Clause | Encode OSS Ltd. | 随包 `dist-info` 许可文件或元数据 |
+| **cryptography** | 46.0.7 | Apache-2.0 OR BSD-3-Clause | Python Cryptographic Authority 及贡献者 | 随包 `dist-info` 许可文件或元数据 |
+| **psutil** | 7.2.2 | BSD-3-Clause | Giampaolo Rodola 及贡献者 | 随包 `dist-info` 许可文件或元数据 |
+| **python-multipart** | 0.0.32 | Apache-2.0 | Andrew Dunham；Kludex 维护 | 随包 `dist-info` 许可文件或元数据 |
+| **Pillow** | 12.3.0 | MIT-CMU | Jeffrey Clark 及贡献者 | 随包 `dist-info` 许可文件或元数据 |
+| **PyYAML** | 6.0.3 | MIT | PyYAML 贡献者 | 随包 `dist-info` 许可文件或元数据 |
+| **python-dotenv** | 1.2.3 | BSD-3-Clause | Saurabh Kumar 及贡献者 | 随包 `dist-info` 许可文件或元数据 |
+| **langgraph** | 1.2.12 | MIT | LangChain | 随包 `dist-info` 许可文件或元数据 |
+| **jsonschema** | 4.26.0 | MIT | Julian Berman 及贡献者 | 随包 `dist-info` 许可文件或元数据 |
+
+完整逐项清单以构建产物为准，并随安装包提供：
+
+- `backend/runtime-inventory.json`：记录 CPython 归档 URL 与 SHA-256、依赖锁文件、每个 wheel 的精确文件名、SHA-256、字节数与随包许可文件路径。
+- `backend/licenses/RUNTIME-COMPONENTS.md`：由构建脚本读取实际 wheel 元数据生成，逐项登记组件、版本、许可、版权/维护者、来源与随包许可引用；并不把第三方 wheel 泛称为 PSF 许可。
+- `backend/licenses/Gods-Workbench/LICENSE`：本项目的 Apache License 2.0 全文。
+
+随包边界：安装包不包含 ComfyUI、FFmpeg / ffprobe 可执行文件、AI 模型权重或视频素材；FFmpeg 仍由运行期定位并在缺失时失败关闭。升级与卸载默认保留用户数据根与许可清单，不静默迁移用户素材或模型。

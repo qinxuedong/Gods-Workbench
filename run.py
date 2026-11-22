@@ -24,14 +24,17 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import shutil
 import stat
+import subprocess
 import sys
 import threading
 import time
 import uuid
 import webbrowser
 from collections.abc import Sequence
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from ipaddress import ip_address
 from pathlib import Path
@@ -64,6 +67,40 @@ DEFAULT_PORT = 2077
 LEGACY_DATA_DIR_NAME = "GodsWorkbenchClear"
 PRODUCTION_DATA_DIR_NAME = "GodsWorkbench"
 MIGRATION_RECEIPT_NAME = "migration-receipt.json"
+BUNDLE_MANIFEST_NAME = "bundle-manifest.json"
+CAPABILITY_PROFILE = "gw-compat-v1"
+VERSION_MARKER = "+gw."
+REQUIRED_OPENAPI_OPERATIONS = (
+    "GET /api/asset-auth/status",
+    "GET /api/asset-registry/projects",
+    "GET /api/canvases",
+    "GET /healthz",
+    "PATCH /api/asset-registry/projects/{project_id}",
+    "PATCH /api/canvases/{canvas_id}",
+    "POST /api/asset-auth/local/login",
+    "POST /api/asset-auth/local/setup",
+    "POST /api/asset-registry/projects",
+    "POST /api/canvases",
+)
+_PRODUCT_VERSION_RE = re.compile(r"^(?:v)?(\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?)$")
+_MANIFEST_BUILD_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$")
+_GIT_DESCRIBE_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._+-]*$")
+
+
+@dataclass(frozen=True)
+class VersionInfo:
+    """一次版本解析的不可变结果；未知版本不携带来源标记。"""
+
+    product_version: str
+    provenance: str
+    app_version: str
+    source: str
+    manifest: dict[str, object] | None = None
+    error: str = ""
+
+    @property
+    def trusted_marker(self) -> bool:
+        return VERSION_MARKER in self.app_version and self.source != "unknown"
 
 
 def _parser() -> argparse.ArgumentParser:
@@ -77,7 +114,242 @@ def _parser() -> argparse.ArgumentParser:
     parser.add_argument("--migrate", action="store_true", help="一次性迁移旧 GodsWorkbenchClear 数据到生产数据根")
     parser.add_argument("--legacy-root", metavar="PATH", help="迁移源目录（默认 LOCALAPPDATA\\GodsWorkbenchClear）")
     parser.add_argument("--target-root", metavar="PATH", help="迁移目标目录（默认 LOCALAPPDATA\\GodsWorkbench）")
+    parser.add_argument("--version", action="store_true", help="输出产品版本与来源后退出")
+    parser.add_argument("--self-check", action="store_true", help="校验安装运行时、版本与能力基线后退出（不创建账户）")
+    parser.add_argument("--expect-version", metavar="VERSION", help="与 --self-check 配合，要求产品版本精确匹配")
     return parser
+
+
+def _unknown_version(error: str) -> VersionInfo:
+    return VersionInfo(
+        product_version="unknown",
+        provenance="unknown",
+        app_version="unknown",
+        source="unknown",
+        error=error,
+    )
+
+
+def _manifest_path() -> Path:
+    override = os.environ.get("GW_BUNDLE_MANIFEST", "").strip()
+    return Path(override) if override else ROOT_DIR / BUNDLE_MANIFEST_NAME
+
+
+def _load_bundle_manifest(path: Path) -> tuple[dict[str, object] | None, str]:
+    """读取并校验随包清单；清单存在但损坏时必须失败关闭，不回退到其它来源。"""
+    if not path.is_file():
+        return None, ""
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None, "随包清单不可读取或不是合法 JSON"
+    if not isinstance(payload, dict):
+        return None, "随包清单必须是 JSON 对象"
+    product_version = payload.get("product_version")
+    build_id = payload.get("build_id")
+    profile = payload.get("capability_profile")
+    digest = payload.get("capability_digest")
+    git_commit = payload.get("git_commit")
+    match = _PRODUCT_VERSION_RE.fullmatch(str(product_version or ""))
+    if match is None:
+        return None, "随包清单缺少合法 product_version"
+    payload["product_version"] = match.group(1)
+    if not isinstance(build_id, str) or _MANIFEST_BUILD_ID_RE.fullmatch(build_id) is None:
+        return None, "随包清单缺少合法 build_id"
+    if profile != CAPABILITY_PROFILE:
+        return None, "随包清单能力契约编号未知"
+    if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+        return None, "随包清单缺少合法 capability_digest"
+    if not isinstance(git_commit, str) or re.fullmatch(r"[0-9a-f]{7,40}", git_commit) is None:
+        return None, "随包清单缺少合法 git_commit"
+    return payload, ""
+
+
+def _git_version(repo_root: Path) -> tuple[str, str] | None:
+    """只读执行 git describe；不经过 shell，超时或失败一律返回未知。"""
+    if not (repo_root / ".git").exists():
+        return None
+
+    try:
+        completed = subprocess.run(
+            ["git", "-C", str(repo_root), "describe", "--tags", "--always", "--dirty"],
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            errors="replace",
+            timeout=3,
+            check=False,
+            shell=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if completed.returncode != 0:
+        return None
+    describe = (completed.stdout or "").strip()
+    if not describe or _GIT_DESCRIBE_RE.fullmatch(describe) is None:
+        return None
+    dirty = describe.endswith("-dirty")
+    clean = describe[:-6] if dirty else describe
+    sha_match = re.search(r"(?:^|g)([0-9a-f]{7,40})(?:-dirty)?$", describe)
+    if sha_match is None:
+        return None
+    sha = sha_match.group(1)[:12]
+    product = clean.lstrip("v")
+    if dirty:
+        product = f"{product}-dirty"
+    return product, sha
+
+
+def resolve_version(manifest_path: Path | None = None) -> VersionInfo:
+    """按 manifest → 显式声明 → git → unknown 顺序解析真实产品版本。"""
+    path = manifest_path if manifest_path is not None else _manifest_path()
+    manifest, manifest_error = _load_bundle_manifest(path)
+    if manifest_error:
+        return _unknown_version(manifest_error)
+    if manifest is not None:
+        product = str(manifest["product_version"])
+        build_id = str(manifest["build_id"])
+        return VersionInfo(
+            product_version=product,
+            provenance=build_id,
+            app_version=f"{product}{VERSION_MARKER}{build_id}",
+            source="manifest",
+            manifest=manifest,
+        )
+
+    declared = os.environ.get("GW_PRODUCT_VERSION", "").strip()
+    if declared:
+        match = _PRODUCT_VERSION_RE.fullmatch(declared)
+        if match is None:
+            return _unknown_version("GW_PRODUCT_VERSION 不是合法的 X.Y.Z 版本")
+        product = match.group(1)
+        return VersionInfo(
+            product_version=product,
+            provenance="declared",
+            app_version=f"{product}{VERSION_MARKER}declared",
+            source="declared",
+        )
+
+    git_version = _git_version(ROOT_DIR)
+    if git_version is not None:
+        product, sha = git_version
+        return VersionInfo(
+            product_version=product,
+            provenance=f"git.{sha}",
+            app_version=f"{product}{VERSION_MARKER}git.{sha}",
+            source="git",
+        )
+    return _unknown_version("无法从 manifest、GW_PRODUCT_VERSION 或 git 确定版本")
+
+
+def _apply_version_to_app(app: object, info: VersionInfo) -> bool:
+    """把带来源标记的版本写入应用并失效 OpenAPI 缓存；非应用对象返回 False。"""
+    try:
+        app.version = info.app_version
+        app.openapi_schema = None
+    except (AttributeError, TypeError):
+        return False
+    middleware = getattr(app, "middleware", None)
+    if not callable(middleware):
+        return True
+
+    @middleware("http")
+    async def version_probe_no_store(request, call_next):
+        response = await call_next(request)
+        if request.url.path in {"/openapi.json", "/healthz"}:
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate"
+            response.headers["Pragma"] = "no-cache"
+            response.headers["Expires"] = "0"
+        return response
+
+    return True
+
+
+def _openapi_operations(schema: dict[str, object]) -> set[str]:
+    operations: set[str] = set()
+    paths = schema.get("paths")
+    if not isinstance(paths, dict):
+        return operations
+    for route, methods in paths.items():
+        if not isinstance(methods, dict):
+            continue
+        for method in methods:
+            if str(method).upper() in {"GET", "POST", "PUT", "PATCH", "DELETE", "HEAD", "OPTIONS"}:
+                operations.add(f"{str(method).upper()} {route}")
+    return operations
+
+
+def _paths_non_overlapping(install_root: Path, data_root: Path) -> bool:
+    try:
+        install = install_root.resolve(strict=False)
+        data = data_root.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return install != data and not install.is_relative_to(data) and not data.is_relative_to(install)
+
+
+def _self_check(args: argparse.Namespace) -> int:
+    """安装后自检：只读校验版本、能力和路径，不创建目录、账户或会话。"""
+    info = resolve_version()
+    if info.source != "manifest" or not info.trusted_marker:
+        print(f"自检失败: {info.error or '未找到可信随包版本'}", file=sys.stderr, flush=True)
+        return 1
+    expected = (args.expect_version or "").strip()
+    if expected:
+        match = _PRODUCT_VERSION_RE.fullmatch(expected)
+        if match is None or match.group(1) != info.product_version:
+            print("自检失败: 安装版本与期望版本不一致", file=sys.stderr, flush=True)
+            return 1
+
+    mode = MODE_TEST if args.test else (MODE_PROD if args.prod else MODE_DEV)
+    os.environ["GW_RUNTIME_MODE"] = mode
+    try:
+        paths = resolve_runtime_paths(mode, repo_root=ROOT_DIR)
+    except RuntimePathError as exc:
+        print(f"自检失败: {exc}", file=sys.stderr, flush=True)
+        return 1
+    if mode == MODE_PROD and not _paths_non_overlapping(ROOT_DIR, paths.runtime_root):
+        print("自检失败: 安装目录与数据根存在包含关系", file=sys.stderr, flush=True)
+        return 1
+
+    previous_host = os.environ.get("GW_HOST")
+    os.environ["GW_HOST"] = DEFAULT_HOST
+    try:
+        from gw.api.app import app
+    except Exception as exc:  # noqa: BLE001 - 自检必须把导入失败转为非零退出
+        print(f"自检失败: 后端应用无法导入（{type(exc).__name__}）", file=sys.stderr, flush=True)
+        return 1
+    finally:
+        if previous_host is None:
+            os.environ.pop("GW_HOST", None)
+        else:
+            os.environ["GW_HOST"] = previous_host
+
+    if not _apply_version_to_app(app, info):
+        print("自检失败: 后端应用不支持版本注入", file=sys.stderr, flush=True)
+        return 1
+    schema = app.openapi()
+    if schema.get("info", {}).get("version") != info.app_version:
+        print("自检失败: OpenAPI 版本与随包清单不一致", file=sys.stderr, flush=True)
+        return 1
+    missing = sorted(set(REQUIRED_OPENAPI_OPERATIONS) - _openapi_operations(schema))
+    if missing:
+        print(f"自检失败: 能力契约缺少 {len(missing)} 个必需端点", file=sys.stderr, flush=True)
+        return 1
+    manifest = info.manifest or {}
+    result = {
+        "ok": True,
+        "mode": mode,
+        "product_version": info.product_version,
+        "app_version": info.app_version,
+        "provenance": info.provenance,
+        "capability_profile": manifest.get("capability_profile"),
+        "capability_digest": manifest.get("capability_digest"),
+        "install_data_non_overlapping": mode != MODE_PROD
+        or _paths_non_overlapping(ROOT_DIR, paths.runtime_root),
+    }
+    print(json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
+    return 0
 
 
 def _resolve_host(cli_host: str | None = None) -> str:
@@ -401,6 +673,31 @@ def main(argv: Sequence[str] | None = None) -> int:
         parser.error("--migrate 不得与 --prod、--reset、--open-browser 或 --port 同时使用")
     if not args.migrate and (args.legacy_root or args.target_root):
         parser.error("--legacy-root/--target-root 只能与 --migrate 一起使用")
+    if args.version and (args.self_check or args.migrate or args.reset is not None or args.open_browser):
+        parser.error("--version 不得与其它执行动作同时使用")
+    if args.expect_version and not args.self_check:
+        parser.error("--expect-version 只能与 --self-check 一起使用")
+    if args.self_check and (args.migrate or args.reset is not None or args.open_browser):
+        parser.error("--self-check 不得与 --migrate、--reset 或 --open-browser 同时使用")
+    if args.version:
+        info = resolve_version()
+        print(
+            json.dumps(
+                {
+                    "product_version": info.product_version,
+                    "app_version": info.app_version,
+                    "provenance": info.provenance,
+                    "source": info.source,
+                    "error": info.error,
+                },
+                ensure_ascii=False,
+                sort_keys=True,
+            ),
+            flush=True,
+        )
+        return 0
+    if args.self_check:
+        return _self_check(args)
     if args.migrate:
         try:
             receipt = migrate_legacy_data(args.legacy_root, args.target_root, repo_root=ROOT_DIR)
@@ -442,6 +739,11 @@ def main(argv: Sequence[str] | None = None) -> int:
     # 根路径验证和目录准备完成后才允许导入应用。
     from gw.api.app import app
 
+    version_info = resolve_version()
+    _apply_version_to_app(app, version_info)
+    if version_info.error:
+        print(f"版本来源不可用: {version_info.error}", file=sys.stderr, flush=True)
+
     try:
         port = args.port if args.port is not None else int(os.environ.get("GW_PORT", str(DEFAULT_PORT)))
     except ValueError:
@@ -457,6 +759,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     print(f"  数据根: {paths.data_root}", flush=True)
     print(f"  账户库: {paths.auth_db}", flush=True)
     print(f"  视频根: {paths.video_root}", flush=True)
+    print(f"  版本: {version_info.app_version}（来源 {version_info.source}）", flush=True)
     print(f"  服务地址: http://{host}:{port}", flush=True)
     if host == "0.0.0.0":
         lan_ip = _get_lan_ip()
