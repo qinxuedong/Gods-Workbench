@@ -85,6 +85,7 @@ $script:ui = [ordered]@{}
 $script:settingsDodEvidence = [ordered]@{}
 $script:savedProcessEnvLocalAppData = ""
 $script:savedProcessEnvAppData = ""
+$script:overrideMarkerPath = ""
 
 function Add-Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = "")
@@ -1520,20 +1521,16 @@ function Invoke-SettingsDodMatrix {
     const label = document.querySelector('label[for="remoteServerUrl"]');
     const card = document.querySelector('#remoteWorkspaceCard');
     if (!label || !card) return { ok: false, error: 'elements not found' };
-    const labelParent = label.closest('strong') || label;
     const labelStyle = window.getComputedStyle(label);
-    const parentStyle = window.getComputedStyle(labelParent);
-    const isLight = document.documentElement.getAttribute('data-theme') === 'light' || document.documentElement.classList.contains('theme-light');
-    const chosenColor = (isLight && parentStyle.color && parentStyle.color.indexOf('17') !== -1) ? parentStyle.color : labelStyle.color;
     const cardStyle = window.getComputedStyle(card);
-    const labelRgb = parseRgb(chosenColor);
+    const labelRgb = parseRgb(labelStyle.color);
     const cardRgb = parseRgb(cardStyle.backgroundColor);
     const l1 = getLuminance(labelRgb[0], labelRgb[1], labelRgb[2]);
     const l2 = getLuminance(cardRgb[0], cardRgb[1], cardRgb[2]);
     const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
     return {
         ok: true,
-        textColor: chosenColor,
+        textColor: labelStyle.color,
         bgColor: cardStyle.backgroundColor,
         contrastRatio: Number(ratio.toFixed(2))
     };
@@ -1581,7 +1578,7 @@ function Invoke-SettingsDodMatrix {
     }
     $matrixResult["themes"] = $themeResults
 
-    # 3. 慢响应与失败重试交互矩阵验证
+    # 3. 慢响应（1500ms / 5000ms）与失败重试交互矩阵实测
     $retryExpr = @"
 (() => {
     const returnBtn = document.querySelector('#btnReturnLocal');
@@ -1598,6 +1595,66 @@ function Invoke-SettingsDodMatrix {
 "@
     $retryCheck = Invoke-CdpExpression -Connection $Connection -Expression $retryExpr
     Require-Check "settings-dod.retry-controls-ok" ($retryCheck.hasReturnBtn -and $retryCheck.hasConnectBtn -and $retryCheck.hasErrorContainer) "settings retry and return controls missing"
+
+    $slowPort = Get-FreeTcpPort
+    $slowModePath = Join-Path $script:outputDirPath "settings-dod-slow.mode.txt"
+    Set-FakeRemoteMode -ModePath $slowModePath -Mode "slow-1500"
+    $slowHolder = Start-FakeRemoteServer -Address "127.0.0.1" -Port $slowPort -Label "settings-dod-slow" -ModePath $slowModePath
+    $slowUrl = "http://127.0.0.1:" + $slowPort
+
+    try {
+        # (a) 1500ms 慢响应失败可见性与重试恢复
+        $null = Invoke-CdpExpression -Connection $Connection -Expression @"
+(() => {
+    const input = document.querySelector('#remoteServerUrl');
+    const btn = document.querySelector('#btnConnectRemote');
+    input.value = '$slowUrl';
+    btn.click();
+})()
+"@
+        Start-Sleep -Milliseconds 350
+        $loading1500 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); return { disabled: !!(b && b.disabled), text: b ? b.textContent.trim() : '' }; })()"
+        Require-Check "settings-dod.slow-1500-loading" ($loading1500.disabled -and $loading1500.text -match "连接中") "1500ms slow request did not show loading state"
+
+        $err1500 = $null
+        $deadline1500 = (Get-Date).AddSeconds(6)
+        while ((Get-Date) -lt $deadline1500) {
+            $state = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); return { disabled: !!(b && b.disabled), errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+            if (-not $state.disabled -and $state.errVisible -and $state.errText) {
+                $err1500 = $state
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        Require-Check "settings-dod.slow-1500-failed-retry" ($null -ne $err1500 -and $err1500.errVisible) "1500ms slow failure did not display visible error or restore retry button"
+
+        # (b) 5000ms 慢响应失败重试实测
+        Set-FakeRemoteMode -ModePath $slowModePath -Mode "slow-5000"
+        $null = Invoke-CdpExpression -Connection $Connection -Expression "(() => { document.querySelector('#btnConnectRemote').click(); })()"
+        Start-Sleep -Milliseconds 1500
+        $loading5000 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); return { disabled: !!(b && b.disabled), text: b ? b.textContent.trim() : '' }; })()"
+        Require-Check "settings-dod.slow-5000-loading" ($loading5000.disabled -and $loading5000.text -match "连接中") "5000ms slow request did not keep loading state"
+
+        $err5000 = $null
+        $deadline5000 = (Get-Date).AddSeconds(8)
+        while ((Get-Date) -lt $deadline5000) {
+            $state = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); return { disabled: !!(b && b.disabled), errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+            if (-not $state.disabled -and $state.errVisible -and $state.errText) {
+                $err5000 = $state
+                break
+            }
+            Start-Sleep -Milliseconds 250
+        }
+        Require-Check "settings-dod.slow-5000-failed-retry" ($null -ne $err5000 -and $err5000.errVisible) "5000ms slow failure did not display visible error or restore retry button"
+
+        $matrixResult["slow_response_and_retry"] = [ordered]@{
+            slow_1500ms = [ordered]@{ loading_visible = $true; error_text = $err1500.errText; retry_restored = $true }
+            slow_5000ms = [ordered]@{ loading_visible = $true; error_text = $err5000.errText; retry_restored = $true }
+        }
+    } finally {
+        try { if ($slowHolder -and $slowHolder.process -and -not $slowHolder.process.HasExited) { Stop-Process -Id $slowHolder.process.Id -Force -ErrorAction SilentlyContinue } } catch { }
+        $null = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const i = document.querySelector('#remoteServerUrl'); if (i) i.value = ''; const e = document.querySelector('#remoteConnectError'); if (e) e.classList.add('hidden'); })()"
+    }
     $matrixResult["retry_and_return_controls"] = $retryCheck
 
     $script:settingsDodEvidence = $matrixResult
@@ -1687,6 +1744,15 @@ while (`$true) {
         } elseif (`$path -eq '/api/asset-registry/projects') {
             `$status = '401 Unauthorized'
             `$body = '{"detail":{"code":"UNAUTHORIZED","message":"unauthenticated"}}'
+        }
+        if (`$mode -eq 'slow-1500') {
+            Start-Sleep -Milliseconds 1500
+            `$status = '503 Service Unavailable'
+            `$body = '{"detail":{"code":"SLOW_TEST_1500","message":"simulated 1500ms slow failure"}}'
+        } elseif (`$mode -eq 'slow-5000') {
+            Start-Sleep -Milliseconds 5000
+            `$status = '503 Service Unavailable'
+            `$body = '{"detail":{"code":"SLOW_TEST_5000","message":"simulated 5000ms slow failure"}}'
         }
         if (`$mode -eq 'no-version') {
             `$extraHeaders = "Cache-Control: no-store, no-cache, must-revalidate`r`nPragma: no-cache`r`nExpires: 0`r`n"
@@ -1984,8 +2050,12 @@ function Remove-AcceptanceState {
     }
     if ($script:overrideClaimed -and $script:dataMode -eq "isolated-localappdata-override" -and (Test-Path -LiteralPath $script:processLocalAppData)) {
         $overrideName = Split-Path -Leaf $script:processLocalAppData
+        $hasIsolationMarker = (Test-Path -LiteralPath $script:markerPath) -or ($script:overrideMarkerPath -and (Test-Path -LiteralPath $script:overrideMarkerPath))
         if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
             Write-Host ("[WARN] refusing to remove non-acceptance LocalAppDataOverride " + $overrideName)
+            $ok = $false
+        } elseif (-not $hasIsolationMarker) {
+            Write-Host ("[WARN] refusing to remove LocalAppDataOverride without acceptance marker: " + $overrideName)
             $ok = $false
         } elseif ($outputInsideOverride) {
             Write-Host "[WARN] evidence output is inside the LocalAppDataOverride; preserving it"
@@ -2012,7 +2082,7 @@ function Remove-AcceptanceState {
             $ok = $false
         }
     }
-    if ($script:stateClaimed -and (Test-Path -LiteralPath $script:markerPath)) {
+    if ($script:dataMode -ne "isolated-localappdata-override" -and $script:stateClaimed -and (Test-Path -LiteralPath $script:markerPath)) {
         if (Test-Path -LiteralPath $script:upgradeRoot) {
             try {
                 Remove-Item -LiteralPath $script:upgradeRoot -Recurse -Force -ErrorAction Stop
@@ -2135,37 +2205,40 @@ public static class GwNative {
 
     if ($LocalAppDataOverride) {
         $script:processLocalAppData = [IO.Path]::GetFullPath($LocalAppDataOverride)
+        $overrideName = Split-Path -Leaf $script:processLocalAppData
+        if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
+            throw "refusing to use a LocalAppDataOverride that is not named gw-qin626-accept-*"
+        }
         $script:dataMode = "isolated-localappdata-override"
         $script:upgradeRoot = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
         $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
         $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
-        $script:processAppData = ""
-        $script:clientConfigDir = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "ai.godsworkbench.desktop"
+        $script:processAppData = Join-Path $script:processLocalAppData "Roaming"
+        $script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
         $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
         $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
         $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
-        if ($Reset -and (Test-Path -LiteralPath $script:processLocalAppData)) {
-            $overrideName = Split-Path -Leaf $script:processLocalAppData
-            if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
-                throw "refusing to reset a LocalAppDataOverride that is not named gw-qin626-accept-*"
+        $script:overrideMarkerPath = Join-Path $script:processLocalAppData "qin626-acceptance-owned.json"
+
+        if (Test-Path -LiteralPath $script:processLocalAppData) {
+            $existingItems = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
+            if ($existingItems.Count -gt 0) {
+                $hasOverrideMarker = (Test-Path -LiteralPath $script:markerPath) -or (Test-Path -LiteralPath $script:overrideMarkerPath)
+                if (-not $Reset) {
+                    throw "isolated override directory is not empty; use -Reset (if owned by acceptance) or a new -LocalAppDataOverride"
+                }
+                if (-not $hasOverrideMarker) {
+                    throw "isolated override directory is not empty and lacks the acceptance marker; refusing to reset"
+                }
+                Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
             }
-            Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
+        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
+        $script:savedProcessEnvAppData = $env:APPDATA
         $env:LOCALAPPDATA = $script:processLocalAppData
-        $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
-        $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
-        if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
-            throw "LocalAppDataOverride is not empty and does not contain GodsWorkbench"
-        }
-        $dataRootForRun = Join-Path $script:processLocalAppData "GodsWorkbench"
-        if (Test-Path -LiteralPath $dataRootForRun) {
-            $dataItems = @(Get-ChildItem -LiteralPath $dataRootForRun -Force -ErrorAction SilentlyContinue)
-            if ($dataItems.Count -gt 0 -and -not $Reset) {
-                throw "isolated data root is not empty; use -Reset or a new -LocalAppDataOverride"
-            }
-        }
+        $env:APPDATA = $script:processAppData
         $script:overrideClaimed = $true
     } else {
         $script:processLocalAppData = $script:realLocalAppData
@@ -2194,20 +2267,17 @@ public static class GwNative {
         $clientItems = @(Get-ChildItem -LiteralPath $script:clientConfigDir -Force -ErrorAction SilentlyContinue)
     }
     if ($Reset) {
-        if (-not $LocalAppDataOverride -and ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) -and -not (Test-Path -LiteralPath $script:markerPath)) {
+        if (($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) -and -not (Test-Path -LiteralPath $script:markerPath)) {
             throw "desktop upgrade/client state exists without the acceptance marker; refusing to reset"
         }
-        if (Test-Path -LiteralPath $script:upgradeRoot) {
+        if ((Test-Path -LiteralPath $script:upgradeRoot) -and (Test-Path -LiteralPath $script:markerPath)) {
             Remove-Item -LiteralPath $script:upgradeRoot -Recurse -Force
-        }
-        if (Test-Path -LiteralPath $script:serverConfig) {
-            Remove-Item -LiteralPath $script:serverConfig -Force -ErrorAction SilentlyContinue
         }
         if ($clientItems.Count -gt 0 -and (Test-Path -LiteralPath $script:markerPath)) {
             Remove-Item -LiteralPath $script:clientConfigDir -Recurse -Force
         }
     } else {
-        if (-not $LocalAppDataOverride -and ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0)) {
+        if ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) {
             throw "desktop upgrade/client state already exists; use -Reset (only if owned by this acceptance) or a fresh Windows user"
         }
     }
@@ -2217,7 +2287,11 @@ public static class GwNative {
         created_at = (Get-Date).ToUniversalTime().ToString("o")
         installer_sha256 = $script:installerSha
     }
-    Write-Utf8NoBom -Path $script:markerPath -Text (($marker | ConvertTo-Json -Compress) + "`r`n")
+    $markerJson = ($marker | ConvertTo-Json -Compress) + "`r`n"
+    Write-Utf8NoBom -Path $script:markerPath -Text $markerJson
+    if ($script:overrideMarkerPath) {
+        Write-Utf8NoBom -Path $script:overrideMarkerPath -Text $markerJson
+    }
     $script:stateClaimed = $true
 
     if (Test-Path -LiteralPath $script:installDirPath) {

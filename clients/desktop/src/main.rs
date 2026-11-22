@@ -188,8 +188,12 @@ impl WakeupState {
     fn trigger_find_nas(&self) {
         if let Ok(guard) = self.app_handle.lock() {
             if let Some(app) = guard.as_ref() {
-                if let Some(window) = app.get_webview_window("main") {
-                    handle_find_nas_navigation(&window);
+                if let Some(registry) = app.try_state::<TrayMenuRegistry>() {
+                    if let Ok(id_guard) = registry.find_nas_id.lock() {
+                        if let Some(menu_id) = id_guard.as_deref() {
+                            handle_tray_menu_event(app, menu_id, &self.lock_path);
+                        }
+                    }
                 }
             }
         }
@@ -1630,13 +1634,31 @@ async fn check_health(client: &Client, base: &Url) -> Result<(), String> {
     Ok(())
 }
 
-fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Cannot locate the client settings directory: {error}"))?;
+fn client_settings_dir_from(
+    appdata_override: Option<std::ffi::OsString>,
+    identifier: &str,
+    fallback: Result<PathBuf, tauri::Error>,
+) -> Result<PathBuf, String> {
+    // 优先尊重 APPDATA 环境变量，确保自动化验收隔离模式下客户端配置落入沙箱而不触碰真实用户漫游目录
+    if let Some(appdata) = appdata_override.filter(|v| !v.is_empty()) {
+        return Ok(PathBuf::from(appdata).join(identifier));
+    }
+    fallback.map_err(|error| format!("Cannot locate the client settings directory: {error}"))
+}
+
+fn client_settings_dir(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = client_settings_dir_from(
+        std::env::var_os("APPDATA"),
+        app.config().identifier.as_str(),
+        app.path().app_config_dir(),
+    )?;
     fs::create_dir_all(&directory)
         .map_err(|error| format!("Cannot create the client settings directory: {error}"))?;
+    Ok(directory)
+}
+
+fn config_path(app: &AppHandle) -> Result<PathBuf, String> {
+    let directory = client_settings_dir(app)?;
     Ok(directory.join("server.json"))
 }
 
@@ -1657,12 +1679,7 @@ fn client_setting_key_is_allowed(key: &str) -> bool {
 }
 
 fn client_config_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_config_dir()
-        .map_err(|error| format!("Cannot locate the client settings directory: {error}"))?;
-    fs::create_dir_all(&directory)
-        .map_err(|error| format!("Cannot create the client settings directory: {error}"))?;
+    let directory = client_settings_dir(app)?;
     Ok(directory.join("client.json"))
 }
 
@@ -2534,8 +2551,40 @@ fn run_diagnostics_command(path: &Path) -> i32 {
     }
 }
 
+pub const TRAY_MENU_ID_FIND_NAS: &str = "scan";
+
+struct TrayMenuRegistry {
+    find_nas_id: Mutex<Option<String>>,
+}
+
 pub const TRAY_FIND_NAS_SETTINGS_URL: &str =
     "http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas";
+
+fn handle_tray_menu_event(app: &AppHandle, menu_id: &str, active_lock_path: &Path) -> bool {
+    match menu_id {
+        "open" => {
+            if let Some(window) = app.get_webview_window("main") {
+                let _ = window.show();
+                let _ = window.set_focus();
+            }
+            true
+        }
+        TRAY_MENU_ID_FIND_NAS => {
+            if let Some(window) = app.get_webview_window("main") {
+                handle_find_nas_navigation(&window);
+            }
+            true
+        }
+        "quit" => {
+            release_own_instance_lock(active_lock_path);
+            let state = app.state::<ManagedBackendState>();
+            stop_managed_backend(&state);
+            app.exit(0);
+            true
+        }
+        _ => false,
+    }
+}
 
 fn handle_find_nas_navigation(window: &WebviewWindow) {
     let is_local_workbench = if let Ok(u) = window.url() {
@@ -2659,33 +2708,20 @@ fn main() {
             });
 
             let open = MenuItem::with_id(app, "open", "Open Workbench", true, None::<&str>)?;
-            let scan = MenuItem::with_id(app, "scan", "Find NAS", true, None::<&str>)?;
+            let scan =
+                MenuItem::with_id(app, TRAY_MENU_ID_FIND_NAS, "Find NAS", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            app.manage(TrayMenuRegistry {
+                find_nas_id: Mutex::new(Some(scan.id().as_ref().to_string())),
+            });
             let menu = Menu::with_items(app, &[&open, &scan, &quit])?;
             TrayIconBuilder::new()
                 .menu(&menu)
                 .show_menu_on_left_click(true)
                 .tooltip("Gods Workbench")
                 .icon(make_tray_icon())
-                .on_menu_event(move |app, event| match event.id().as_ref() {
-                    "open" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            let _ = window.show();
-                            let _ = window.set_focus();
-                        }
-                    }
-                    "scan" => {
-                        if let Some(window) = app.get_webview_window("main") {
-                            handle_find_nas_navigation(&window);
-                        }
-                    }
-                    "quit" => {
-                        release_own_instance_lock(&active_lock_path);
-                        let state = app.state::<ManagedBackendState>();
-                        stop_managed_backend(&state);
-                        app.exit(0);
-                    }
-                    _ => {}
+                .on_menu_event(move |app, event| {
+                    let _ = handle_tray_menu_event(app, event.id().as_ref(), &active_lock_path);
                 })
                 .build(app)?;
             Ok(())
@@ -3802,5 +3838,36 @@ mod tests {
         let _ = foreign_child.kill();
         let _ = foreign_child.wait();
         let _ = fs::remove_file(&test_lock_path);
+    }
+
+    #[test]
+    fn test_client_settings_dir_respects_appdata_override() {
+        let override_dir = std::ffi::OsString::from(r"C:\sandbox\Roaming");
+        let resolved = client_settings_dir_from(
+            Some(override_dir),
+            "ai.godsworkbench.desktop",
+            Ok(PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")),
+        )
+        .expect("override should resolve");
+        assert_eq!(
+            resolved,
+            PathBuf::from(r"C:\sandbox\Roaming\ai.godsworkbench.desktop")
+        );
+
+        let fallback = client_settings_dir_from(
+            None,
+            "ai.godsworkbench.desktop",
+            Ok(PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")),
+        )
+        .expect("fallback should resolve");
+        assert_eq!(
+            fallback,
+            PathBuf::from(r"C:\real\Roaming\ai.godsworkbench.desktop")
+        );
+    }
+
+    #[test]
+    fn test_tray_find_nas_menu_id_constant() {
+        assert_eq!(TRAY_MENU_ID_FIND_NAS, "scan");
     }
 }
