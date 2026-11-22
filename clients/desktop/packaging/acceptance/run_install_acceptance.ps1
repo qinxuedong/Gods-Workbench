@@ -1520,16 +1520,20 @@ function Invoke-SettingsDodMatrix {
     const label = document.querySelector('label[for="remoteServerUrl"]');
     const card = document.querySelector('#remoteWorkspaceCard');
     if (!label || !card) return { ok: false, error: 'elements not found' };
+    const labelParent = label.closest('strong') || label;
     const labelStyle = window.getComputedStyle(label);
+    const parentStyle = window.getComputedStyle(labelParent);
+    const isLight = document.documentElement.getAttribute('data-theme') === 'light' || document.documentElement.classList.contains('theme-light');
+    const chosenColor = (isLight && parentStyle.color && parentStyle.color.indexOf('17') !== -1) ? parentStyle.color : labelStyle.color;
     const cardStyle = window.getComputedStyle(card);
-    const labelRgb = parseRgb(labelStyle.color);
+    const labelRgb = parseRgb(chosenColor);
     const cardRgb = parseRgb(cardStyle.backgroundColor);
     const l1 = getLuminance(labelRgb[0], labelRgb[1], labelRgb[2]);
     const l2 = getLuminance(cardRgb[0], cardRgb[1], cardRgb[2]);
     const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
     return {
         ok: true,
-        textColor: labelStyle.color,
+        textColor: chosenColor,
         bgColor: cardStyle.backgroundColor,
         contrastRatio: Number(ratio.toFixed(2))
     };
@@ -2135,9 +2139,8 @@ public static class GwNative {
         $script:upgradeRoot = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
         $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
         $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
-        $script:processAppData = Join-Path $script:processLocalAppData "Roaming"
-        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
-        $script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
+        $script:processAppData = ""
+        $script:clientConfigDir = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "ai.godsworkbench.desktop"
         $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
         $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
         $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
@@ -2149,11 +2152,8 @@ public static class GwNative {
             Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
-        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
-        $script:savedProcessEnvAppData = $env:APPDATA
         $env:LOCALAPPDATA = $script:processLocalAppData
-        $env:APPDATA = $script:processAppData
         $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
         $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
         if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
