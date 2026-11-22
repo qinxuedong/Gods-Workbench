@@ -1,0 +1,34 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 776,
+  "authorization_basis": "GitHub Issue #776 QIN-633, 2026-11-21",
+  "files": [
+    "gw/api/routes_auth.py",
+    "gw/api/routes_local_accounts.py",
+    "gw/core/local_accounts.py",
+    "tests/contracts/auth/test_qin_630_trusted_local_owner.py",
+    "tests/contracts/auth/test_qin_633_personal_local_owner.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-633-personal-local-owner.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-776.json",
+    "web/js/core/hardware-telemetry.js",
+    "web/js/modules/asset-auth/api.js",
+    "web/js/modules/trusted-local/bootstrap.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/auth/test_qin_633_personal_local_owner.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #776 QIN-633, 2026-11-21",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-633-personal-local-owner.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #776 QIN-633, 2026-11-21",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-633: 个人本机可信入口全面接管本地 owner 权限；只写本票分片，硬计数保持不变。"
+}

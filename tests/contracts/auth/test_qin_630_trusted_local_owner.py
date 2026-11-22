@@ -116,7 +116,7 @@ def test_tampered_ticket_is_rejected_without_creating_accounts(trusted_env):
 
 
 def test_existing_account_is_never_taken_over_and_ticket_survives_failure(trusted_env):
-    """已有账户默认需人工认领：兑换失败不接管、不消费票据。"""
+    """已有账户在 QIN-633 规则下自动接管为本地所有者并兑换票据直入。"""
     from gw.core import local_accounts, trusted_local
 
     with make_client() as client:
@@ -126,31 +126,36 @@ def test_existing_account_is_never_taken_over_and_ticket_survives_failure(truste
         assert created.status_code == 201, created.text
     with local_accounts.database() as db:
         db.execute("BEGIN IMMEDIATE")
-        with pytest.raises(CleanroomException) as direct_rejection:
-            local_accounts.ensure_trusted_local_owner(
-                db, trusted_local.device_key_fingerprint(), now=1.0
-            )
-    assert direct_rejection.value.code == "TRUSTED_LOCAL_CLAIM_REQUIRED"
+        principal, auto_created, recovery_codes = local_accounts.ensure_trusted_local_owner(
+            db, trusted_local.device_key_fingerprint(), now=1.0
+        )
+    assert auto_created is True
+    assert principal["username"] == "owner"
+    assert recovery_codes == []
     assert [row["username"] for row in read_table("local_users")] == ["owner"]
     ticket = issue_ticket()
     with make_client() as client:
-        rejected = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
-        assert rejected.status_code == 409, rejected.text
-        assert rejected.json()["detail"]["code"] == "TRUSTED_LOCAL_CLAIM_REQUIRED"
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert redeemed.status_code == 200, redeemed.text
+        body = redeemed.json()
+        assert body["authenticated"] is True
+        assert body["principal"]["username"] == "owner"
+        assert body["recovery_codes"] == []
         state = client.get("/api/asset-auth/status").json()
-        assert state["trusted_local"]["needs_manual_claim"] is True
-        assert state["trusted_local"]["established"] is False
-    # 既有账户未被改动，也没有静默建立第二个所有者
+        assert state["authenticated"] is True
+        assert state["trusted_local"]["needs_manual_claim"] is False
+        assert state["trusted_local"]["established"] is True
+    # 既有账户未被改动，也没有静默建立第二个用户
     assert [row["username"] for row in read_table("local_users")] == ["owner"]
-    assert read_table("trusted_local_owners") == []
-    # 失败事务整体回滚：票据未被消费，认领成功后同一张票据仍可兑换
-    assert read_table("trusted_local_bootstrap_tickets")[0]["consumed_at"] is None
+    owners = read_table("trusted_local_owners")
+    assert len(owners) == 1
+    assert owners[0]["claim_method"] == "auto_takeover"
 
 
 def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
     trusted_env, monkeypatch
 ):
-    """认领必须先过管理员认证；认证失败不改数据。"""
+    """认领必须先过管理员认证；认证失败不改数据；票据保持可用。"""
     from gw.core import local_accounts_cli
 
     with make_client() as client:
@@ -158,24 +163,45 @@ def test_claim_requires_admin_authentication_and_keeps_ticket_usable(
             "/api/asset-auth/local/setup", json={"username": "owner", "password": PASSWORD}
         )
         assert created.status_code == 201, created.text
-    ticket = issue_ticket()
+    # QIN-633: 已有账户时自动接管直入（特批方案 A 替换旧 409 行为断言）
+    ticket_auto = issue_ticket()
     with make_client() as client:
-        assert client.post(BOOTSTRAP_PATH, json={"ticket": ticket}).status_code == 409
+        redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket_auto})
+        assert redeemed.status_code == 200, redeemed.text
+        assert redeemed.json()["authenticated"] is True
+        assert redeemed.json()["principal"]["username"] == "owner"
+        state = client.get("/api/asset-auth/status").json()
+        assert state["authenticated"] is True
+        assert state["trusted_local"]["established"] is True
 
+    # 解绑后测试手动 trusted-claim：认证失败不改数据、原票据保持可用
+    monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: PASSWORD)
+    assert local_accounts_cli.main(["trusted-unclaim", "--username", "owner"]) == 0
+    assert read_table("trusted_local_owners") == []
+
+    # 在执行失败认领前签发票据 ticket
+    ticket = issue_ticket()
+
+    # 错误密码认证失败：返回 1，且未建立所有者绑定
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: "错误密码")
     assert local_accounts_cli.main(["trusted-claim", "--username", "owner"]) == 1
     assert read_table("trusted_local_owners") == []
 
+    # 正确密码认证成功：建立 password_auth 绑定
     monkeypatch.setattr("getpass.getpass", lambda *args, **kwargs: PASSWORD)
     assert local_accounts_cli.main(["trusted-claim", "--username", "owner"]) == 0
     owners = read_table("trusted_local_owners")
     assert len(owners) == 1
     assert owners[0]["claim_method"] == "password_auth"
 
+    # 核心安全断言：错误密码认领失败并未使此前签发的票据失效，该 ticket 依然可用并成功兑换
     with make_client() as client:
         redeemed = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
         assert redeemed.status_code == 200, redeemed.text
+        assert redeemed.json()["authenticated"] is True
+        assert redeemed.json()["principal"]["username"] == "owner"
         state = client.get("/api/asset-auth/status").json()
+        assert state["authenticated"] is True
         assert state["trusted_local"]["established"] is True
 
 
