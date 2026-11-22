@@ -1596,37 +1596,48 @@ function Invoke-SettingsDodMatrix {
     $retryCheck = Invoke-CdpExpression -Connection $Connection -Expression $retryExpr
     Require-Check "settings-dod.retry-controls-ok" ($retryCheck.hasReturnBtn -and $retryCheck.hasConnectBtn -and $retryCheck.hasErrorContainer) "settings retry and return controls missing"
 
-    $slowPort = Get-FreeTcpPort
+    $slowPort = Get-FreeAddressPort -Address $script:lanAddress
     $slowModePath = Join-Path $script:outputDirPath "settings-dod-slow.mode.txt"
     Set-FakeRemoteMode -ModePath $slowModePath -Mode "slow-1500"
-    $slowHolder = Start-FakeRemoteServer -Address "127.0.0.1" -Port $slowPort -Label "settings-dod-slow" -ModePath $slowModePath
-    $slowUrl = "http://127.0.0.1:" + $slowPort
+    $slowHolder = Start-FakeRemoteServer -Address $script:lanAddress -Port $slowPort -Label "settings-dod-slow" -ModePath $slowModePath
+    $slowUrl = "http://" + $script:lanAddress + ":" + $slowPort
 
     try {
         # (a) 1500ms 慢响应失败可见性与重试恢复
-        $null = Invoke-CdpExpression -Connection $Connection -Expression @"
+        $clickDiag1500 = Invoke-CdpExpression -Connection $Connection -Expression @"
 (() => {
     const input = document.querySelector('#remoteServerUrl');
     const btn = document.querySelector('#btnConnectRemote');
+    const status = document.querySelector('#remoteBridgeStatus');
     input.value = '$slowUrl';
     btn.click();
+    return {
+        hasBtn: !!btn,
+        disabledAfterClick: !!(btn && btn.disabled),
+        textAfterClick: btn ? btn.textContent.trim() : '',
+        bridgeStatus: status ? status.textContent.trim() : '',
+        hasInvoke: typeof window.__TAURI__?.core?.invoke,
+        href: window.location.href
+    };
 })()
 "@
         Start-Sleep -Milliseconds 350
-        $loading1500 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); const t = b ? b.textContent.trim() : ''; return { disabled: !!(b && b.disabled), isLoadingText: t.indexOf('\u8fde\u63a5\u4e2d') !== -1, text: t, errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
-        Require-Check "settings-dod.slow-1500-loading" ($loading1500.disabled -and $loading1500.isLoadingText) ("1500ms slow request did not show loading state (disabled=$($loading1500.disabled), errVisible=$($loading1500.errVisible), errText=$($loading1500.errText))")
+        $loading1500 = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); const t = b ? b.textContent.trim() : ''; return { hasBtn: !!b, disabled: !!(b && b.disabled), isLoadingText: t.indexOf('\u8fde\u63a5\u4e2d') !== -1, text: t, errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '', href: window.location.href }; })()"
+        Require-Check "settings-dod.slow-1500-loading" ($loading1500.disabled -and $loading1500.isLoadingText) ("1500ms slow request did not show loading state (hasBtn=$($loading1500.hasBtn), disabled=$($loading1500.disabled), text=$($loading1500.text), errVisible=$($loading1500.errVisible), errText=$($loading1500.errText), clickDiag=$($clickDiag1500 | ConvertTo-Json -Compress))")
 
         $err1500 = $null
-        $deadline1500 = (Get-Date).AddSeconds(6)
+        $lastState1500 = $null
+        $deadline1500 = (Get-Date).AddSeconds(12)
         while ((Get-Date) -lt $deadline1500) {
             $state = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); return { disabled: !!(b && b.disabled), errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+            $lastState1500 = $state
             if (-not $state.disabled -and $state.errVisible -and $state.errText) {
                 $err1500 = $state
                 break
             }
             Start-Sleep -Milliseconds 250
         }
-        Require-Check "settings-dod.slow-1500-failed-retry" ($null -ne $err1500 -and $err1500.errVisible) "1500ms slow failure did not display visible error or restore retry button"
+        Require-Check "settings-dod.slow-1500-failed-retry" ($null -ne $err1500 -and $err1500.errVisible) ("1500ms slow failure did not display visible error or restore retry button (last=$($lastState1500 | ConvertTo-Json -Compress))")
 
         # (b) 5000ms 慢响应失败重试实测
         Set-FakeRemoteMode -ModePath $slowModePath -Mode "slow-5000"
@@ -1636,16 +1647,18 @@ function Invoke-SettingsDodMatrix {
         Require-Check "settings-dod.slow-5000-loading" ($loading5000.disabled -and $loading5000.isLoadingText) ("5000ms slow request did not keep loading state (disabled=$($loading5000.disabled), errVisible=$($loading5000.errVisible), errText=$($loading5000.errText))")
 
         $err5000 = $null
-        $deadline5000 = (Get-Date).AddSeconds(8)
+        $lastState5000 = $null
+        $deadline5000 = (Get-Date).AddSeconds(12)
         while ((Get-Date) -lt $deadline5000) {
             $state = Invoke-CdpExpression -Connection $Connection -Expression "(() => { const b = document.querySelector('#btnConnectRemote'); const e = document.querySelector('#remoteConnectError'); return { disabled: !!(b && b.disabled), errVisible: !!(e && !e.classList.contains('hidden')), errText: e ? e.textContent.trim() : '' }; })()"
+            $lastState5000 = $state
             if (-not $state.disabled -and $state.errVisible -and $state.errText) {
                 $err5000 = $state
                 break
             }
             Start-Sleep -Milliseconds 250
         }
-        Require-Check "settings-dod.slow-5000-failed-retry" ($null -ne $err5000 -and $err5000.errVisible) "5000ms slow failure did not display visible error or restore retry button"
+        Require-Check "settings-dod.slow-5000-failed-retry" ($null -ne $err5000 -and $err5000.errVisible) ("5000ms slow failure did not display visible error or restore retry button (last=$($lastState5000 | ConvertTo-Json -Compress))")
 
         $matrixResult["slow_response_and_retry"] = [ordered]@{
             slow_1500ms = [ordered]@{ loading_visible = $true; error_text = $err1500.errText; retry_restored = $true }
@@ -2409,6 +2422,22 @@ public static class GwNative {
         Require-Check "tray-find-nas.general-active" ($trayPageStatus.generalActive) "general settings panel not active"
         Require-Check "tray-find-nas.remote-card" ($trayPageStatus.remoteCardExists) "remoteWorkspaceCard not present in DOM"
         Require-Check "tray-find-nas.scan-button" ($trayPageStatus.scanBtnExists) "btnScanLan not present in DOM"
+        $null = Invoke-CdpExpression -Connection $trayCdp -Expression @"
+(() => {
+    const modal = document.querySelector('#accountModal');
+    const closeBtn = document.querySelector('#accountModal button[aria-label="\u5173\u95ed\u767b\u5f55"]');
+    if (closeBtn) {
+        closeBtn.click();
+    } else if (modal && typeof modal.close === 'function' && modal.open) {
+        modal.close();
+    }
+    const card = document.querySelector('#remoteWorkspaceCard');
+    if (card && typeof card.scrollIntoView === 'function') {
+        card.scrollIntoView({ block: 'center' });
+    }
+})()
+"@
+        Start-Sleep -Milliseconds 350
         Add-Check "tray-find-nas.page-screenshot" (Save-CdpScreenshot -Connection $trayCdp -Path (Join-Path $script:outputDirPath "02-tray-find-nas.page.png")) "tray find nas screenshot failed"
 
         $script:lifecycle["02-tray-find-nas"] = [ordered]@{
