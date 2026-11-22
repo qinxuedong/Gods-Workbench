@@ -523,7 +523,34 @@
     // 硬件浮窗沿用唯一FloatingDismissal栈；程序保存成功关闭不重复询问草稿。
     modalDrafts: new WeakMap(),
     snapshotDraft: function(content) {
-      return JSON.stringify(Array.from(content.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"]')).map(el => [el.id || el.name, el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.isContentEditable ? el.textContent : el.value]));
+      if (!content || !content.querySelectorAll) return '[]';
+      const inputs = Array.from(content.querySelectorAll('input:not([type="hidden"]),textarea,select,[contenteditable="true"]'))
+        .filter(el => {
+          if (!el) return false;
+          if (el.id === 'localRecoverySaved') return false;
+          if (typeof el.hasAttribute === 'function') {
+            if (el.hasAttribute('data-floating-ignore-draft') || el.hasAttribute('data-no-draft') || el.hasAttribute('data-gw-no-draft')) return false;
+          }
+          if (typeof el.matches === 'function') {
+            if (el.matches('[data-floating-ignore-draft], [data-no-draft], [data-gw-no-draft], #localRecoverySaved')) return false;
+          }
+          return true;
+        });
+      return JSON.stringify(inputs.map(el => [el.id || el.name, el.type === 'checkbox' || el.type === 'radio' ? el.checked : el.isContentEditable ? el.textContent : el.value]));
+    },
+    finishTrustedLocalRecovery: function() {
+      const modal = document.getElementById('accountModal');
+      if (modal) {
+        const dialog = modal.querySelector('.hw-modal-dialog');
+        if (dialog) {
+          this.modalDrafts.set(modal, this.snapshotDraft(dialog));
+        }
+        if (window.FloatingDismissal?.closeSurface) {
+          const closed = window.FloatingDismissal.closeSurface(modal);
+          if (closed) return;
+        }
+      }
+      this.closeModal('accountModal');
     },
     registerHardwareSurface: function(surface, content, close) {
       if (!surface || !content) return;
@@ -1628,10 +1655,10 @@
           </div>
           <p id="localRecoveryCopyStatus" class="gw-type-body-sm text-slate-300" role="status" aria-live="polite"></p>
           <label class="flex items-center gap-2 gw-type-body-sm text-slate-300">
-            <input id="localRecoverySaved" type="checkbox" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">
+            <input id="localRecoverySaved" type="checkbox" data-floating-ignore-draft="true" data-no-draft="true" onchange="HardwareDeck.handleRecoveryCodeAcknowledgement()">
             我已妥善保存这些恢复码
           </label>
-          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="HardwareDeck.closeModal('accountModal')">
+          <button id="localRecoveryContinue" type="button" disabled class="hw-btn hw-btn-gold w-full opacity-50 cursor-not-allowed" onclick="HardwareDeck.finishTrustedLocalRecovery(); HardwareDeck.closeModal('accountModal')">
             已保存，进入工作台
           </button>
         </div>`;
