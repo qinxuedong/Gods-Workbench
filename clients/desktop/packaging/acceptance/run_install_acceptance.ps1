@@ -82,6 +82,7 @@ $script:remoteBackends = New-Object System.Collections.ArrayList
 $script:remoteBackendPids = New-Object System.Collections.ArrayList
 $script:remoteBackendEvidence = [ordered]@{}
 $script:ui = [ordered]@{}
+$script:settingsDodEvidence = [ordered]@{}
 
 function Add-Check {
     param([string]$Name, [bool]$Ok, [string]$Detail = "")
@@ -213,68 +214,17 @@ function Get-JournalStateWeight([string]$state) {
     }
 }
 
-function Sync-UpgradeState {
-    if ($script:processLocalAppData -and ($script:processLocalAppData -ne $script:realLocalAppData)) {
-        $realUpgrade = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
-        $sandboxUpgrade = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
-        New-Item -ItemType Directory -Force -Path $realUpgrade | Out-Null
-        New-Item -ItemType Directory -Force -Path $sandboxUpgrade | Out-Null
-        $realJournal = Join-Path $realUpgrade "journal.txt"
-        $sandboxJournal = Join-Path $sandboxUpgrade "journal.txt"
-        $realContent = if (Test-Path -LiteralPath $realJournal) { [IO.File]::ReadAllText($realJournal).Trim() } else { "" }
-        $sandboxContent = if (Test-Path -LiteralPath $sandboxJournal) { [IO.File]::ReadAllText($sandboxJournal).Trim() } else { "" }
-        $realWeight = Get-JournalStateWeight $realContent
-        $sandboxWeight = Get-JournalStateWeight $sandboxContent
-        $winningContent = ""
-        if ($realWeight -gt $sandboxWeight) {
-            $winningContent = $realContent
-        } elseif ($sandboxWeight -gt $realWeight) {
-            $winningContent = $sandboxContent
-        } else {
-            $realTime = if (Test-Path -LiteralPath $realJournal) { (Get-Item -LiteralPath $realJournal).LastWriteTimeUtc } else { [DateTime]::MinValue }
-            $sandboxTime = if (Test-Path -LiteralPath $sandboxJournal) { (Get-Item -LiteralPath $sandboxJournal).LastWriteTimeUtc } else { [DateTime]::MinValue }
-            $winningContent = if ($realTime -gt $sandboxTime) { $realContent } else { $sandboxContent }
-        }
-        if ($winningContent.Length -gt 0) {
-            [IO.File]::WriteAllText($realJournal, $winningContent)
-            [IO.File]::WriteAllText($sandboxJournal, $winningContent)
-        }
-        $realBackup = Join-Path $realUpgrade "backup-last"
-        $sandboxBackup = Join-Path $sandboxUpgrade "backup-last"
-        if (Test-Path -LiteralPath $realBackup) {
-            if (Test-Path -LiteralPath $sandboxBackup) {
-                Remove-Item -LiteralPath $sandboxBackup -Recurse -Force
-            }
-            Copy-Item -LiteralPath $realBackup -Destination $sandboxBackup -Recurse -Force
-        } elseif (Test-Path -LiteralPath $sandboxBackup) {
-            if (Test-Path -LiteralPath $realBackup) {
-                Remove-Item -LiteralPath $realBackup -Recurse -Force
-            }
-            Copy-Item -LiteralPath $sandboxBackup -Destination $realBackup -Recurse -Force
-        }
-        foreach ($logFile in @(Get-ChildItem -LiteralPath $realUpgrade -Filter "self-check*.log" -File -ErrorAction SilentlyContinue)) {
-            Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $sandboxUpgrade $logFile.Name) -Force -ErrorAction SilentlyContinue
-        }
-        foreach ($logFile in @(Get-ChildItem -LiteralPath $sandboxUpgrade -Filter "self-check*.log" -File -ErrorAction SilentlyContinue)) {
-            Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $realUpgrade $logFile.Name) -Force -ErrorAction SilentlyContinue
-        }
-    }
-}
-
 function Get-JournalState {
-    Sync-UpgradeState
     if (-not (Test-Path -LiteralPath $script:journalPath)) { return "<missing>" }
     return ([IO.File]::ReadAllText($script:journalPath)).Trim()
 }
 
 function Get-BackupGeneration {
-    Sync-UpgradeState
     $backupRun = Join-Path $script:backupProgram "backend\run.py"
     return (Get-Generation -RunPy $backupRun)
 }
 
 function Get-SelfCheckTail {
-    Sync-UpgradeState
     if (-not (Test-Path -LiteralPath $script:upgradeRoot)) { return "" }
     $files = @(Get-ChildItem -LiteralPath $script:upgradeRoot -Filter "self-check*.log" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
     # 失败自检的 stdout 可能只有 UTF-8 BOM；必须跳过空文件继续读 stderr，不能只看最新一个。
@@ -898,8 +848,10 @@ function Start-GwProcess {
 function Start-DesktopProcess {
     param([string]$Label, [string[]]$Arguments = @(), [string]$WorkingDirectory = "", [int]$CdpPort = 0)
     if (-not $WorkingDirectory) { $WorkingDirectory = $script:installDirPath }
+    $resolvedAppData = if ($script:processAppData) { $script:processAppData } else { Split-Path -Parent $script:clientConfigDir }
     $environment = @{
         LOCALAPPDATA = $script:processLocalAppData
+        APPDATA = $resolvedAppData
         GW_BACKEND_ROOT = ""
         GW_ROOT_DIR = ""
         GW_PYTHON = ""
@@ -1166,24 +1118,18 @@ function Stop-Holders {
 
 function Invoke-Installer {
     param([string]$Label, [hashtable]$Environment = @{}, [string]$ManifestPath = "")
-    Sync-UpgradeState
     $beforeJournal = Get-JournalState
     $beforeBackup = Get-BackupGeneration
     $beforeInstalled = Get-Generation -RunPy $script:installedRunPy
+    $resolvedAppData = if ($script:processAppData) { $script:processAppData } else { Split-Path -Parent $script:clientConfigDir }
     $installerEnvironment = @{
         LOCALAPPDATA = $script:processLocalAppData
+        APPDATA = $resolvedAppData
         GW_BUNDLE_MANIFEST = ""
         GW_PRODUCT_VERSION = ""
     }
     foreach ($key in $Environment.Keys) {
         $installerEnvironment[$key] = $Environment[$key]
-    }
-    if ($script:processLocalAppData -and ($script:processLocalAppData -ne $script:realLocalAppData)) {
-        $realJournal = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade\journal.txt"
-        if (Test-Path -LiteralPath $script:journalPath) {
-            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $realJournal) | Out-Null
-            [IO.File]::WriteAllText($realJournal, [IO.File]::ReadAllText($script:journalPath))
-        }
     }
     $launch = Start-GwProcess -FilePath $script:installerPath -Arguments @("/S", ("/D=" + $script:installDirPath)) -Label $Label -Environment $installerEnvironment -WorkingDirectory $script:outputDirPath
     $exited = Wait-ProcessExit -Process $launch.process -TimeoutSeconds 900
@@ -1191,7 +1137,6 @@ function Invoke-Installer {
         try { Stop-Process -Id $launch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
     }
     $code = Get-ProcessExitCode -Process $launch.process
-    Sync-UpgradeState
     $result = [pscustomobject]@{
         label = $Label
         exit_code = $code
@@ -1421,7 +1366,6 @@ function Stop-DesktopGracefully {
     }
     $script:desktop = $null
     $script:desktopLaunch = $null
-    Sync-UpgradeState
 }
 
 function Wait-ShellFailure {
@@ -1511,6 +1455,146 @@ function Measure-ShellLayout {
     }
     if ($null -eq $measurement) { throw ("layout measurement failed at width " + $Width) }
     return $measurement
+}
+
+function Invoke-SettingsDodMatrix {
+    param($Connection)
+    Add-Step "settings-dod-matrix"
+    $matrixResult = [ordered]@{}
+
+    # 1. 四宽度响应式验证（724, 900, 1440, 1920）
+    $viewports = @(724, 900, 1440, 1920)
+    $viewportResults = [ordered]@{}
+    foreach ($w in $viewports) {
+        $null = Invoke-CdpCommand -Connection $Connection -Method "Emulation.setDeviceMetricsOverride" -Params @{
+            width = $w
+            height = 900
+            deviceScaleFactor = 1
+            mobile = $false
+        } -TimeoutMs 5000
+        Start-Sleep -Milliseconds 400
+        $vpCheck = Invoke-CdpExpression -Connection $Connection -Expression @"
+(() => {
+    const card = document.querySelector('#remoteWorkspaceCard');
+    const hasOverflow = document.documentElement.scrollWidth > window.innerWidth + 1;
+    const rect = card ? card.getBoundingClientRect() : { width: 0 };
+    return {
+        cardExists: !!card,
+        cardWidth: Math.round(rect.width),
+        hasOverflow: hasOverflow,
+        scrollWidth: document.documentElement.scrollWidth,
+        innerWidth: window.innerWidth
+    };
+})()
+"@
+        Require-Check ("settings-dod.viewport-" + $w + "-ok") ($vpCheck.cardExists -and -not $vpCheck.hasOverflow) ("viewport " + $w + "px check failed: cardExists=" + $vpCheck.cardExists + ", overflow=" + $vpCheck.hasOverflow)
+        $shotName = "settings-viewport-" + $w + "px.png"
+        $shotOk = Save-CdpScreenshot -Connection $Connection -Path (Join-Path $script:outputDirPath $shotName)
+        Add-Check ("settings-dod.viewport-" + $w + "-screenshot") $shotOk ("screenshot failed for " + $shotName)
+        $viewportResults[[string]$w] = [ordered]@{
+            card_exists = $vpCheck.cardExists
+            card_width = $vpCheck.cardWidth
+            no_overflow = (-not $vpCheck.hasOverflow)
+            screenshot = $shotName
+        }
+    }
+    $null = Invoke-CdpCommand -Connection $Connection -Method "Emulation.clearDeviceMetricsOverride" -TimeoutMs 5000
+    $matrixResult["viewports"] = $viewportResults
+
+    # 2. 深浅主题 WCAG 相对亮度对比度验证
+    $contrastExpr = @"
+(() => {
+    function getLuminance(r, g, b) {
+        const a = [r, g, b].map(v => {
+            v /= 255;
+            return v <= 0.03928 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4);
+        });
+        return a[0] * 0.2126 + a[1] * 0.7152 + a[2] * 0.0722;
+    }
+    function parseRgb(colorStr) {
+        const match = colorStr.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+        return match ? [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])] : [255, 255, 255];
+    }
+    const label = document.querySelector('label[for="remoteServerUrl"]');
+    const card = document.querySelector('#remoteWorkspaceCard');
+    if (!label || !card) return { ok: false, error: 'elements not found' };
+    const labelStyle = window.getComputedStyle(label);
+    const cardStyle = window.getComputedStyle(card);
+    const labelRgb = parseRgb(labelStyle.color);
+    const cardRgb = parseRgb(cardStyle.backgroundColor);
+    const l1 = getLuminance(labelRgb[0], labelRgb[1], labelRgb[2]);
+    const l2 = getLuminance(cardRgb[0], cardRgb[1], cardRgb[2]);
+    const ratio = (Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05);
+    return {
+        ok: true,
+        textColor: labelStyle.color,
+        bgColor: cardStyle.backgroundColor,
+        contrastRatio: Number(ratio.toFixed(2))
+    };
+})()
+"@
+    $themeResults = [ordered]@{}
+    # (1) 浅色主题测试
+    $null = Invoke-CdpExpression -Connection $Connection -Expression @"
+(() => {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.documentElement.classList.remove('studio-theme-dark', 'theme-dark');
+    document.documentElement.classList.add('theme-light');
+})()
+"@
+    Start-Sleep -Milliseconds 400
+    $lightContrast = Invoke-CdpExpression -Connection $Connection -Expression $contrastExpr
+    Require-Check "settings-dod.theme-light-contrast" ($lightContrast.ok -and $lightContrast.contrastRatio -ge 4.5) ("light theme contrast ratio " + $lightContrast.contrastRatio + " < 4.5:1")
+    $lightShot = Save-CdpScreenshot -Connection $Connection -Path (Join-Path $script:outputDirPath "settings-theme-light.png")
+    Add-Check "settings-dod.theme-light-screenshot" $lightShot "light theme screenshot failed"
+    $themeResults["light"] = [ordered]@{
+        contrast_ratio = $lightContrast.contrastRatio
+        text_color = $lightContrast.textColor
+        bg_color = $lightContrast.bgColor
+        screenshot = "settings-theme-light.png"
+    }
+
+    # (2) 深色主题测试
+    $null = Invoke-CdpExpression -Connection $Connection -Expression @"
+(() => {
+    document.documentElement.setAttribute('data-theme', 'dark');
+    document.documentElement.classList.remove('theme-light');
+    document.documentElement.classList.add('studio-theme-dark', 'theme-dark');
+})()
+"@
+    Start-Sleep -Milliseconds 400
+    $darkContrast = Invoke-CdpExpression -Connection $Connection -Expression $contrastExpr
+    Require-Check "settings-dod.theme-dark-contrast" ($darkContrast.ok -and $darkContrast.contrastRatio -ge 4.5) ("dark theme contrast ratio " + $darkContrast.contrastRatio + " < 4.5:1")
+    $darkShot = Save-CdpScreenshot -Connection $Connection -Path (Join-Path $script:outputDirPath "settings-theme-dark.png")
+    Add-Check "settings-dod.theme-dark-screenshot" $darkShot "dark theme screenshot failed"
+    $themeResults["dark"] = [ordered]@{
+        contrast_ratio = $darkContrast.contrastRatio
+        text_color = $darkContrast.textColor
+        bg_color = $darkContrast.bgColor
+        screenshot = "settings-theme-dark.png"
+    }
+    $matrixResult["themes"] = $themeResults
+
+    # 3. 慢响应与失败重试交互矩阵验证
+    $retryExpr = @"
+(() => {
+    const returnBtn = document.querySelector('#btnReturnLocal');
+    const connectBtn = document.querySelector('#btnConnectRemote');
+    const errorDiv = document.querySelector('#remoteConnectError');
+    const urlInput = document.querySelector('#remoteServerUrl');
+    return {
+        hasReturnBtn: !!returnBtn,
+        hasConnectBtn: !!connectBtn,
+        hasErrorContainer: !!errorDiv,
+        hasUrlInput: !!urlInput
+    };
+})()
+"@
+    $retryCheck = Invoke-CdpExpression -Connection $Connection -Expression $retryExpr
+    Require-Check "settings-dod.retry-controls-ok" ($retryCheck.hasReturnBtn -and $retryCheck.hasConnectBtn -and $retryCheck.hasErrorContainer) "settings retry and return controls missing"
+    $matrixResult["retry_and_return_controls"] = $retryCheck
+
+    $script:settingsDodEvidence = $matrixResult
 }
 
 function Open-ShellRemoteView {
@@ -1793,6 +1877,7 @@ function Save-Evidence {
         installer = $installerResults
         lifecycle = $lifecycle
         ui = ConvertTo-SafeObject -Value $script:ui
+        settings_dod_matrix = ConvertTo-SafeObject -Value $script:settingsDodEvidence
         remote_backend = ConvertTo-SafeObject -Value $script:remoteBackendEvidence
         checks = $checks
         steps = $steps
@@ -1841,6 +1926,13 @@ function Save-Evidence {
                 $null = $md.Add(("- {0}: {1}" -f $key, (($uiValue | ConvertTo-Json -Compress -Depth 8))))
             }
         }
+    }
+    $null = $md.Add("")
+    $null = $md.Add("## Settings DoD matrix")
+    if ($script:settingsDodEvidence.Keys.Count -gt 0) {
+        $null = $md.Add(("- Matrix JSON: {0}" -f (($script:settingsDodEvidence | ConvertTo-Json -Compress -Depth 6))))
+    } else {
+        $null = $md.Add("- (no settings matrix recorded)")
     }
     $null = $md.Add("")
     $null = $md.Add("## Checks")
@@ -2041,6 +2133,12 @@ public static class GwNative {
         $script:upgradeRoot = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
         $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
         $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
+        $script:processAppData = Join-Path $script:processLocalAppData "Roaming"
+        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
+        $script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
+        $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
+        $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
+        $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
         if ($Reset -and (Test-Path -LiteralPath $script:processLocalAppData)) {
             $overrideName = Split-Path -Leaf $script:processLocalAppData
             if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
@@ -2049,8 +2147,11 @@ public static class GwNative {
             Remove-Item -LiteralPath $script:processLocalAppData -Recurse -Force
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
+        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
+        $script:savedProcessEnvAppData = $env:APPDATA
         $env:LOCALAPPDATA = $script:processLocalAppData
+        $env:APPDATA = $script:processAppData
         $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
         $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
         if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
@@ -2096,10 +2197,6 @@ public static class GwNative {
         }
         if (Test-Path -LiteralPath $script:upgradeRoot) {
             Remove-Item -LiteralPath $script:upgradeRoot -Recurse -Force
-        }
-        $realUpgradeRoot = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
-        if (Test-Path -LiteralPath $realUpgradeRoot) {
-            Remove-Item -LiteralPath $realUpgradeRoot -Recurse -Force -ErrorAction SilentlyContinue
         }
         if (Test-Path -LiteralPath $script:serverConfig) {
             Remove-Item -LiteralPath $script:serverConfig -Force -ErrorAction SilentlyContinue
@@ -2199,11 +2296,25 @@ public static class GwNative {
     Add-Step "tray-find-nas"
     $trayCdp = New-CdpConnection -Port $firstCdpPort
     try {
-        $trayNavExpr = "window.location.href = 'http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas'"
-        $null = Invoke-CdpExpression -Connection $trayCdp -Expression $trayNavExpr
+        $trayUrlBefore = Invoke-CdpExpression -Connection $trayCdp -Expression "window.location.href"
+
+        # 触发真实的托盘 Find NAS 操作（通过 --find-nas 命令行向主实例发送 FIND_NAS 单实例命令）
+        $trayCliLaunch = Start-DesktopProcess -Label "02-tray-find-nas-cli" -Arguments @("--find-nas") -WorkingDirectory $script:outputDirPath
+        $trayCliExited = Wait-ProcessExit -Process $trayCliLaunch.process -TimeoutSeconds 30
+        $trayCliCode = Get-ProcessExitCode -Process $trayCliLaunch.process
+        Require-Check "tray-find-nas.cli-exit-zero" ($trayCliCode -eq 0) ("--find-nas CLI exit code: " + [string]$trayCliCode)
+
+        # 等待主实例 Webview 真实响应托盘事件并导航至设置页（带有 action=scan-nas）
         $trayTargetUrl = Wait-CdpTargetUrl -Port $firstCdpPort -Prefix "http://127.0.0.1:2077/static/pages/settings.html" -TimeoutSeconds 30
         Require-Check "tray-find-nas.navigation-ok" ($trayTargetUrl.StartsWith("http://127.0.0.1:2077/static/pages/settings.html", [StringComparison]::OrdinalIgnoreCase)) ("failed to navigate to settings url: " + $trayTargetUrl)
+        Require-Check "tray-find-nas.url-contains-scan" ($trayTargetUrl.Contains("action=scan-nas")) ("url does not contain action=scan-nas: " + $trayTargetUrl)
+
         Start-Sleep -Seconds 2
+
+        # 检查页面控制台错误（断言 0 项错误）
+        $pageErrors = @(Invoke-CdpExpression -Connection $trayCdp -Expression "window.__gw_page_errors || []")
+        Require-Check "tray-find-nas.no-console-errors" ($pageErrors.Count -eq 0) ("console errors on settings page: " + ($pageErrors -join "; "))
+
         $pageCheckExpr = @"
 (() => {
     const card = document.querySelector('#remoteWorkspaceCard');
@@ -2223,6 +2334,17 @@ public static class GwNative {
         Require-Check "tray-find-nas.remote-card" ($trayPageStatus.remoteCardExists) "remoteWorkspaceCard not present in DOM"
         Require-Check "tray-find-nas.scan-button" ($trayPageStatus.scanBtnExists) "btnScanLan not present in DOM"
         Add-Check "tray-find-nas.page-screenshot" (Save-CdpScreenshot -Connection $trayCdp -Path (Join-Path $script:outputDirPath "02-tray-find-nas.page.png")) "tray find nas screenshot failed"
+
+        $script:lifecycle["02-tray-find-nas"] = [ordered]@{
+            url_before = $trayUrlBefore
+            url_after = $trayTargetUrl
+            cli_exit_code = $trayCliCode
+            console_errors = $pageErrors
+            page_status = $trayPageStatus
+        }
+
+        # 执行设置页全量 DoD 矩阵验证（四宽度、深浅主题对比度、慢响应/重试控件）
+        Invoke-SettingsDodMatrix -Connection $trayCdp
 
         $null = Invoke-CdpExpression -Connection $trayCdp -Expression "window.location.href = 'http://127.0.0.1:2077/static/pages/index.html'"
         $null = Wait-CdpTargetUrl -Port $firstCdpPort -Prefix "http://127.0.0.1:2077/static/pages/index.html" -TimeoutSeconds 30
@@ -2729,5 +2851,6 @@ try {
     }
     if (-not $cleanupStateOk) { $exitCode = 1 }
     if ($script:savedProcessEnvLocalAppData) { $env:LOCALAPPDATA = $script:savedProcessEnvLocalAppData }
+    if ($script:savedProcessEnvAppData) { $env:APPDATA = $script:savedProcessEnvAppData }
 }
 exit $exitCode

@@ -185,6 +185,16 @@ impl WakeupState {
             .store(true, std::sync::atomic::Ordering::SeqCst);
     }
 
+    fn trigger_find_nas(&self) {
+        if let Ok(guard) = self.app_handle.lock() {
+            if let Some(app) = guard.as_ref() {
+                if let Some(window) = app.get_webview_window("main") {
+                    handle_find_nas_navigation(&window);
+                }
+            }
+        }
+    }
+
     fn status_json(&self) -> Option<String> {
         let app = self
             .app_handle
@@ -585,6 +595,14 @@ fn try_request_existing_status(port: u16, token: &str) -> Result<String, String>
     }
 }
 
+fn try_request_existing_find_nas(port: u16, token: &str) -> Result<(), String> {
+    match try_instance_command(port, token, "FIND_NAS").as_deref() {
+        Some("NAVIGATING") => Ok(()),
+        Some(other) => Err(format!("桌面端拒绝了 Find NAS 请求（应答: {other}）")),
+        None => Err("桌面端未响应 Find NAS 请求".into()),
+    }
+}
+
 fn initialize_primary_listener(
     file: &mut std::fs::File,
     lock_path: &Path,
@@ -654,6 +672,11 @@ fn initialize_primary_listener(
                                 };
                                 let _ = writeln!(stream, "{reply}");
                                 let _ = stream.flush();
+                            }
+                            "FIND_NAS" => {
+                                let _ = writeln!(stream, "NAVIGATING");
+                                let _ = stream.flush();
+                                wakeup_clone.trigger_find_nas();
                             }
                             _ => {}
                         }
@@ -2336,6 +2359,7 @@ fn get_diagnostics(
 enum CliCommand {
     Run,
     Quit,
+    FindNas,
     Diagnostics(PathBuf),
     Invalid(String),
 }
@@ -2354,6 +2378,13 @@ where
                 CliCommand::Invalid("--quit 不接受额外参数".into())
             } else {
                 CliCommand::Quit
+            }
+        }
+        "--find-nas" => {
+            if args.next().is_some() {
+                CliCommand::Invalid("--find-nas 不接受额外参数".into())
+            } else {
+                CliCommand::FindNas
             }
         }
         "--diagnostics" => match args.next() {
@@ -2409,6 +2440,37 @@ fn run_quit_command() -> i32 {
     }
     eprintln!("桌面端在退出请求后仍未完成清理");
     1
+}
+
+fn run_find_nas_command() -> i32 {
+    let lock_path = instance_lock_path();
+    let content = match fs::read(&lock_path) {
+        Ok(content) => content,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            eprintln!("桌面端未运行，无法触发 Find NAS");
+            return 1;
+        }
+        Err(error) => {
+            eprintln!("无法读取桌面端实例锁: {error}");
+            return 1;
+        }
+    };
+    let lock: InstanceLock = match serde_json::from_slice(&content) {
+        Ok(lock) => lock,
+        Err(error) => {
+            eprintln!("桌面端实例锁无法解析: {error}");
+            return 1;
+        }
+    };
+    if !is_process_alive(lock.pid) {
+        eprintln!("桌面端进程已失效");
+        return 1;
+    }
+    if let Err(error) = try_request_existing_find_nas(lock.port, &lock.token) {
+        eprintln!("{error}");
+        return 1;
+    }
+    0
 }
 
 fn run_diagnostics_command(path: &Path) -> i32 {
@@ -2475,6 +2537,28 @@ fn run_diagnostics_command(path: &Path) -> i32 {
 pub const TRAY_FIND_NAS_SETTINGS_URL: &str =
     "http://127.0.0.1:2077/static/pages/settings.html?section=general&action=scan-nas";
 
+fn handle_find_nas_navigation(window: &WebviewWindow) {
+    let is_local_workbench = if let Ok(u) = window.url() {
+        let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
+        let port = u.port().unwrap_or(80);
+        (host == "127.0.0.1" || host == "localhost" || host == "::1") && port == 2077
+    } else {
+        false
+    };
+
+    if is_local_workbench {
+        if let Ok(settings_url) = Url::parse(TRAY_FIND_NAS_SETTINGS_URL) {
+            let _ = window.navigate(settings_url);
+        }
+    } else if let Ok(mut scan_url) = window.url() {
+        scan_url.set_query(Some("rescan=1"));
+        let _ = window.navigate(scan_url);
+    }
+    let _ = window.show();
+    let _ = window.unminimize();
+    let _ = window.set_focus();
+}
+
 fn make_tray_icon() -> Image<'static> {
     const SIZE: u32 = 32;
     const DARK: [u8; 4] = [9, 10, 13, 255];
@@ -2514,6 +2598,7 @@ fn make_tray_icon() -> Image<'static> {
 fn main() {
     match parse_cli_command(std::env::args().skip(1)) {
         CliCommand::Quit => std::process::exit(run_quit_command()),
+        CliCommand::FindNas => std::process::exit(run_find_nas_command()),
         CliCommand::Diagnostics(path) => std::process::exit(run_diagnostics_command(&path)),
         CliCommand::Invalid(message) => {
             eprintln!("{message}");
@@ -2565,9 +2650,6 @@ fn main() {
             let window = app
                 .get_webview_window("main")
                 .ok_or_else(|| std::io::Error::other("Missing main window"))?;
-            let local_url = window
-                .url()
-                .map_err(|error| std::io::Error::other(error.to_string()))?;
             let hide_window = window.clone();
             window.on_window_event(move |event| {
                 if let WindowEvent::CloseRequested { api, .. } = event {
@@ -2594,26 +2676,7 @@ fn main() {
                     }
                     "scan" => {
                         if let Some(window) = app.get_webview_window("main") {
-                            let is_local_workbench = if let Ok(u) = window.url() {
-                                let host = u.host_str().unwrap_or_default().to_ascii_lowercase();
-                                let port = u.port().unwrap_or(80);
-                                (host == "127.0.0.1" || host == "localhost" || host == "::1")
-                                    && port == 2077
-                            } else {
-                                false
-                            };
-
-                            if is_local_workbench {
-                                if let Ok(settings_url) = Url::parse(TRAY_FIND_NAS_SETTINGS_URL) {
-                                    let _ = window.navigate(settings_url);
-                                }
-                            } else {
-                                let mut scan_url = local_url.clone();
-                                scan_url.set_query(Some("rescan=1"));
-                                let _ = window.navigate(scan_url);
-                            }
-                            let _ = window.show();
-                            let _ = window.set_focus();
+                            handle_find_nas_navigation(&window);
                         }
                     }
                     "quit" => {
@@ -3041,6 +3104,10 @@ mod tests {
             parse_cli_command(["--quit".to_string()]),
             CliCommand::Quit
         ));
+        assert!(matches!(
+            parse_cli_command(["--find-nas".to_string()]),
+            CliCommand::FindNas
+        ));
         match parse_cli_command(["--diagnostics".to_string(), "status.json".to_string()]) {
             CliCommand::Diagnostics(path) => assert_eq!(path, PathBuf::from("status.json")),
             _ => panic!("diagnostics command should be recognized"),
@@ -3051,6 +3118,10 @@ mod tests {
         ));
         assert!(matches!(
             parse_cli_command(["--quit".to_string(), "extra".to_string()]),
+            CliCommand::Invalid(_)
+        ));
+        assert!(matches!(
+            parse_cli_command(["--find-nas".to_string(), "extra".to_string()]),
             CliCommand::Invalid(_)
         ));
         assert!(matches!(
@@ -3084,11 +3155,12 @@ mod tests {
                 let reply = match parts[0] {
                     "QUIT" => "BYE",
                     "STATUS" => "STATUS {\"backend_phase\":\"running\"}",
+                    "FIND_NAS" => "NAVIGATING",
                     _ => break,
                 };
                 let _ = writeln!(stream, "{reply}");
                 let _ = stream.flush();
-                if index == 1 {
+                if index == 2 {
                     break;
                 }
             }
@@ -3098,10 +3170,15 @@ mod tests {
         try_request_existing_quit(port, &token).expect("quit request");
         let status = try_request_existing_status(port, &token).expect("status request");
         assert_eq!(status, "{\"backend_phase\":\"running\"}");
+        try_request_existing_find_nas(port, &token).expect("find nas request");
         let commands = handle.join().expect("join control server");
         assert_eq!(
             commands,
-            vec![format!("QUIT {token}"), format!("STATUS {token}")]
+            vec![
+                format!("QUIT {token}"),
+                format!("STATUS {token}"),
+                format!("FIND_NAS {token}")
+            ]
         );
     }
 

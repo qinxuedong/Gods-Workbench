@@ -8,9 +8,24 @@
 !define GW_CLIENT_CONFIG "$APPDATA\ai.godsworkbench.desktop\client.json"
 !define GW_ROBOCOPY "$SYSDIR\robocopy.exe"
 
+!macro GW_RESOLVE_PATHS
+  ReadEnvStr $R6 "LOCALAPPDATA"
+  ${If} $R6 == ""
+    StrCpy $R6 "$LOCALAPPDATA"
+  ${EndIf}
+  StrCpy $R7 "$R6\GodsWorkbench"
+  StrCpy $R8 "$R6\ai.godsworkbench.desktop\upgrade"
+  ReadEnvStr $R9 "APPDATA"
+  ${If} $R9 == ""
+    StrCpy $R9 "$APPDATA"
+  ${EndIf}
+  StrCpy $R9 "$R9\ai.godsworkbench.desktop\client.json"
+!macroend
+
 !macro GW_WRITE_STATE state
-  CreateDirectory "${GW_UPGRADE_ROOT}"
-  FileOpen $9 "${GW_JOURNAL}" w
+  !insertmacro GW_RESOLVE_PATHS
+  CreateDirectory "$R8"
+  FileOpen $9 "$R8\journal.txt" w
   FileWrite $9 "${state}"
   FileClose $9
 !macroend
@@ -25,16 +40,17 @@
 !macroend
 
 !macro GW_ASSERT_NON_CONTAINMENT
-  ${If} $INSTDIR == "${GW_DATA_ROOT}"
+  !insertmacro GW_RESOLVE_PATHS
+  ${If} $INSTDIR == $R7
     MessageBox MB_ICONSTOP "安装目录不能与神工坊数据根相同。请选择独立目录后重试。" /SD IDOK
     Abort
   ${EndIf}
-  !insertmacro GW_PREFIX_MATCH $R2 "${GW_DATA_ROOT}\" "$INSTDIR"
+  !insertmacro GW_PREFIX_MATCH $R2 "$R7\" "$INSTDIR"
   ${If} $R2 == "1"
     MessageBox MB_ICONSTOP "安装目录不能位于神工坊数据根内。请选择独立目录后重试。" /SD IDOK
     Abort
   ${EndIf}
-  !insertmacro GW_PREFIX_MATCH $R2 "$INSTDIR\" "${GW_DATA_ROOT}"
+  !insertmacro GW_PREFIX_MATCH $R2 "$INSTDIR\" "$R7"
   ${If} $R2 == "1"
     MessageBox MB_ICONSTOP "数据根不能位于安装目录内。请选择独立安装目录后重试。" /SD IDOK
     Abort
@@ -42,19 +58,20 @@
 !macroend
 
 !macro GW_RESTORE_BACKUP reason
-  ${IfNot} ${FileExists} "${GW_BACKUP_PROGRAM}\${MAINBINARYNAME}.exe"
+  !insertmacro GW_RESOLVE_PATHS
+  ${IfNot} ${FileExists} "$R8\backup-last\program\${MAINBINARYNAME}.exe"
     !insertmacro GW_WRITE_STATE "rolled_back"
     MessageBox MB_ICONSTOP "${reason}；未找到可还原的上一版本，请重新安装或联系支持。" /SD IDOK
     Abort
   ${EndIf}
-  nsExec::ExecToLog '"${GW_ROBOCOPY}" "${GW_BACKUP_PROGRAM}" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
+  nsExec::ExecToLog '"${GW_ROBOCOPY}" "$R8\backup-last\program" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
   Pop $0
   ${If} $0 > 7
     MessageBox MB_ICONSTOP "${reason}；自动还原失败，请使用上一版本安装包重新安装。" /SD IDOK
     Abort
   ${EndIf}
-  ${If} ${FileExists} "${GW_BACKUP_CLIENT}"
-    CopyFiles /SILENT "${GW_BACKUP_CLIENT}" "${GW_CLIENT_CONFIG}"
+  ${If} ${FileExists} "$R8\backup-last\client.json"
+    CopyFiles /SILENT "$R8\backup-last\client.json" "$R9"
   ${EndIf}
   !insertmacro GW_WRITE_STATE "rolled_back"
   MessageBox MB_ICONSTOP "${reason}；已还原上一版本程序。用户数据未被修改。" /SD IDOK
@@ -62,48 +79,49 @@
 !macroend
 
 !macro NSIS_HOOK_PREINSTALL
-  CreateDirectory "${GW_UPGRADE_ROOT}"
+  !insertmacro GW_RESOLVE_PATHS
+  CreateDirectory "$R8"
   !insertmacro GW_ASSERT_NON_CONTAINMENT
 
   StrCpy $R3 "clean"
-  ${If} ${FileExists} "${GW_JOURNAL}"
-    FileOpen $0 "${GW_JOURNAL}" r
+  ${If} ${FileExists} "$R8\journal.txt"
+    FileOpen $0 "$R8\journal.txt" r
     FileRead $0 $R3
     FileClose $0
   ${EndIf}
   ; verified / committed 表示上一代安装已通过自检，不得还原更早的 backup-last。
   ${If} $R3 == "installing"
   ${OrIf} $R3 == "installed"
-    ${IfNot} ${FileExists} "${GW_BACKUP_PROGRAM}\${MAINBINARYNAME}.exe"
+    ${IfNot} ${FileExists} "$R8\backup-last\program\${MAINBINARYNAME}.exe"
       !insertmacro GW_WRITE_STATE "rolled_back"
       MessageBox MB_ICONSTOP "上次升级未完成，且未找到可还原的上一版本。请重新安装或联系支持。" /SD IDOK
       Abort
     ${EndIf}
-    nsExec::ExecToLog '"${GW_ROBOCOPY}" "${GW_BACKUP_PROGRAM}" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
+    nsExec::ExecToLog '"${GW_ROBOCOPY}" "$R8\backup-last\program" "$INSTDIR" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
     Pop $0
     ${If} $0 > 7
       MessageBox MB_ICONSTOP "上次升级未完成，自动还原上一版本失败。升级备份已保留，请检查磁盘空间与文件权限后重试。" /SD IDOK
       Abort
     ${EndIf}
-    ${If} ${FileExists} "${GW_BACKUP_CLIENT}"
-      CopyFiles /SILENT "${GW_BACKUP_CLIENT}" "${GW_CLIENT_CONFIG}"
+    ${If} ${FileExists} "$R8\backup-last\client.json"
+      CopyFiles /SILENT "$R8\backup-last\client.json" "$R9"
     ${EndIf}
     !insertmacro GW_WRITE_STATE "rolled_back"
   ${EndIf}
 
   !insertmacro GW_WRITE_STATE "prepare"
   ${If} ${FileExists} "$INSTDIR\${MAINBINARYNAME}.exe"
-    RMDir /r "${GW_UPGRADE_ROOT}\backup-last"
-    CreateDirectory "${GW_BACKUP_PROGRAM}"
-    nsExec::ExecToLog '"${GW_ROBOCOPY}" "$INSTDIR" "${GW_BACKUP_PROGRAM}" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
+    RMDir /r "$R8\backup-last"
+    CreateDirectory "$R8\backup-last\program"
+    nsExec::ExecToLog '"${GW_ROBOCOPY}" "$INSTDIR" "$R8\backup-last\program" /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP'
     Pop $0
     ${If} $0 > 7
       !insertmacro GW_WRITE_STATE "aborted"
       MessageBox MB_ICONSTOP "无法备份现有安装，升级已中止。请确认磁盘空间与文件权限后重试。" /SD IDOK
       Abort
     ${EndIf}
-    ${If} ${FileExists} "${GW_CLIENT_CONFIG}"
-      CopyFiles /SILENT "${GW_CLIENT_CONFIG}" "${GW_BACKUP_CLIENT}"
+    ${If} ${FileExists} "$R9"
+      CopyFiles /SILENT "$R9" "$R8\backup-last\client.json"
     ${EndIf}
   ${EndIf}
   !insertmacro GW_WRITE_STATE "backed_up"
