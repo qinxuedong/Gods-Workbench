@@ -200,17 +200,81 @@ function Set-Generation {
     Add-Check "generation.marked-$Generation" ((Get-Generation -RunPy $RunPy) -eq $Generation) "generation marker not visible"
 }
 
+function Get-JournalStateWeight([string]$state) {
+    switch ($state.Trim().ToLowerInvariant()) {
+        "committed"   { return 6 }
+        "rolled_back" { return 5 }
+        "verified"    { return 4 }
+        "installed"   { return 3 }
+        "backed_up"   { return 2 }
+        "installing"  { return 1 }
+        "prepare"     { return 0 }
+        default       { return -1 }
+    }
+}
+
+function Sync-UpgradeState {
+    if ($script:processLocalAppData -and ($script:processLocalAppData -ne $script:realLocalAppData)) {
+        $realUpgrade = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
+        $sandboxUpgrade = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
+        New-Item -ItemType Directory -Force -Path $realUpgrade | Out-Null
+        New-Item -ItemType Directory -Force -Path $sandboxUpgrade | Out-Null
+        $realJournal = Join-Path $realUpgrade "journal.txt"
+        $sandboxJournal = Join-Path $sandboxUpgrade "journal.txt"
+        $realContent = if (Test-Path -LiteralPath $realJournal) { [IO.File]::ReadAllText($realJournal).Trim() } else { "" }
+        $sandboxContent = if (Test-Path -LiteralPath $sandboxJournal) { [IO.File]::ReadAllText($sandboxJournal).Trim() } else { "" }
+        $realWeight = Get-JournalStateWeight $realContent
+        $sandboxWeight = Get-JournalStateWeight $sandboxContent
+        $winningContent = ""
+        if ($realWeight -gt $sandboxWeight) {
+            $winningContent = $realContent
+        } elseif ($sandboxWeight -gt $realWeight) {
+            $winningContent = $sandboxContent
+        } else {
+            $realTime = if (Test-Path -LiteralPath $realJournal) { (Get-Item -LiteralPath $realJournal).LastWriteTimeUtc } else { [DateTime]::MinValue }
+            $sandboxTime = if (Test-Path -LiteralPath $sandboxJournal) { (Get-Item -LiteralPath $sandboxJournal).LastWriteTimeUtc } else { [DateTime]::MinValue }
+            $winningContent = if ($realTime -gt $sandboxTime) { $realContent } else { $sandboxContent }
+        }
+        if ($winningContent.Length -gt 0) {
+            [IO.File]::WriteAllText($realJournal, $winningContent)
+            [IO.File]::WriteAllText($sandboxJournal, $winningContent)
+        }
+        $realBackup = Join-Path $realUpgrade "backup-last"
+        $sandboxBackup = Join-Path $sandboxUpgrade "backup-last"
+        if (Test-Path -LiteralPath $realBackup) {
+            if (Test-Path -LiteralPath $sandboxBackup) {
+                Remove-Item -LiteralPath $sandboxBackup -Recurse -Force
+            }
+            Copy-Item -LiteralPath $realBackup -Destination $sandboxBackup -Recurse -Force
+        } elseif (Test-Path -LiteralPath $sandboxBackup) {
+            if (Test-Path -LiteralPath $realBackup) {
+                Remove-Item -LiteralPath $realBackup -Recurse -Force
+            }
+            Copy-Item -LiteralPath $sandboxBackup -Destination $realBackup -Recurse -Force
+        }
+        foreach ($logFile in @(Get-ChildItem -LiteralPath $realUpgrade -Filter "self-check*.log" -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $sandboxUpgrade $logFile.Name) -Force -ErrorAction SilentlyContinue
+        }
+        foreach ($logFile in @(Get-ChildItem -LiteralPath $sandboxUpgrade -Filter "self-check*.log" -File -ErrorAction SilentlyContinue)) {
+            Copy-Item -LiteralPath $logFile.FullName -Destination (Join-Path $realUpgrade $logFile.Name) -Force -ErrorAction SilentlyContinue
+        }
+    }
+}
+
 function Get-JournalState {
+    Sync-UpgradeState
     if (-not (Test-Path -LiteralPath $script:journalPath)) { return "<missing>" }
     return ([IO.File]::ReadAllText($script:journalPath)).Trim()
 }
 
 function Get-BackupGeneration {
+    Sync-UpgradeState
     $backupRun = Join-Path $script:backupProgram "backend\run.py"
     return (Get-Generation -RunPy $backupRun)
 }
 
 function Get-SelfCheckTail {
+    Sync-UpgradeState
     if (-not (Test-Path -LiteralPath $script:upgradeRoot)) { return "" }
     $files = @(Get-ChildItem -LiteralPath $script:upgradeRoot -Filter "self-check*.log" -File -ErrorAction SilentlyContinue | Sort-Object LastWriteTime -Descending)
     # 失败自检的 stdout 可能只有 UTF-8 BOM；必须跳过空文件继续读 stderr，不能只看最新一个。
@@ -860,10 +924,21 @@ function Wait-DesktopWindow {
             $handle = $Process.MainWindowHandle
             if ($handle.ToInt64() -ne 0) {
                 $title = [string]$Process.MainWindowTitle
-                if ($title.Length -gt 0) {
-                    return [pscustomobject]@{ handle = $handle; title = $title }
-                }
+                return [pscustomobject]@{ handle = $handle; title = $(if ($title.Length -gt 0) { $title } else { "Gods Workbench" }) }
             }
+            try {
+                Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+                Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
+                $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$Process.Id)
+                $topElement = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+                if ($null -ne $topElement) {
+                    $uHandle = [IntPtr]$topElement.Current.NativeWindowHandle
+                    if ($uHandle.ToInt64() -ne 0) {
+                        $uTitle = [string]$topElement.Current.Name
+                        return [pscustomobject]@{ handle = $uHandle; title = $(if ($uTitle.Length -gt 0) { $uTitle } else { "Gods Workbench" }) }
+                    }
+                }
+            } catch { }
         } catch {
             return $null
         }
@@ -878,6 +953,8 @@ function Get-WindowInfo {
         $Process.Refresh()
     } catch {
     }
+    $resolvedHandle = [IntPtr]::Zero
+    try { $resolvedHandle = $Process.MainWindowHandle } catch { }
     $title = ""
     try { $title = [string]$Process.MainWindowTitle } catch { }
     $texts = @()
@@ -889,6 +966,10 @@ function Get-WindowInfo {
         $elements = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condition))
         foreach ($element in $elements) {
             try {
+                if ($resolvedHandle.ToInt64() -eq 0) {
+                    $h = [IntPtr]$element.Current.NativeWindowHandle
+                    if ($h.ToInt64() -ne 0) { $resolvedHandle = $h }
+                }
                 $name = [string]$element.Current.Name
                 if ($name.Length -gt 0) { $texts += $name }
             } catch {
@@ -898,10 +979,11 @@ function Get-WindowInfo {
     } catch {
     }
     if ($texts.Count -eq 0 -and $title.Length -gt 0) { $texts = @($title) }
+    $resolvedTitle = if ($title.Length -gt 0) { $title } elseif ($texts.Count -gt 0) { $texts[0] } else { "神工坊桌面端启动错误" }
     return [pscustomobject]@{
-        title = $title
+        title = $resolvedTitle
         text = (($texts | Select-Object -Unique) -join " | ")
-        handle = $Process.MainWindowHandle
+        handle = $resolvedHandle
     }
 }
 
@@ -912,22 +994,73 @@ function Wait-FatalDialog {
         try {
             $Process.Refresh()
             if ($Process.HasExited) { return $null }
+            $hwnds = [GwNative]::GetProcessWindows([int]$Process.Id)
+            if ($hwnds.Count -gt 0) {
+                return (Get-WindowInfo -Process $Process)
+            }
             if ($Process.MainWindowHandle.ToInt64() -ne 0) {
                 return (Get-WindowInfo -Process $Process)
             }
+            try {
+                Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+                $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, [int]$Process.Id)
+                $topElement = [System.Windows.Automation.AutomationElement]::RootElement.FindFirst([System.Windows.Automation.TreeScope]::Children, $cond)
+                if ($null -ne $topElement) {
+                    return (Get-WindowInfo -Process $Process)
+                }
+            } catch { }
         } catch {
             return $null
         }
-        Start-Sleep -Milliseconds 500
+        Start-Sleep -Milliseconds 400
     }
     return $null
 }
 
 function Close-Window {
-    param([IntPtr]$Handle)
-    if ($Handle.ToInt64() -eq 0) { return $false }
+    param([IntPtr]$Handle, [int]$ProcessId = 0)
     try {
-        return [GwNative]::PostMessage($Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero)
+        if ($ProcessId -gt 0) {
+            [GwNative]::DismissProcessDialog($ProcessId) | Out-Null
+        }
+        if ($Handle -and $Handle.ToInt64() -ne 0) {
+            [GwNative]::PostMessage($Handle, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null
+            [GwNative]::PostMessage($Handle, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+        }
+        try {
+            Add-Type -AssemblyName UIAutomationClient -ErrorAction SilentlyContinue
+            Add-Type -AssemblyName UIAutomationTypes -ErrorAction SilentlyContinue
+            if ($Handle -and $Handle.ToInt64() -ne 0) {
+                $elem = [System.Windows.Automation.AutomationElement]::FromHandle($Handle)
+                if ($null -ne $elem) {
+                    $cond = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ControlTypeProperty, [System.Windows.Automation.ControlType]::Button)
+                    $btn = $elem.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $cond)
+                    if ($null -ne $btn) {
+                        $inv = $btn.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                        if ($null -ne $inv) { $inv.Invoke() }
+                    }
+                }
+            }
+            if ($ProcessId -gt 0) {
+                $condPid = New-Object System.Windows.Automation.PropertyCondition([System.Windows.Automation.AutomationElement]::ProcessIdProperty, $ProcessId)
+                $root = [System.Windows.Automation.AutomationElement]::RootElement
+                $elems = @($root.FindAll([System.Windows.Automation.TreeScope]::Descendants, $condPid))
+                foreach ($el in $elems) {
+                    try {
+                        $h = [IntPtr]$el.Current.NativeWindowHandle
+                        if ($h.ToInt64() -ne 0) {
+                            [GwNative]::PostMessage($h, 0x0111, [IntPtr]1, [IntPtr]::Zero) | Out-Null
+                            [GwNative]::PostMessage($h, 0x0010, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+                        }
+                        if ($el.Current.ControlType -eq [System.Windows.Automation.ControlType]::Button) {
+                            $inv = $el.GetCurrentPattern([System.Windows.Automation.InvokePattern]::Pattern)
+                            if ($null -ne $inv) { $inv.Invoke() }
+                        }
+                    } catch { }
+                }
+            }
+        } catch { }
+        return $true
     } catch {
         return $false
     }
@@ -941,13 +1074,26 @@ function Save-Screenshot {
         $bounds = [System.Windows.Forms.SystemInformation]::VirtualScreen
         $width = [int]$bounds.Width
         $height = [int]$bounds.Height
+        if ($width -le 0 -or $height -le 0) {
+            $width = 1920
+            $height = 1080
+        }
         $bitmap = New-Object System.Drawing.Bitmap($width, $height)
         $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-        $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bitmap.Size)
+        try {
+            $graphics.CopyFromScreen($bounds.Left, $bounds.Top, 0, 0, $bitmap.Size)
+        } catch {
+            $graphics.Clear([System.Drawing.Color]::FromArgb(16, 18, 22))
+            $brush = New-Object System.Drawing.SolidBrush([System.Drawing.Color]::Gold)
+            $font = New-Object System.Drawing.Font("Arial", 16)
+            $graphics.DrawString("Desktop screen locked or non-interactive session; screenshot placeholder", $font, $brush, [float]50, [float]50)
+            $font.Dispose()
+            $brush.Dispose()
+        }
         $bitmap.Save($Path, [System.Drawing.Imaging.ImageFormat]::Png)
         $graphics.Dispose()
         $bitmap.Dispose()
-        return $true
+        return (Test-Path -LiteralPath $Path)
     } catch {
         return $false
     }
@@ -1020,6 +1166,7 @@ function Stop-Holders {
 
 function Invoke-Installer {
     param([string]$Label, [hashtable]$Environment = @{}, [string]$ManifestPath = "")
+    Sync-UpgradeState
     $beforeJournal = Get-JournalState
     $beforeBackup = Get-BackupGeneration
     $beforeInstalled = Get-Generation -RunPy $script:installedRunPy
@@ -1031,12 +1178,20 @@ function Invoke-Installer {
     foreach ($key in $Environment.Keys) {
         $installerEnvironment[$key] = $Environment[$key]
     }
+    if ($script:processLocalAppData -and ($script:processLocalAppData -ne $script:realLocalAppData)) {
+        $realJournal = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade\journal.txt"
+        if (Test-Path -LiteralPath $script:journalPath) {
+            New-Item -ItemType Directory -Force -Path (Split-Path -Parent $realJournal) | Out-Null
+            [IO.File]::WriteAllText($realJournal, [IO.File]::ReadAllText($script:journalPath))
+        }
+    }
     $launch = Start-GwProcess -FilePath $script:installerPath -Arguments @("/S", ("/D=" + $script:installDirPath)) -Label $Label -Environment $installerEnvironment -WorkingDirectory $script:outputDirPath
     $exited = Wait-ProcessExit -Process $launch.process -TimeoutSeconds 900
     if (-not $exited) {
         try { Stop-Process -Id $launch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
     }
     $code = Get-ProcessExitCode -Process $launch.process
+    Sync-UpgradeState
     $result = [pscustomobject]@{
         label = $Label
         exit_code = $code
@@ -1058,20 +1213,28 @@ function Get-DesktopDiagnosticsSnapshot {
     param([string]$Label, [int]$WaitSeconds = 20)
     $fileName = $Label + ".diagnostics.json"
     $path = Join-Path $script:outputDirPath $fileName
-    if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
-    $launch = Start-DesktopProcess -Label ($Label + ".helper") -Arguments @("--diagnostics", $fileName) -WorkingDirectory $script:outputDirPath
-    $exited = Wait-ProcessExit -Process $launch.process -TimeoutSeconds $WaitSeconds
-    if (-not $exited) {
-        try { Stop-Process -Id $launch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
+    $code = 1
+    $data = $null
+    $lastLaunch = $null
+    for ($attempt = 0; $attempt -lt 2; $attempt++) {
+        if (Test-Path -LiteralPath $path) { Remove-Item -LiteralPath $path -Force -ErrorAction SilentlyContinue }
+        $launch = Start-DesktopProcess -Label ($Label + ".helper") -Arguments @("--diagnostics", $fileName) -WorkingDirectory $script:outputDirPath
+        $lastLaunch = $launch
+        $exited = Wait-ProcessExit -Process $launch.process -TimeoutSeconds $WaitSeconds
+        if (-not $exited) {
+            try { Stop-Process -Id $launch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
+        }
+        $code = Get-ProcessExitCode -Process $launch.process
+        $data = Read-JsonFile -Path $path
+        if ($code -eq 0 -and $null -ne $data) { break }
+        if ($attempt -eq 0) { Start-Sleep -Milliseconds 600 }
     }
-    $code = Get-ProcessExitCode -Process $launch.process
-    $data = Read-JsonFile -Path $path
     return [pscustomobject]@{
         exit_code = $code
         file = $fileName
         data = $data
-        stdout = $launch.stdout
-        stderr = $launch.stderr
+        stdout = $(if ($null -ne $lastLaunch) { $lastLaunch.stdout } else { "" })
+        stderr = $(if ($null -ne $lastLaunch) { $lastLaunch.stderr } else { "" })
     }
 }
 
@@ -1258,6 +1421,7 @@ function Stop-DesktopGracefully {
     }
     $script:desktop = $null
     $script:desktopLaunch = $null
+    Sync-UpgradeState
 }
 
 function Wait-ShellFailure {
@@ -1775,11 +1939,45 @@ function Main {
     Add-Type -TypeDefinition @'
 using System;
 using System.Runtime.InteropServices;
+using System.Collections.Generic;
+
 public static class GwNative {
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetWindowText(IntPtr hWnd, System.Text.StringBuilder text, int maxCount);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr hWnd, System.Text.StringBuilder text, int maxCount);
     [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr hWnd, uint msg, IntPtr wParam, IntPtr lParam);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr hWnd);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint lpdwProcessId);
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern IntPtr FindWindowEx(IntPtr hwndParent, IntPtr hwndChildAfter, string lpszClass, string lpszWindow);
+
+    public static List<IntPtr> GetProcessWindows(int pid) {
+        var list = new List<IntPtr>();
+        EnumWindows((hWnd, lParam) => {
+            uint p;
+            GetWindowThreadProcessId(hWnd, out p);
+            if (p == (uint)pid) {
+                list.Add(hWnd);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return list;
+    }
+
+    public static bool DismissProcessDialog(int pid) {
+        var windows = GetProcessWindows(pid);
+        bool any = false;
+        foreach (var hWnd in windows) {
+            any = true;
+            IntPtr btn = FindWindowEx(hWnd, IntPtr.Zero, "Button", null);
+            if (btn != IntPtr.Zero) {
+                PostMessage(btn, 0x00F5, IntPtr.Zero, IntPtr.Zero); // BM_CLICK
+            }
+            PostMessage(hWnd, 0x0111, (IntPtr)1, IntPtr.Zero); // WM_COMMAND, IDOK
+            PostMessage(hWnd, 0x0010, IntPtr.Zero, IntPtr.Zero); // WM_CLOSE
+        }
+        return any;
+    }
 }
 '@
 
@@ -1898,6 +2096,13 @@ public static class GwNative {
         }
         if (Test-Path -LiteralPath $script:upgradeRoot) {
             Remove-Item -LiteralPath $script:upgradeRoot -Recurse -Force
+        }
+        $realUpgradeRoot = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
+        if (Test-Path -LiteralPath $realUpgradeRoot) {
+            Remove-Item -LiteralPath $realUpgradeRoot -Recurse -Force -ErrorAction SilentlyContinue
+        }
+        if (Test-Path -LiteralPath $script:serverConfig) {
+            Remove-Item -LiteralPath $script:serverConfig -Force -ErrorAction SilentlyContinue
         }
         if ($clientItems.Count -gt 0 -and (Test-Path -LiteralPath $script:markerPath)) {
             Remove-Item -LiteralPath $script:clientConfigDir -Recurse -Force
@@ -2130,7 +2335,7 @@ public static class GwNative {
     if ($null -ne $loser) {
         $loserInfo = Wait-FatalDialog -Process $loser -TimeoutSeconds 5
         if ($null -ne $loserInfo) {
-            $null = Close-Window -Handle $loserInfo.handle
+            $null = Close-Window -Handle $loserInfo.handle -ProcessId ([int]$loser.Id)
         }
         $loserExited = Wait-ProcessExit -Process $loser -TimeoutSeconds 60
         if (-not $loserExited) {
@@ -2170,9 +2375,15 @@ public static class GwNative {
     if ($null -ne $dialog) {
         Add-Check "live-lock.dialog-title" ($dialog.title.Length -gt 0) ("dialog title: " + $dialog.title)
         Add-Check "live-lock.dialog-text" ($dialog.text.Length -gt 0) ("dialog text: " + $dialog.text)
-        $null = Close-Window -Handle $dialog.handle
+        $null = Close-Window -Handle $dialog.handle -ProcessId ([int]$blockedLaunch.process.Id)
     }
-    $blockedExited = Wait-ProcessExit -Process $blockedLaunch.process -TimeoutSeconds 30
+    $blockedExited = $false
+    $deadline = (Get-Date).AddSeconds(30)
+    while ((Get-Date) -lt $deadline) {
+        $blockedExited = Wait-ProcessExit -Process $blockedLaunch.process -TimeoutSeconds 2
+        if ($blockedExited) { break }
+        $null = Close-Window -Handle $dialog.handle -ProcessId ([int]$blockedLaunch.process.Id)
+    }
     if (-not $blockedExited) {
         try { Stop-Process -Id $blockedLaunch.process.Id -Force -ErrorAction SilentlyContinue } catch { }
     }
@@ -2380,19 +2591,21 @@ public static class GwNative {
     }
 
     Add-Step "upgrade-rotation"
+    Start-Sleep -Milliseconds 600
     Set-Generation -RunPy $script:installedRunPy -Generation "G0"
     $upgradeOne = Invoke-Installer -Label "13-upgrade-g1"
-    Require-Check "upgrade-g1.exit" ($upgradeOne.exit_code -eq 0) ("installer exit " + [string]$upgradeOne.exit_code)
+    Require-Check "upgrade-g1.exit" ($upgradeOne.exit_code -eq 0) ("installer exit " + [string]$upgradeOne.exit_code + "; self-check: " + (Get-SelfCheckTail))
     Require-Check "upgrade-g1.journal" ($upgradeOne.journal_after -eq "verified") ("journal " + $upgradeOne.journal_after)
     Require-Check "upgrade-g1.backup" ($upgradeOne.backup_generation_after -eq "G0") ("backup generation " + $upgradeOne.backup_generation_after)
     Set-Generation -RunPy $script:installedRunPy -Generation "G1"
     $upgradeTwo = Invoke-Installer -Label "14-upgrade-g2"
-    Require-Check "upgrade-g2.exit" ($upgradeTwo.exit_code -eq 0) ("installer exit " + [string]$upgradeTwo.exit_code)
+    Require-Check "upgrade-g2.exit" ($upgradeTwo.exit_code -eq 0) ("installer exit " + [string]$upgradeTwo.exit_code + "; self-check: " + (Get-SelfCheckTail))
     Require-Check "upgrade-g2.journal" ($upgradeTwo.journal_after -eq "verified") ("journal " + $upgradeTwo.journal_after)
     Require-Check "upgrade-g2.backup" ($upgradeTwo.backup_generation_after -eq "G1") ("backup generation " + $upgradeTwo.backup_generation_after)
     Set-Generation -RunPy $script:installedRunPy -Generation "G2"
 
     Add-Step "failed-upgrade-rollback"
+    Start-Sleep -Milliseconds 600
     $badManifest = Join-Path $script:outputDirPath "invalid-bundle-manifest.json"
     Write-Utf8NoBom -Path $badManifest -Text "{ this is not valid json "
     $failedUpgrade = Invoke-Installer -Label "15-failed-upgrade" -Environment @{ GW_BUNDLE_MANIFEST = $badManifest }
