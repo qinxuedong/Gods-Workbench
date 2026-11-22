@@ -56,14 +56,11 @@ $script:installedRunPy = Join-Path $script:installDirPath "backend\run.py"
 $script:uninstaller = Join-Path $script:installDirPath "uninstall.exe"
 $script:realLocalAppData = [Environment]::GetEnvironmentVariable("LOCALAPPDATA", "Process")
 if (-not $script:realLocalAppData) { $script:realLocalAppData = [Environment]::GetFolderPath("LocalApplicationData") }
-$script:realAppData = [Environment]::GetEnvironmentVariable("APPDATA", "Process")
-if (-not $script:realAppData) { $script:realAppData = [Environment]::GetFolderPath("ApplicationData") }
 $script:processLocalAppData = $script:realLocalAppData
-$script:processAppData = $script:realAppData
 $script:upgradeRoot = Join-Path $script:realLocalAppData "ai.godsworkbench.desktop\upgrade"
 $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
 $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
-$script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
+$script:clientConfigDir = Join-Path ([Environment]::GetFolderPath("ApplicationData")) "ai.godsworkbench.desktop"
 $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
 $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
 $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
@@ -839,7 +836,6 @@ function Start-DesktopProcess {
     if (-not $WorkingDirectory) { $WorkingDirectory = $script:installDirPath }
     $environment = @{
         LOCALAPPDATA = $script:processLocalAppData
-        APPDATA = $script:processAppData
         GW_BACKEND_ROOT = ""
         GW_ROOT_DIR = ""
         GW_PYTHON = ""
@@ -1029,7 +1025,6 @@ function Invoke-Installer {
     $beforeInstalled = Get-Generation -RunPy $script:installedRunPy
     $installerEnvironment = @{
         LOCALAPPDATA = $script:processLocalAppData
-        APPDATA = $script:processAppData
         GW_BUNDLE_MANIFEST = ""
         GW_PRODUCT_VERSION = ""
     }
@@ -1845,14 +1840,9 @@ public static class GwNative {
     if ($LocalAppDataOverride) {
         $script:processLocalAppData = [IO.Path]::GetFullPath($LocalAppDataOverride)
         $script:dataMode = "isolated-localappdata-override"
-        $script:processAppData = Join-Path $script:processLocalAppData "roaming"
-        $script:clientConfigDir = Join-Path $script:processAppData "ai.godsworkbench.desktop"
-        $script:clientConfig = Join-Path $script:clientConfigDir "client.json"
-        $script:serverConfig = Join-Path $script:clientConfigDir "server.json"
         $script:upgradeRoot = Join-Path $script:processLocalAppData "ai.godsworkbench.desktop\upgrade"
         $script:journalPath = Join-Path $script:upgradeRoot "journal.txt"
         $script:backupProgram = Join-Path $script:upgradeRoot "backup-last\program"
-        $script:markerPath = Join-Path $script:clientConfigDir "qin626-acceptance-owned.json"
         if ($Reset -and (Test-Path -LiteralPath $script:processLocalAppData)) {
             $overrideName = Split-Path -Leaf $script:processLocalAppData
             if (-not $overrideName.StartsWith("gw-qin626-accept-")) {
@@ -1862,15 +1852,12 @@ public static class GwNative {
         }
         New-Item -ItemType Directory -Force -Path $script:processLocalAppData | Out-Null
         $script:savedProcessEnvLocalAppData = $env:LOCALAPPDATA
-        $script:savedProcessEnvAppData = $env:APPDATA
         $env:LOCALAPPDATA = $script:processLocalAppData
-        $env:APPDATA = $script:processAppData
         $bootstrap = Join-Path $script:processLocalAppData "GodsWorkbench"
-        $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue | Where-Object { $_.Name -ne "roaming" })
+        $existing = @(Get-ChildItem -LiteralPath $script:processLocalAppData -Force -ErrorAction SilentlyContinue)
         if ($existing.Count -gt 0 -and -not (Test-Path -LiteralPath $bootstrap)) {
             throw "LocalAppDataOverride is not empty and does not contain GodsWorkbench"
         }
-        New-Item -ItemType Directory -Force -Path $script:processAppData | Out-Null
         $dataRootForRun = Join-Path $script:processLocalAppData "GodsWorkbench"
         if (Test-Path -LiteralPath $dataRootForRun) {
             $dataItems = @(Get-ChildItem -LiteralPath $dataRootForRun -Force -ErrorAction SilentlyContinue)
@@ -1906,17 +1893,17 @@ public static class GwNative {
         $clientItems = @(Get-ChildItem -LiteralPath $script:clientConfigDir -Force -ErrorAction SilentlyContinue)
     }
     if ($Reset) {
-        if (($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) -and -not (Test-Path -LiteralPath $script:markerPath)) {
+        if (-not $LocalAppDataOverride -and ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) -and -not (Test-Path -LiteralPath $script:markerPath)) {
             throw "desktop upgrade/client state exists without the acceptance marker; refusing to reset"
         }
         if (Test-Path -LiteralPath $script:upgradeRoot) {
             Remove-Item -LiteralPath $script:upgradeRoot -Recurse -Force
         }
-        if ($clientItems.Count -gt 0) {
+        if ($clientItems.Count -gt 0 -and (Test-Path -LiteralPath $script:markerPath)) {
             Remove-Item -LiteralPath $script:clientConfigDir -Recurse -Force
         }
     } else {
-        if ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0) {
+        if (-not $LocalAppDataOverride -and ($upgradeItems.Count -gt 0 -or $clientItems.Count -gt 0)) {
             throw "desktop upgrade/client state already exists; use -Reset (only if owned by this acceptance) or a fresh Windows user"
         }
     }
@@ -2435,7 +2422,6 @@ public static class GwNative {
     $installedBeforeUninstall = Get-Generation -RunPy $script:installedRunPy
     $uninstallEnv = @{
         LOCALAPPDATA = $script:processLocalAppData
-        APPDATA = $script:processAppData
     }
     $uninstallLaunch = Start-GwProcess -FilePath $script:uninstaller -Arguments @("/S") -Label "18-uninstall" -Environment $uninstallEnv -WorkingDirectory $script:outputDirPath
     $uninstallExited = Wait-ProcessExit -Process $uninstallLaunch.process -TimeoutSeconds 300
@@ -2506,6 +2492,9 @@ try {
     foreach ($backendPid in @(Get-BackendPids)) {
         try { Stop-Process -Id $backendPid -Force -ErrorAction SilentlyContinue } catch { }
     }
+    foreach ($launch in @($script:processLaunches.Values)) {
+        try { Complete-GwOutput -Launch $launch } catch { }
+    }
     if ($script:installDirClaimed -and (Test-Path -LiteralPath $script:installDirPath)) {
         if (-not $KeepInstalled) {
             Remove-AcceptanceInstallDir
@@ -2527,6 +2516,5 @@ try {
     }
     if (-not $cleanupStateOk) { $exitCode = 1 }
     if ($script:savedProcessEnvLocalAppData) { $env:LOCALAPPDATA = $script:savedProcessEnvLocalAppData }
-    if ($script:savedProcessEnvAppData) { $env:APPDATA = $script:savedProcessEnvAppData }
 }
 exit $exitCode
