@@ -33,14 +33,14 @@
     <script src="/static/js/core/touch-mouse.js?v=v0.0.1-alpha-2026"></script>
     <script src="/static/js/core/i18n.js?v=v0.0.1-alpha-2026"></script>
     <script src="/static/js/core/floating-dismissal.js?v=v0.0.1-alpha-2026&m3=floating-dismissal"></script>
+    <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=v0.0.1-alpha-2026&m1=20260829">
     <link rel="stylesheet" href="/static/css/pages/canvas-list.css?v=v0.0.1-alpha-2026&canvas=20260907-toolbar-row">
     <link id="canvasLegacyTheme" rel="stylesheet" href="/static/css/base/theme.css?v=v0.0.1-alpha-2026">
-    <link id="canvasLegacySignal" rel="stylesheet" href="/static/css/base/signal-flow.css?v=v0.0.1-alpha-2026&sf=20260831-generator-canvas-actions">
     <link rel="stylesheet" href="/static/css/pages/canvas-overview.css?v=20260916-stitch-black-gold-v3">
     <script>
         if (document.documentElement.dataset.canvasListLayout === 'overview') {
-            document.getElementById('canvasLegacyTheme').disabled = true;
-            document.getElementById('canvasLegacySignal').disabled = true;
+            var legacyTheme = document.getElementById('canvasLegacyTheme');
+            if (legacyTheme) legacyTheme.disabled = true;
         }
     </script>
   <link rel="stylesheet" href="/static/css/base/hardware-buttons.css?ui=20261012-b3">

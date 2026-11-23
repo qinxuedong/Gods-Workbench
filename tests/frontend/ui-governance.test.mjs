@@ -1,7 +1,7 @@
 import test from 'node:test';
 import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import assert from 'node:assert/strict';
-import {readFileSync,readdirSync,writeFileSync} from 'node:fs';
+import {existsSync,readFileSync,readdirSync,writeFileSync} from 'node:fs';
 import path from 'node:path';
 // UI 治理门禁：按钮契约、虹彩微球真源、左侧总线结构、表面 token。
 // 与排版门禁 (typography-governance.test.mjs) 并存，互不覆盖。
@@ -315,10 +315,19 @@ test('非vendor CSS硬编码hex棘轮门禁（基线2026-10-10 UI治理后快照
 
 
 test('SIGNAL-FLOW旧兼容不得覆盖已迁移硬件按钮的材质和字阶',()=>{
-  const css=read('web/css/base/signal-flow.css');
+  // QIN-645：signal-flow.css 已整体下线，本断言转为两道等价护栏：
+  //   1. 旧文件不得回归；
+  //   2. 迁入 hardware-design-system.css 的公共层中，凡给原生控件设 36px 最小高度的规则，
+  //      必须继续排除硬件按钮族，避免旧兼容再次压掉 hw-btn 的材质与字阶。
+  assert.equal(existsSync(path.join(root,'web/css/base/signal-flow.css')),false,'signal-flow.css 不得回归');
+  const css=read('web/css/base/hardware-design-system.css');
   assert.doesNotMatch(css,/\.gw-signal\s+:where\(\*\)\s*\{[^}]*font-size[^}]*!important/);
+  let checked=0;
   for(const rule of css.matchAll(/([^{}]+)\{([^{}]*)\}/g)){
-    if(/:is\(button, input, select, textarea\)/.test(rule[1]) && /min-height:\s*36px/.test(rule[2]))
+    if(/:is\(button, input, select, textarea\)/.test(rule[1]) && /min-height:\s*36px/.test(rule[2])){
+      checked+=1;
       assert.match(rule[1],/:not\(:where\([^)]*\.hw-btn[^)]*\.btn-hw-round[^)]*\.btn-segmented-item/);
+    }
   }
+  assert.ok(checked>0,'公共层应至少保留一条原生控件最小高度规则供本护栏校验');
 });

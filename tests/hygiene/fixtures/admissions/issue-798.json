@@ -1,0 +1,34 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 798,
+  "authorization_basis": "GitHub Issue #798 QIN-645, 2026-11-24",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-473-settings-bg.test.mjs",
+    "tests/frontend/qin-580-material-lut-preview.test.mjs",
+    "tests/frontend/qin-645-signal-flow-retired.test.mjs",
+    "tests/frontend/ui-governance.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-798.json",
+    "web/asset-share.html",
+    "web/css/base/hardware-design-system.css",
+    "web/css/base/signal-flow.css",
+    "web/css/pages/canvas-list.css",
+    "web/css/pages/episode-pipeline.css",
+    "web/css/pages/governance.css",
+    "web/css/pages/task-center.css",
+    "web/embeds/canvas-list.html",
+    "web/embeds/episode-pipeline.html",
+    "web/embeds/governance.html",
+    "web/embeds/task-center.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-645-signal-flow-retired.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #798 QIN-645, 2026-11-24",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-645: 五个内嵌/分享页整体迁出 signal-flow.css 并下线旧样式；公共层落在 hardware-design-system.css 且作用域限定 body.gw-signal。只写本票分片，基础账本与硬计数保持不变。"
+}
