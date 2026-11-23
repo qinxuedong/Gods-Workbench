@@ -1749,3 +1749,24 @@ def test_data_location_api_check_does_not_write_pointer(api_client, tmp_path):
     # 预检不是迁移：指针版本保持不变，也不创建目标目录。
     assert api_client.get("/api/data-location", headers=ADMIN).json()["pointer"]["revision"] == 1
     assert not target.exists()
+
+
+def test_upgrade_preserves_existing_pointer_and_legacy_data(prod_home, tmp_path):
+    """QIN-638 回归：已有指针或旧生产数据时，引导发现与升级初始化不得静默覆盖。"""
+    legacy_root = prod_home["runtime_root"]
+    localappdata = legacy_root.parent
+    (legacy_root / "data").mkdir(parents=True, exist_ok=True)
+    (legacy_root / "data" / "projects.json").write_text('{"projects": []}', encoding="utf-8")
+    snapshot = service.inspect_existing_data_location(localappdata=localappdata)
+    assert snapshot["has_existing"] is True
+    assert snapshot["legacy_data_present"] is True
+    assert Path(snapshot["effective_data_location"]) == legacy_root.resolve(strict=False)
+
+    new_target = tmp_path / "Gods Workbench data"
+    with pytest.raises(CleanroomException) as exc:
+        service.installer_init_data_location(
+            str(new_target),
+            localappdata=localappdata,
+        )
+    assert exc.value.code == "EXISTING_DATA_PRESERVED"
+    assert not (legacy_root / "runtime-root.json").exists()

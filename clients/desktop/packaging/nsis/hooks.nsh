@@ -1,25 +1,79 @@
 ﻿!include "LogicLib.nsh"
+!include "nsDialogs.nsh"
 
-!define GW_DATA_ROOT "$LOCALAPPDATA\GodsWorkbench"
+!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench data"
+!define GW_BOOTSTRAP_DIR_NAME "GodsWorkbench"
 !define GW_UPGRADE_ROOT "$LOCALAPPDATA\ai.godsworkbench.desktop\upgrade"
 !define GW_BACKUP_PROGRAM "${GW_UPGRADE_ROOT}\backup-last\program"
-!define GW_BACKUP_CLIENT "${GW_UPGRADE_ROOT}\backup-last\client.json"
-!define GW_JOURNAL "${GW_UPGRADE_ROOT}\journal.txt"
-!define GW_CLIENT_CONFIG "$APPDATA\ai.godsworkbench.desktop\client.json"
+!define GW_UPGRADE_REL_DIR "ai.godsworkbench.desktop\upgrade"
 !define GW_ROBOCOPY "$SYSDIR\robocopy.exe"
 
+Var GwUserLocalAppData
+Var GwUserAppData
+Var GwDataDir
+Var GwInstallAction
+Var GwHasExistingData
+Var GwResolvedReady
+Var GwDataDialog
+Var GwDataInput
+Var GwDataBrowseBtn
+Var GwDataHintLabel
+
 !macro GW_RESOLVE_PATHS
-  ReadEnvStr $R6 "LOCALAPPDATA"
-  ${If} $R6 == ""
-    StrCpy $R6 "$LOCALAPPDATA"
+  ${If} $GwResolvedReady != "1"
+    ; 解析原本登录的普通用户 LOCALAPPDATA 与 APPDATA，避免异用户 UAC 提权写入管理员 profile。
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference=''Stop''; $$sid=$null; $$exp=Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1; if($$exp){ try{ $$owner=(Get-CimInstance Win32_Process -Filter (''ProcessId=''+$$exp.Id) | Invoke-CimMethod -MethodName GetOwnerSid); if($$owner.ReturnValue -eq 0){ $$sid=$$owner.Sid } }catch{} }; if(-not $$sid){ $$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }; if($$sid -match ''^S-1-5-(18|19|20)$$'' ){ exit 2 }; $$sf=''Registry::HKEY_USERS\''+$$sid+''\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders''; $$la=$null; $$ra=$null; if(Test-Path $$sf){ $$p=Get-ItemProperty $$sf; $$la=$$p.''Local AppData''; $$ra=$$p.AppData }; if(-not $$la){ $$la=$env:LOCALAPPDATA }; if(-not $$ra){ $$ra=$env:APPDATA }; if(-not $$la -or -not $$ra){ exit 3 }; Write-Output (''OK|''+$$la+''|''+$$ra)"'
+    Pop $0
+    Pop $1
+    ${If} $0 != 0
+      MessageBox MB_ICONSTOP "无法安全解析原本登录用户的本地配置目录（错误码 $0），安装已中止以避免写入错误账户。" /SD IDOK
+      Abort
+    ${EndIf}
+    ; 剥离末尾换行并拆分 OK|<LocalAppData>|<AppData>
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s=''$1''.Trim(); $$p=$$s.Split(''|''); if($$p.Length -lt 3 -or $$p[0] -ne ''OK''){ exit 4 }; Write-Output $$p[1]"'
+    Pop $0
+    Pop $GwUserLocalAppData
+    ${If} $0 != 0
+      MessageBox MB_ICONSTOP "无法读取原本登录用户的 LOCALAPPDATA，安装已中止。" /SD IDOK
+      Abort
+    ${EndIf}
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s=''$1''.Trim(); $$p=$$s.Split(''|''); Write-Output $$p[2]"'
+    Pop $0
+    Pop $GwUserAppData
+
+    ; 去掉可能残留的 CR/LF
+    StrCpy $GwUserLocalAppData $GwUserLocalAppData "" 0
+    StrCpy $GwUserAppData $GwUserAppData "" 0
+    StrCpy $GwResolvedReady "1"
   ${EndIf}
-  StrCpy $R7 "$R6\GodsWorkbench"
-  StrCpy $R8 "$R6\ai.godsworkbench.desktop\upgrade"
-  ReadEnvStr $R9 "APPDATA"
-  ${If} $R9 == ""
-    StrCpy $R9 "$APPDATA"
+
+  StrCpy $R6 "$GwUserLocalAppData"
+  StrCpy $R7 "$R6\${GW_BOOTSTRAP_DIR_NAME}"
+  StrCpy $R8 "$R6\${GW_UPGRADE_REL_DIR}"
+  StrCpy $R9 "$GwUserAppData\ai.godsworkbench.desktop\client.json"
+
+  ${If} $GwDataDir == ""
+    ; 探测是否已存在 627 引导指针或旧默认 GodsWorkbench 生产数据
+    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$b=Join-Path ''$R6'' ''${GW_BOOTSTRAP_DIR_NAME}''; $$ptr=Join-Path $$b ''runtime-root.json''; if(Test-Path -LiteralPath $$ptr){ try{ $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ Write-Output (''EXISTING|''+$$j.data_location); exit 0 } }catch{} }; $$has=$false; if(Test-Path -LiteralPath (Join-Path $$b ''auth\auth.sqlite3'')){ $$has=$true }; foreach($$sub in ''data'',''video''){ $$p=Join-Path $$b $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ $$has=$true } }; if($$has){ Write-Output (''EXISTING|''+$$b) }else{ Write-Output (''FRESH|''+(Join-Path ''$R6'' ''${GW_DATA_DIR_DEFAULT_NAME}'')) }"'
+    Pop $0
+    Pop $1
+    ${If} $0 == 0
+      StrCpy $R0 "$1" 8
+      ${If} $R0 == "EXISTING"
+        StrCpy $GwHasExistingData "1"
+        StrCpy $GwInstallAction "UpgradeKeep"
+        StrCpy $GwDataDir "$1" "" 9
+      ${Else}
+        StrCpy $GwHasExistingData "0"
+        StrCpy $GwInstallAction "FreshInstall"
+        StrCpy $GwDataDir "$R6\${GW_DATA_DIR_DEFAULT_NAME}"
+      ${EndIf}
+    ${Else}
+      StrCpy $GwHasExistingData "0"
+      StrCpy $GwInstallAction "FreshInstall"
+      StrCpy $GwDataDir "$R6\${GW_DATA_DIR_DEFAULT_NAME}"
+    ${EndIf}
   ${EndIf}
-  StrCpy $R9 "$R9\ai.godsworkbench.desktop\client.json"
 !macroend
 
 !macro GW_WRITE_STATE state
@@ -30,32 +84,70 @@
   FileClose $9
 !macroend
 
-!macro GW_PREFIX_MATCH out prefix text
-  StrLen $R0 "${prefix}"
-  StrCpy $R1 "${text}" $R0
-  StrCpy ${out} "0"
-  ${If} $R1 == "${prefix}"
-    StrCpy ${out} "1"
+!macro GW_ASSERT_NON_CONTAINMENT
+  !insertmacro GW_RESOLVE_PATHS
+  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference=''Stop''; function Norm([string]$$p){ return [IO.Path]::GetFullPath($$p).TrimEnd(''\'',''/'').ToLowerInvariant() }; $$a=Norm ''$INSTDIR''; $$b=Norm ''$GwDataDir''; $$c=Norm ''$R7''; if($$a -eq $$b -or $$a.StartsWith($$b+''\'') -or $$b.StartsWith($$a+''\'') -or $$a -eq $$c -or $$a.StartsWith($$c+''\'') -or $$c.StartsWith($$a+''\'')){ exit 1 }"'
+  Pop $0
+  ${If} $0 != 0
+    MessageBox MB_ICONSTOP "软件安装目录与用户数据目录不能相同或互相包含。请选择独立目录后重试。" /SD IDOK
+    Abort
   ${EndIf}
 !macroend
 
-!macro GW_ASSERT_NON_CONTAINMENT
+Function GwDataDirBrowse
+  ${If} $GwHasExistingData == "1"
+    Return
+  ${EndIf}
+  ${NSD_GetText} $GwDataInput $0
+  nsDialogs::SelectFolderDialog "选择神工坊用户数据目录" "$0"
+  Pop $0
+  ${If} $0 != "error"
+    ${NSD_SetText} $GwDataInput "$0"
+  ${EndIf}
+FunctionEnd
+
+Function GwDataDirPageCreate
   !insertmacro GW_RESOLVE_PATHS
-  ${If} $INSTDIR == $R7
-    MessageBox MB_ICONSTOP "安装目录不能与神工坊数据根相同。请选择独立目录后重试。" /SD IDOK
+  nsDialogs::Create 1018
+  Pop $GwDataDialog
+  ${If} $GwDataDialog == error
     Abort
   ${EndIf}
-  !insertmacro GW_PREFIX_MATCH $R2 "$R7\" "$INSTDIR"
-  ${If} $R2 == "1"
-    MessageBox MB_ICONSTOP "安装目录不能位于神工坊数据根内。请选择独立目录后重试。" /SD IDOK
+
+  ${If} $GwHasExistingData == "1"
+    ${NSD_CreateLabel} 0 0 100% 28u "已检测到既有用户数据或数据位置指针。升级/重装将继续使用以下数据目录（如需迁移请在安装后于设置中操作）："
+    Pop $GwDataHintLabel
+    ${NSD_CreateDirRequest} 0 34u 80% 14u "$GwDataDir"
+    Pop $GwDataInput
+    EnableWindow $GwDataInput 0
+    ${NSD_CreateBrowseButton} 82% 33u 18% 16u "浏览..."
+    Pop $GwDataBrowseBtn
+    EnableWindow $GwDataBrowseBtn 0
+  ${Else}
+    ${NSD_CreateLabel} 0 0 100% 28u "请选择神工坊用户数据目录（工作区、索引与缓存将保存在此处，必须与软件安装目录互不包含）："
+    Pop $GwDataHintLabel
+    ${NSD_CreateDirRequest} 0 34u 80% 14u "$GwDataDir"
+    Pop $GwDataInput
+    ${NSD_CreateBrowseButton} 82% 33u 18% 16u "浏览..."
+    Pop $GwDataBrowseBtn
+    ${NSD_OnClick} $GwDataBrowseBtn GwDataDirBrowse
+  ${EndIf}
+
+  nsDialogs::Show
+FunctionEnd
+
+Function GwDataDirPageLeave
+  ${If} $GwHasExistingData != "1"
+    ${NSD_GetText} $GwDataInput $GwDataDir
+  ${EndIf}
+  ${If} $GwDataDir == ""
+    MessageBox MB_ICONSTOP "用户数据目录不能为空。" /SD IDOK
     Abort
   ${EndIf}
-  !insertmacro GW_PREFIX_MATCH $R2 "$INSTDIR\" "$R7"
-  ${If} $R2 == "1"
-    MessageBox MB_ICONSTOP "数据根不能位于安装目录内。请选择独立安装目录后重试。" /SD IDOK
-    Abort
-  ${EndIf}
-!macroend
+  !insertmacro GW_ASSERT_NON_CONTAINMENT
+FunctionEnd
+
+Page custom GwDataDirPageCreate GwDataDirPageLeave
 
 !macro GW_RESTORE_BACKUP reason
   !insertmacro GW_RESOLVE_PATHS
@@ -130,7 +222,7 @@
 
 !macro NSIS_HOOK_POSTINSTALL
   !insertmacro GW_WRITE_STATE "installed"
-  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\packaging\upgrade.ps1" -Mode PostInstall'
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$INSTDIR\packaging\upgrade.ps1" -Mode PostInstall -UserLocalAppData "$GwUserLocalAppData" -UserAppData "$GwUserAppData" -InstallDir "$INSTDIR" -SelectedDataDir "$GwDataDir" -InstallAction "$GwInstallAction"'
   Pop $0
   ${If} $0 != 0
     !insertmacro GW_RESTORE_BACKUP "安装后自检失败"
@@ -142,5 +234,5 @@
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  ; 不触碰 ${GW_DATA_ROOT} 与 ${GW_UPGRADE_ROOT}。
+  ; 不触碰用户数据目录、引导指针 runtime-root.json 与升级备份。
 !macroend

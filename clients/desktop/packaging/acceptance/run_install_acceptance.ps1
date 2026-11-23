@@ -32,7 +32,8 @@ param(
     [string]$LocalAppDataOverride = "",
     [switch]$Reset,
     [switch]$KeepInstalled,
-    [switch]$KeepState
+    [switch]$KeepState,
+    [switch]$VerifyDualDirectory
 )
 
 Set-StrictMode -Version 2.0
@@ -2898,6 +2899,23 @@ public static class GwNative {
         Add-Step "reinstate-for-inspection"
         $reinstate = Invoke-Installer -Label "19-reinstate"
         Add-Check "reinstate.exit" ($reinstate.exit_code -eq 0) ("installer exit " + [string]$reinstate.exit_code)
+    }
+    if ($VerifyDualDirectory) {
+        $diagSnap = Get-DesktopDiagnostics -Label "98-dual-dir-diagnostics"
+        $diagInstall = [string]$diagSnap.install_dir
+        $diagData = [string]$diagSnap.data_location
+        Add-Check "dual_dir.install_dir_present" (-not [string]::IsNullOrWhiteSpace($diagInstall)) ("install_dir=" + (Format-SafeText $diagInstall))
+        Add-Check "dual_dir.data_location_present" (-not [string]::IsNullOrWhiteSpace($diagData)) ("data_location=" + (Format-SafeText $diagData))
+        $ptrFile = Join-Path $script:processLocalAppData "GodsWorkbench\runtime-root.json"
+        if (Test-Path -LiteralPath $ptrFile) {
+            try {
+                $ptrJson = Get-Content -LiteralPath $ptrFile -Raw -Encoding UTF8 | ConvertFrom-Json
+                Add-Check "dual_dir.pointer_schema_v1" ([int]$ptrJson.schema_version -eq 1) ("schema=" + [string]$ptrJson.schema_version)
+                Add-Check "dual_dir.pointer_matches_diag" ([string]$ptrJson.data_location -eq $diagData) "pointer vs diag"
+            } catch {
+                Add-Check "dual_dir.pointer_readable" $false $_.Exception.Message
+            }
+        }
     }
 }
 

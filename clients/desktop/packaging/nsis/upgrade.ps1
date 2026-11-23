@@ -1,13 +1,34 @@
 ﻿param(
   [ValidateSet("PostInstall")]
-  [string]$Mode = "PostInstall"
+  [string]$Mode = "PostInstall",
+  [string]$UserLocalAppData = "",
+  [string]$UserAppData = "",
+  [string]$InstallDir = "",
+  [string]$SelectedDataDir = "",
+  [ValidateSet("FreshInstall", "UpgradeKeep")]
+  [string]$InstallAction = "UpgradeKeep"
 )
 
 $ErrorActionPreference = "Stop"
+$env:PYTHONDONTWRITEBYTECODE = "1"
 
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
-$backend = Join-Path (Split-Path -Parent $scriptDir) "backend"
-$upgradeRoot = Join-Path $env:LOCALAPPDATA "ai.godsworkbench.desktop\upgrade"
+$effectiveInstallDir = if ($InstallDir -and $InstallDir.Trim()) { $InstallDir.Trim() } else { Split-Path -Parent $scriptDir }
+$backend = Join-Path $effectiveInstallDir "backend"
+
+$effectiveLocalAppData = if ($UserLocalAppData -and $UserLocalAppData.Trim()) { $UserLocalAppData.Trim() } else { $env:LOCALAPPDATA }
+$effectiveAppData = if ($UserAppData -and $UserAppData.Trim()) { $UserAppData.Trim() } else { $env:APPDATA }
+
+if (-not $effectiveLocalAppData -or -not [IO.Path]::IsPathRooted($effectiveLocalAppData)) {
+  Write-Error "无法确定原本登录用户的 LOCALAPPDATA"
+  exit 1
+}
+if ($effectiveLocalAppData -match '\\Windows\\System32\\config\\systemprofile\\') {
+  Write-Error "拒绝将用户数据写入 SYSTEM profile"
+  exit 1
+}
+
+$upgradeRoot = Join-Path $effectiveLocalAppData "ai.godsworkbench.desktop\upgrade"
 $journal = Join-Path $upgradeRoot "journal.txt"
 $stdoutLog = Join-Path $upgradeRoot "self-check.log"
 $stderrLog = Join-Path $upgradeRoot "self-check.err.log"
@@ -19,7 +40,6 @@ function Set-JournalState([string]$state) {
 
 function Fail([string]$message) {
   # 保留 installed，交由 NSIS 还原后再写 rolled_back；提前落盘会让中断的安装器覆盖唯一备份。
-  # 自检尚未启动的失败也必须留下证据，便于安装端验收定位。
   try {
     Add-Content -LiteralPath $stderrLog -Value ("PostInstall: " + $message) -Encoding UTF8
   } catch {
@@ -56,46 +76,93 @@ $runPy = Join-Path $backend "run.py"
 if (-not (Test-Path -LiteralPath $python)) { Fail "安装缺少私有 Python 运行时" }
 if (-not (Test-Path -LiteralPath $runPy)) { Fail "安装缺少后端入口" }
 
-$env:GW_RUNTIME_MODE = "prod"
-$env:GW_HOST = "127.0.0.1"
-$env:GW_PORT = "2077"
-$env:PYTHONDONTWRITEBYTECODE = "1"
+$bootstrapDir = Join-Path $effectiveLocalAppData "GodsWorkbench"
+$pointerPath = Join-Path $bootstrapDir "runtime-root.json"
+$pointerExistedBefore = Test-Path -LiteralPath $pointerPath
+$dataDirExistedBefore = ($SelectedDataDir -and (Test-Path -LiteralPath $SelectedDataDir))
+$pointerCreatedByInstall = $false
 
-$psi = New-Object System.Diagnostics.ProcessStartInfo
-$psi.FileName = $python
-# 默认安装目录含空格，run.py 路径必须带引号。
-$psi.Arguments = "`"$runPy`" --prod --self-check --expect-version `"$version`""
-$psi.WorkingDirectory = $backend
-$psi.UseShellExecute = $false
-$psi.CreateNoWindow = $true
-$psi.RedirectStandardOutput = $true
-$psi.RedirectStandardError = $true
-$process = New-Object System.Diagnostics.Process
-$process.StartInfo = $psi
-
-try {
+function Invoke-PythonWithUserEnv([string]$arguments) {
+  $psi = New-Object System.Diagnostics.ProcessStartInfo
+  $psi.FileName = $python
+  $psi.Arguments = $arguments
+  $psi.WorkingDirectory = $backend
+  $psi.UseShellExecute = $false
+  $psi.CreateNoWindow = $true
+  $psi.RedirectStandardOutput = $true
+  $psi.RedirectStandardError = $true
+  $psi.EnvironmentVariables["GW_RUNTIME_MODE"] = "prod"
+  $psi.EnvironmentVariables["GW_HOST"] = "127.0.0.1"
+  $psi.EnvironmentVariables["GW_PORT"] = "2077"
+  $psi.EnvironmentVariables["GW_INSTALL_DIR"] = $effectiveInstallDir
+  $psi.EnvironmentVariables["LOCALAPPDATA"] = $effectiveLocalAppData
+  if ($effectiveAppData) {
+    $psi.EnvironmentVariables["APPDATA"] = $effectiveAppData
+  }
+  $psi.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"] = "1"
+  $process = New-Object System.Diagnostics.Process
+  $process.StartInfo = $psi
   if (-not $process.Start()) {
     throw "进程未启动"
   }
+  $stdoutTask = $process.StandardOutput.ReadToEndAsync()
+  $stderrTask = $process.StandardError.ReadToEndAsync()
+  if (-not $process.WaitForExit(60000)) {
+    try { $process.Kill() } catch { }
+    $process.WaitForExit()
+    throw "子进程执行超时"
+  }
+  return [pscustomobject]@{
+    ExitCode = $process.ExitCode
+    Stdout = $stdoutTask.Result
+    Stderr = $stderrTask.Result
+  }
+}
+
+function Cleanup-FreshInstallPointer {
+  if ($pointerCreatedByInstall -and (-not $pointerExistedBefore)) {
+    try {
+      if (Test-Path -LiteralPath $pointerPath) {
+        Remove-Item -LiteralPath $pointerPath -Force
+      }
+    } catch { }
+    if ($SelectedDataDir -and (-not $dataDirExistedBefore) -and (Test-Path -LiteralPath $SelectedDataDir)) {
+      try {
+        if (@(Get-ChildItem -LiteralPath $SelectedDataDir -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+          Remove-Item -LiteralPath $SelectedDataDir -Force
+        }
+      } catch { }
+    }
+  }
+}
+
+if ($InstallAction -eq "FreshInstall" -and $SelectedDataDir -and (-not $pointerExistedBefore)) {
+  try {
+    $initArgs = "-m gw.settings.data_location --installer-init --target `"$SelectedDataDir`" --install-dir `"$effectiveInstallDir`""
+    $initRes = Invoke-PythonWithUserEnv $initArgs
+    if ($initRes.ExitCode -ne 0) {
+      Cleanup-FreshInstallPointer
+      Fail ("初始化用户数据目录指针失败: " + $initRes.Stdout + " " + $initRes.Stderr)
+    }
+    $pointerCreatedByInstall = $true
+  } catch {
+    Cleanup-FreshInstallPointer
+    Fail ("初始化用户数据目录异常: " + $_.Exception.Message)
+  }
+}
+
+try {
+  $checkArgs = "`"$runPy`" --prod --self-check --expect-version `"$version`""
+  $checkRes = Invoke-PythonWithUserEnv $checkArgs
 } catch {
-  Fail "无法启动安装自检"
+  Cleanup-FreshInstallPointer
+  Fail ("无法启动安装自检: " + $_.Exception.Message)
 }
 
-$stdoutTask = $process.StandardOutput.ReadToEndAsync()
-$stderrTask = $process.StandardError.ReadToEndAsync()
-if (-not $process.WaitForExit(60000)) {
-  try { $process.Kill() } catch { }
-  $process.WaitForExit()
-  try { Set-Content -LiteralPath $stdoutLog -Value $stdoutTask.Result -NoNewline -Encoding UTF8 } catch { }
-  try { Set-Content -LiteralPath $stderrLog -Value $stderrTask.Result -NoNewline -Encoding UTF8 } catch { }
-  Fail "安装自检超时"
-}
-
-$stdout = $stdoutTask.Result
-$stderr = $stderrTask.Result
-Set-Content -LiteralPath $stdoutLog -Value $stdout -NoNewline -Encoding UTF8
-Set-Content -LiteralPath $stderrLog -Value $stderr -NoNewline -Encoding UTF8
-if ($process.ExitCode -ne 0) {
+Set-Content -LiteralPath $stdoutLog -Value $checkRes.Stdout -NoNewline -Encoding UTF8
+Set-Content -LiteralPath $stderrLog -Value $checkRes.Stderr -NoNewline -Encoding UTF8
+if ($checkRes.ExitCode -ne 0) {
+  Cleanup-FreshInstallPointer
   Fail "安装自检未通过"
 }
 

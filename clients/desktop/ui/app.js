@@ -473,6 +473,8 @@
         row("能力摘要", digestSummary(diagnostics)),
         row("受信本机", trustedSummary(diagnostics)),
         row("安装目录与数据根", diagnostics.program_data_non_overlapping === true ? "已确认互不包含" : diagnostics.program_data_non_overlapping === false ? "检测到包含关系，已阻断" : "开发源构建（未校验）"),
+        row("生效软件目录", diagnostics.install_dir || "未知"),
+        row("生效数据目录", diagnostics.data_location || "未知"),
         row("备用启动命令", "项目根目录 start.bat 或 python run.py --prod"),
       ];
       if (diagnostics.manifest_error) fragments.push(row("安装清单", diagnostics.manifest_error));

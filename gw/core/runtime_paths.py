@@ -35,6 +35,8 @@ VIDEO_DATA_DIR_ENV = "GW_VIDEO_DATA_DIR"
 
 # QIN-627 数据位置指针：固定落在引导目录（%LOCALAPPDATA%\GodsWorkbench），
 # 永不随数据位置迁移移动。
+LEGACY_PROD_DATA_DIR_NAME = "GodsWorkbench"
+DEFAULT_INSTALLER_DATA_DIR_NAME = "Gods Workbench data"
 DATA_LOCATION_POINTER_NAME = "runtime-root.json"
 DATA_LOCATION_SCHEMA_VERSION = 1
 PROD_DATA_LOCATION_INVALID = "PROD_DATA_LOCATION_INVALID"
@@ -166,6 +168,43 @@ def _require_inside(path: Path, parent: Path, *, code: str, message: str) -> Non
 
 def _same_path(left: Path, right: Path) -> bool:
     return left == right
+
+
+def normalize_compare_path(raw: str | os.PathLike[str]) -> Path:
+    """规范化路径用于相等与包含判定（处理大小写与尾部分隔符，不跟随符号链接）。"""
+    resolved = Path(raw).resolve(strict=False)
+    text = os.path.normcase(str(resolved)).rstrip("\\/")
+    if not text:
+        return resolved
+    # Windows 盘符根如 "c:" 需要保留反斜杠以维持 Path.relative_to 语义
+    if os.name == "nt" and len(text) == 2 and text[1] == ":":
+        text += "\\"
+    return Path(text)
+
+
+def paths_non_overlapping(left: str | os.PathLike[str], right: str | os.PathLike[str]) -> bool:
+    """判断两个路径在规范化后是否不同且互不包含。"""
+    left_norm = normalize_compare_path(left)
+    right_norm = normalize_compare_path(right)
+    if left_norm == right_norm:
+        return False
+    return not _inside(left_norm, right_norm) and not _inside(right_norm, left_norm)
+
+
+def has_existing_production_data(runtime_root: Path) -> bool:
+    """检测旧默认目录或引导目录下是否已存在真实生产数据。"""
+    auth_db = runtime_root / "auth" / "auth.sqlite3"
+    if auth_db.is_file():
+        return True
+    for sub in ("data", "video"):
+        candidate = runtime_root / sub
+        if candidate.is_dir():
+            try:
+                if any(candidate.iterdir()):
+                    return True
+            except OSError:
+                return True
+    return False
 
 
 def _env_value(env: Mapping[str, str], name: str) -> str | None:
@@ -424,6 +463,8 @@ __all__ = [
     "DATA_DIR_ENV",
     "DATA_LOCATION_POINTER_NAME",
     "DATA_LOCATION_SCHEMA_VERSION",
+    "DEFAULT_INSTALLER_DATA_DIR_NAME",
+    "LEGACY_PROD_DATA_DIR_NAME",
     "LOCAL_AUTH_DB_ENV",
     "MODE_DEV",
     "MODE_PROD",
@@ -434,7 +475,10 @@ __all__ = [
     "RuntimePaths",
     "VIDEO_DATA_DIR_ENV",
     "data_location_pointer_path",
+    "has_existing_production_data",
+    "normalize_compare_path",
     "parse_runtime_paths",
+    "paths_non_overlapping",
     "read_data_location_pointer",
     "resolve_runtime_paths",
     "runtime_paths",

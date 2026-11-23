@@ -82,6 +82,8 @@ struct DiagnosticsView {
     last_error: String,
     backend_phase: String,
     backend_pid: Option<u32>,
+    install_dir: String,
+    data_location: String,
 }
 
 /// 托管的本地后端子进程生命周期阶段。
@@ -974,12 +976,48 @@ fn load_installed_manifest() -> Result<Option<BundleManifest>, String> {
     }
 }
 
-fn production_data_root() -> Result<PathBuf, String> {
+fn bootstrap_data_root() -> Result<PathBuf, String> {
     let base = std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
         .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())?;
     Ok(base.join("GodsWorkbench"))
+}
+
+fn production_data_root() -> Result<PathBuf, String> {
+    let bootstrap = bootstrap_data_root()?;
+    let pointer_path = bootstrap.join("runtime-root.json");
+    match fs::symlink_metadata(&pointer_path) {
+        Ok(meta) => {
+            if meta.file_type().is_symlink() {
+                return Err("数据位置指针不允许符号链接".to_string());
+            }
+            let raw = fs::read_to_string(&pointer_path)
+                .map_err(|_| "数据位置指针无法读取".to_string())?;
+            let payload: serde_json::Value = serde_json::from_str(&raw)
+                .map_err(|_| "数据位置指针内容不是合法 JSON".to_string())?;
+            let schema_version = payload
+                .get("schema_version")
+                .and_then(|value| value.as_i64())
+                .unwrap_or(0);
+            if schema_version != 1 {
+                return Err("数据位置指针 schema_version 不受支持".to_string());
+            }
+            let location = payload
+                .get("data_location")
+                .and_then(|value| value.as_str())
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .ok_or_else(|| "数据位置指针缺少 data_location".to_string())?;
+            let path = PathBuf::from(location);
+            if !path.is_absolute() {
+                return Err("数据位置指针路径必须是绝对路径".to_string());
+            }
+            Ok(path)
+        }
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(bootstrap),
+        Err(_) => Err("数据位置指针无法安全核验".to_string()),
+    }
 }
 
 fn install_directory() -> Result<PathBuf, String> {
@@ -1069,8 +1107,9 @@ fn paths_non_overlapping(left: &Path, right: &Path) -> bool {
 
 fn program_data_non_overlapping() -> Result<bool, String> {
     let install = canonicalize_with_missing(&install_directory()?);
+    let bootstrap = canonicalize_with_missing(&bootstrap_data_root()?);
     let data = canonicalize_with_missing(&production_data_root()?);
-    Ok(paths_non_overlapping(&install, &data))
+    Ok(paths_non_overlapping(&install, &bootstrap) && paths_non_overlapping(&install, &data))
 }
 
 fn upgrade_journal_path() -> Option<PathBuf> {
@@ -1304,12 +1343,17 @@ fn spawn_backend_process(
     python: &Path,
     backend_root: &Path,
 ) -> Result<std::process::Child, String> {
+    let install_dir_value = install_directory()
+        .unwrap_or_else(|_| backend_root.to_path_buf())
+        .to_string_lossy()
+        .to_string();
     let mut cmd = std::process::Command::new(python);
     cmd.current_dir(backend_root)
         .arg("run.py")
         .arg("--prod")
         .env("GW_HOST", "127.0.0.1")
         .env("GW_PORT", "2077")
+        .env("GW_INSTALL_DIR", &install_dir_value)
         // 安装目录只读使用：避免运行期把 __pycache__ 写进程序目录并导致卸载残留。
         .env("PYTHONDONTWRITEBYTECODE", "1")
         .stdin(std::process::Stdio::null())
@@ -2359,6 +2403,12 @@ fn diagnostics_view(
         last_error: guard.last_error.clone(),
         backend_phase,
         backend_pid,
+        install_dir: install_directory()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
+        data_location: production_data_root()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_default(),
     })
 }
 

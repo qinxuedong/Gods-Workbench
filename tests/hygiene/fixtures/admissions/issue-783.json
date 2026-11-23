@@ -1,0 +1,41 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 783,
+  "authorization_basis": "GitHub Issue #783 QIN-638 (PM 设计表确认与增补白名单), 2026-11-23",
+  "files": [
+    "clients/desktop/README.md",
+    "clients/desktop/packaging/acceptance/README.md",
+    "clients/desktop/packaging/acceptance/run_install_acceptance.ps1",
+    "clients/desktop/packaging/build_release.py",
+    "clients/desktop/packaging/nsis/hooks.nsh",
+    "clients/desktop/packaging/nsis/upgrade.ps1",
+    "clients/desktop/src/main.rs",
+    "clients/desktop/ui/app.js",
+    "gw/core/runtime_paths.py",
+    "gw/settings/data_location.py",
+    "run.py",
+    "tests/contracts/settings/test_qin_627_data_location_migration.py",
+    "tests/contracts/settings/test_qin_638_installer_data_location.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-638-installer-data-location.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-783.json",
+    "tests/runtime/test_qin_626_desktop_install_lifecycle.py",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/settings/test_qin_638_installer_data_location.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #783 QIN-638, 2026-11-23",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-638-installer-data-location.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #783 QIN-638, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-638: 安装向导双目录选择（默认 Program Files 与可选用户数据目录）；只写本票分片，基础账本与硬计数保持不变。"
+}

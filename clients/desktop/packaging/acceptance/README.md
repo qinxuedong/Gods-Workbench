@@ -55,6 +55,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File `
 - `-KeepInstalled`：卸载验证后重新安装，便于人工检查。
 - `-KeepState`：保留隔离数据根、升级备份和客户端配置；下次运行需 `-Reset`。默认在写完证据后清理本次验收创建的隔离数据根、远端独立数据目录（`gw-qin626-accept-remote-*`）、升级日志/备份和客户端配置，真实 `%LOCALAPPDATA%\GodsWorkbench` 数据根始终不动。
 
+### QIN-638 双目录与升级保留数据隔离验收补充
+
+验收同一份实际安装包时，须在隔离 `-LocalAppDataOverride` 下额外覆盖以下双目录黑盒场景（记录构建 commit 与安装包 SHA-256，严禁触碰真实用户数据根）：
+1. **新装双目录**：无既有数据时默认程序目录为 `%ProgramFiles%\Gods Workbench`、默认数据目录为原本登录普通用户的 `%LOCALAPPDATA%\Gods Workbench data`（及另选自定义目录）；检查 `%LOCALAPPDATA%\GodsWorkbench\runtime-root.json` 写入与工作台/诊断页显示一致。
+2. **路径约束与 UAC 提权**：同路径/互包含在向导页与自检阶段被拒绝；异用户 UAC 提权时数据目录与指针落在原本登录普通用户 profile，不写入管理员 profile。
+3. **升级保留与失败/取消回滚**：在隔离 `LOCALAPPDATA` 预置旧 `%LOCALAPPDATA%\GodsWorkbench` 生产数据或既有 `runtime-root.json` 指针后运行升级，验证原数据路径与指针原样保留不被覆盖；新装中途自检失败时验证新建 `runtime-root.json` 被回滚清理。
+
 脚本退出码：`0` 表示全部检查通过；`1` 表示存在检查失败或未处理异常。无论结果如何，都会写 `<OutputDir>\acceptance.json` 与 `<OutputDir>\acceptance.md`（路径已替换为占位符）。
 
 ## 场景与证据

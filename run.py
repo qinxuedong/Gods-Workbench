@@ -58,6 +58,7 @@ from gw.core.runtime_paths import (
     _canonical,
     _check_no_links,
     _inside,
+    paths_non_overlapping,
     resolve_runtime_paths,
 )
 
@@ -105,7 +106,11 @@ class VersionInfo:
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="启动 Gods-Workbench 单进程服务")
-    parser.add_argument("--prod", action="store_true", help="使用 LOCALAPPDATA/GodsWorkbench 生产数据根")
+    parser.add_argument(
+        "--prod",
+        action="store_true",
+        help="使用 LOCALAPPDATA/GodsWorkbench 引导指针或生产数据根",
+    )
     parser.add_argument("--test", action="store_true", help="使用显式 GW_DATA_DIR/GW_LOCAL_AUTH_DB/GW_VIDEO_DATA_DIR 测试路径")
     parser.add_argument("--open-browser", action="store_true", help="健康检查就绪后打开首页")
     parser.add_argument("--host", help="监听网络地址；默认 127.0.0.1，设为 0.0.0.0 可供局域网设备访问")
@@ -281,11 +286,9 @@ def _openapi_operations(schema: dict[str, object]) -> set[str]:
 
 def _paths_non_overlapping(install_root: Path, data_root: Path) -> bool:
     try:
-        install = install_root.resolve(strict=False)
-        data = data_root.resolve(strict=False)
+        return paths_non_overlapping(install_root, data_root)
     except (OSError, RuntimeError, ValueError):
         return False
-    return install != data and not install.is_relative_to(data) and not data.is_relative_to(install)
 
 
 def _self_check(args: argparse.Namespace) -> int:
@@ -308,7 +311,11 @@ def _self_check(args: argparse.Namespace) -> int:
     except RuntimePathError as exc:
         print(f"自检失败: {exc}", file=sys.stderr, flush=True)
         return 1
-    if mode == MODE_PROD and not _paths_non_overlapping(ROOT_DIR, paths.runtime_root):
+    effective_data_root = paths.data_location or paths.runtime_root
+    if mode == MODE_PROD and (
+        not _paths_non_overlapping(ROOT_DIR, paths.runtime_root)
+        or not _paths_non_overlapping(ROOT_DIR, effective_data_root)
+    ):
         print("自检失败: 安装目录与数据根存在包含关系", file=sys.stderr, flush=True)
         return 1
 
@@ -345,8 +352,12 @@ def _self_check(args: argparse.Namespace) -> int:
         "provenance": info.provenance,
         "capability_profile": manifest.get("capability_profile"),
         "capability_digest": manifest.get("capability_digest"),
+        "effective_data_location": str(effective_data_root),
         "install_data_non_overlapping": mode != MODE_PROD
-        or _paths_non_overlapping(ROOT_DIR, paths.runtime_root),
+        or (
+            _paths_non_overlapping(ROOT_DIR, paths.runtime_root)
+            and _paths_non_overlapping(ROOT_DIR, effective_data_root)
+        ),
     }
     print(json.dumps(result, ensure_ascii=False, sort_keys=True), flush=True)
     return 0
