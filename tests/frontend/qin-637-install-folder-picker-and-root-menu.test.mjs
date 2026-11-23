@@ -14,6 +14,11 @@ function extractBlock(source, startMarker, endMarker) {
   return source.slice(start, end);
 }
 
+const createAbortControllerSrc = extractBlock(
+  settings,
+  'function _createDirectoryAbortController(',
+  '\nasync function _loadServerDirectoryBrowserImpl(',
+);
 const pickServerDirectoryNativeSrc = extractBlock(
   settings,
   'async function pickServerDirectoryNative(',
@@ -21,8 +26,8 @@ const pickServerDirectoryNativeSrc = extractBlock(
 );
 const loadServerDirectoryBrowserSrc = extractBlock(
   settings,
-  'async function loadServerDirectoryBrowser(',
-  '\nasync function validateServerResourceDirectory(',
+  'async function _loadServerDirectoryBrowserImpl(',
+  '\nasync function _validateServerResourceDirectoryImpl(',
 );
 const validateServerResourceDirectorySrc = extractBlock(
   settings,
@@ -96,7 +101,7 @@ test('AC-A1/A2/A4: 本机回环原生选夹不可用时不降级页面内盘符�
       'setStatus',
       'openServerDirectoryBrowser',
       'fillServerDirectoryFromNative',
-      `return (${pickServerDirectoryNativeSrc});`,
+      `const _createDirectoryAbortController = (${createAbortControllerSrc}); return (${pickServerDirectoryNativeSrc});`,
     )(
       assetManagerHttp,
       apiJsonResponse,
@@ -207,7 +212,7 @@ test('AC-A 慢请求（9 秒与 20 秒档）：3 秒内保持进行中，超过 
     return new Function(
       'assetManagerHttp',
       'apiJsonResponse',
-      `return (${validateServerResourceDirectorySrc});`,
+      `const _createDirectoryAbortController = (${createAbortControllerSrc}); return (${validateServerResourceDirectorySrc});`,
     )({ request: requestImpl }, apiJsonResponse);
   };
 
@@ -248,7 +253,7 @@ test('AC-A 慢请求（9 秒与 20 秒档）：3 秒内保持进行中，超过 
     'renderServerDirectoryBrowserHost',
     'assetManagerHttp',
     'apiJsonResponse',
-    `return (${loadServerDirectoryBrowserSrc});`,
+    `const _createDirectoryAbortController = (${createAbortControllerSrc}); return (${loadServerDirectoryBrowserSrc});`,
   )(
     browserState,
     next => { browserState = next; },

@@ -6742,9 +6742,8 @@ async function loadAssetAllowedRootPaths(options={}){
                     });
                 }
             });
-        } catch(_) {
-            if(assetAllowedRootPathsPromise === promise) assetAllowedRootPathsPromise = null;
-        }
+        } catch(_) {}
+        if(!succeeded && assetAllowedRootPathsPromise === promise) assetAllowedRootPathsPromise = null;
         if(succeeded && typeof notifyShellTreeSnapshot === 'function') notifyShellTreeSnapshot();
         return assetAllowedRootPaths;
     })();
@@ -6757,7 +6756,7 @@ function assetRackRootDiskPath(rootId){
     const board = assetRackBoard();
     const source = (board?.sources || []).find(item => String(item.id || '') === id);
     const root = assetRackRoots().find(item => String(item.id || '') === id);
-    const path = source?.path || (root?.path || '') || assetTreeResolveRootPath(id, root?.name || '') || '';
+    const path = source?.path || (root?.path || '') || assetAllowedRootPaths.get(id) || assetTreeResolveRootPath(id, root?.name || '') || '';
     return String(path || '').trim();
 }
 function assetRackDiskDirectories(rootId, relPath=''){
@@ -7330,10 +7329,10 @@ function gwAssetTreeSnapshot(){
             loading,
             offline,
             key,
-            writable: Boolean(resolvedPath) || assetOrganizeWritableRoot(root.id),
+            writable: assetOrganizeWritableRoot(root.id),
             expanded,
             hasChildren: true,
-            draggable: Boolean(resolvedPath) || assetOrganizeWritableRoot(root.id),
+            draggable: assetOrganizeWritableRoot(root.id),
             children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1)) : [],
         };
     });

@@ -91,8 +91,7 @@ import {
     findAssetItem,
     findLocalUpload,
     findWorkflowItem,
-    gwSetAssetRackCollapsed,
-    handleClick,
+    gwSetAssetRackCollapsed, handleClick,
     isTauriClientMode,
     loadAssetAllowedRootPaths,
     loadLocalAssets,
@@ -1046,13 +1045,8 @@ function renderServerDirectoryBrowserHost(){
         let overlay = document.getElementById('boardSourceDirectoryBrowserOverlay');
         if(!serverDirectoryBrowserState.open){ overlay?.remove(); return; }
         if(!overlay){
-            overlay = document.createElement('div');
-            overlay.id = 'boardSourceDirectoryBrowserOverlay';
-            overlay.className = 'storage-settings-overlay';
-            overlay.addEventListener('click', event => {
-                handleClick(event).catch(err => setStatus(err?.message || '操作失败'));
-            });
-            document.body.appendChild(overlay);
+            overlay = document.createElement('div'); overlay.id = 'boardSourceDirectoryBrowserOverlay'; overlay.className = 'storage-settings-overlay';
+            overlay.addEventListener('click', event => { handleClick(event).catch(err => setStatus(err?.message || '操作失败')); }); document.body.appendChild(overlay);
         }
         overlay.innerHTML = `<div class="storage-settings-modal board-settings-modal" data-floating-content role="dialog" aria-modal="true" aria-label="选择服务器资源文件夹">${renderServerDirectoryBrowser()}</div>`;
         markAssetFloatingSurface(overlay, {surface:'board-source-directory-picker', content:'.board-settings-modal', close:() => setServerDirectoryBrowserState({...serverDirectoryBrowserState, open:false, loading:false})});
@@ -1062,55 +1056,7 @@ function renderServerDirectoryBrowserHost(){
     renderStorageSettingsModal();
 }
 async function loadServerDirectoryBrowser(pathValue=null, options={}){
-    const state = serverDirectoryBrowserState;
-    state.abortController?.abort?.();
-    const generation = Number(state.generation || 0) + 1;
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000;
-    let timedOut = false;
-    const timer = controller
-        ? setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-        }, timeoutMs)
-        : null;
-    state.generation = generation;
-    state.abortController = controller;
-    state.path = pathValue;
-    state.parent = null;
-    state.directories = [];
-    state.truncated = false;
-    state.loading = true;
-    state.error = '';
-    renderServerDirectoryBrowserHost();
-    try {
-        const query = pathValue ? '?path=' + encodeURIComponent(pathValue) : '';
-        const reqInit = {method:'GET', credentials:'same-origin'};
-        if(controller) reqInit.signal = controller.signal;
-        const response = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/browse' + query, reqInit));
-        if(!serverDirectoryBrowserState.open || Number(serverDirectoryBrowserState.generation || 0) !== generation) return;
-        setServerDirectoryBrowserState({
-            ...serverDirectoryBrowserState,
-            path:response.path ?? null,
-            parent:response.parent ?? null,
-            directories:Array.isArray(response.directories) ? response.directories : [],
-            truncated:Boolean(response.truncated),
-            limit:Number(response.limit) || 100,
-            loading:false,
-            abortController:null,
-            error:''
-        });
-    } catch(error){
-        if(!serverDirectoryBrowserState.open || Number(serverDirectoryBrowserState.generation || 0) !== generation) return;
-        if(error?.name === 'AbortError' && !timedOut) return;
-        const message = timedOut
-            ? '读取服务器目录超时（超过 8 秒），请重试或关闭'
-            : (error?.message || '服务器目录读取失败');
-        setServerDirectoryBrowserState({...serverDirectoryBrowserState, loading:false, abortController:null, error:message});
-    } finally {
-        if(timer) clearTimeout(timer);
-    }
-    renderServerDirectoryBrowserHost();
+    return _loadServerDirectoryBrowserImpl(pathValue, options);
 }
 async function validateServerResourceDirectory(pathValue, options={}){
     const target = String(pathValue || '').trim();
@@ -1118,41 +1064,20 @@ async function validateServerResourceDirectory(pathValue, options={}){
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000;
     let timedOut = false;
-    const timer = controller
-        ? setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-        }, timeoutMs)
-        : null;
-    const onExternalAbort = () => controller?.abort();
+    const timer = controller ? setTimeout(() => { timedOut = true; controller.abort(); }, timeoutMs) : null; const onExternalAbort = () => controller?.abort();
     if(options.signal){
-        if(options.signal.aborted){
-            if(timer) clearTimeout(timer);
-            const abortErr = new Error('已取消目录校验');
-            abortErr.name = 'AbortError';
-            throw abortErr;
-        }
+        if(options.signal.aborted){ if(timer) clearTimeout(timer); const e = new Error('已取消目录校验'); e.name = 'AbortError'; throw e; }
         options.signal.addEventListener?.('abort', onExternalAbort, {once:true});
     }
     try {
         const reqInit = {method:'GET', credentials:'same-origin'};
         if(controller) reqInit.signal = controller.signal;
-        const response = await apiJsonResponse(assetManagerHttp.request(
-            '/api/storage-settings/browse?path=' + encodeURIComponent(target),
-            reqInit,
-        ));
+        const response = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/browse?path=' + encodeURIComponent(target), reqInit));
         return String(response?.path || target);
     } catch(error){
-        if(timedOut){
-            const timeoutErr = new Error('服务端目录校验超时（超过 8 秒），请重试');
-            timeoutErr.code = 'DIRECTORY_BROWSE_TIMEOUT';
-            throw timeoutErr;
-        }
+        if(timedOut){ const timeoutErr = new Error('服务端目录校验超时（超过 8 秒），请重试'); timeoutErr.code = 'DIRECTORY_BROWSE_TIMEOUT'; throw timeoutErr; }
         throw error;
-    } finally {
-        if(timer) clearTimeout(timer);
-        options.signal?.removeEventListener?.('abort', onExternalAbort);
-    }
+    } finally { if(timer) clearTimeout(timer); options.signal?.removeEventListener?.('abort', onExternalAbort); }
 }
 async function openServerDirectoryBrowser(key, options={}){
     if(!key || !canBrowseServerDirectories()) return;
@@ -1172,31 +1097,10 @@ async function pickServerDirectoryNative(key, options={}){
     // 服务器本机会话优先弹系统原生对话框；远程/不可用时降级页面内浏览器。
     const input = directoryFieldInput(key);
     const currentPath = input ? String(input.value || '').trim() : '';
-    const controller = typeof AbortController === 'function' ? new AbortController() : null;
-    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 0;
-    let timedOut = false;
-    const timer = (controller && timeoutMs > 0)
-        ? setTimeout(() => {
-            timedOut = true;
-            controller.abort();
-        }, timeoutMs)
-        : null;
-    const onExternalAbort = () => controller?.abort();
-    if(options.signal){
-        if(options.signal.aborted){
-            if(timer) clearTimeout(timer);
-            return;
-        }
-        options.signal.addEventListener?.('abort', onExternalAbort, {once:true});
-    }
+    const ctl = _createDirectoryAbortController(options);
     try {
-        const reqInit = {
-            method:'POST',
-            credentials:'same-origin',
-            headers:{'Content-Type':'application/json'},
-            body:JSON.stringify({title:'选择服务器目录', initial_dir:currentPath || null})
-        };
-        if(controller) reqInit.signal = controller.signal;
+        const reqInit = {method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'}, body:JSON.stringify({title:'选择服务器目录', initial_dir:currentPath || null})};
+        if(ctl.controller) reqInit.signal = ctl.controller.signal;
         const result = await apiJsonResponse(assetManagerHttp.request('/api/settings/directories/pick-native', reqInit));
         if(options.signal?.aborted) return;
         if(result.status === 'selected' && result.path){
@@ -1214,17 +1118,15 @@ async function pickServerDirectoryNative(key, options={}){
         }
         setStatus('服务端目录选择器不可用（' + (result.reason || '未知原因') + '），已切换页面内浏览');
     } catch(error){
-        if(error?.name === 'AbortError' && !timedOut) return;
-        const errObj = timedOut ? Object.assign(new Error('选夹请求超时，请重试'), {code:'PICKER_TIMEOUT'}) : error;
-        const isRemoteFallback = Number(errObj?.status) === 403 && errObj?.code === 'PICKER_NON_LOOPBACK';
-        if(!isRemoteFallback && typeof options.onUnavailable === 'function'){
+        if(error?.name === 'AbortError' && !ctl.timedOut()) return;
+        const errObj = ctl.timedOut() ? Object.assign(new Error('选夹请求超时，请重试'), {code:'PICKER_TIMEOUT'}) : error;
+        if(!(Number(errObj?.status) === 403 && errObj?.code === 'PICKER_NON_LOOPBACK') && typeof options.onUnavailable === 'function'){
             await options.onUnavailable(errObj?.message || '请求失败', errObj);
             return;
         }
         setStatus('服务端目录选择器不可用（' + (errObj.message || '请求失败') + '），已切换页面内浏览');
     } finally {
-        if(timer) clearTimeout(timer);
-        options.signal?.removeEventListener?.('abort', onExternalAbort);
+        ctl.cleanup();
     }
     await openServerDirectoryBrowser(key, options);
 }
@@ -3845,4 +3747,105 @@ function ensureDataLocationBindings(host){
         });
     }
     if(!dataLocationState.ready && !dataLocationState.loading) loadDataLocationData();
+}
+
+function _createDirectoryAbortController(options={}){
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 0;
+    let isTimedOut = false;
+    const timer = (controller && timeoutMs > 0)
+        ? setTimeout(() => { isTimedOut = true; controller.abort(); }, timeoutMs)
+        : null;
+    const onExternalAbort = () => controller?.abort();
+    if(options.signal){
+        if(options.signal.aborted){
+            if(timer) clearTimeout(timer);
+            controller?.abort();
+        } else {
+            options.signal.addEventListener?.('abort', onExternalAbort, {once:true});
+        }
+    }
+    return {
+        controller,
+        timedOut: () => isTimedOut,
+        cleanup: () => {
+            if(timer) clearTimeout(timer);
+            options.signal?.removeEventListener?.('abort', onExternalAbort);
+        },
+    };
+}
+
+async function _loadServerDirectoryBrowserImpl(pathValue=null, options={}){
+    const state = serverDirectoryBrowserState;
+    state.abortController?.abort?.();
+    const generation = Number(state.generation || 0) + 1;
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000;
+    const ctl = _createDirectoryAbortController({...options, timeoutMs});
+    state.generation = generation;
+    state.abortController = ctl.controller;
+    state.path = pathValue;
+    state.parent = null;
+    state.directories = [];
+    state.truncated = false;
+    state.loading = true;
+    state.error = '';
+    renderServerDirectoryBrowserHost();
+    try {
+        const query = pathValue ? '?path=' + encodeURIComponent(pathValue) : '';
+        const reqInit = {method:'GET', credentials:'same-origin'};
+        if(ctl.controller) reqInit.signal = ctl.controller.signal;
+        const response = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/browse' + query, reqInit));
+        if(!serverDirectoryBrowserState.open || Number(serverDirectoryBrowserState.generation || 0) !== generation) return;
+        setServerDirectoryBrowserState({
+            ...serverDirectoryBrowserState,
+            path:response.path ?? null,
+            parent:response.parent ?? null,
+            directories:Array.isArray(response.directories) ? response.directories : [],
+            truncated:Boolean(response.truncated),
+            limit:Number(response.limit) || 100,
+            loading:false,
+            abortController:null,
+            error:''
+        });
+    } catch(error){
+        if(!serverDirectoryBrowserState.open || Number(serverDirectoryBrowserState.generation || 0) !== generation) return;
+        if(error?.name === 'AbortError' && !ctl.timedOut()) return;
+        const message = ctl.timedOut()
+            ? '读取服务器目录超时（超过 8 秒），请重试或关闭'
+            : (error?.message || '服务器目录读取失败');
+        setServerDirectoryBrowserState({...serverDirectoryBrowserState, loading:false, abortController:null, error:message});
+    } finally {
+        ctl.cleanup();
+    }
+    renderServerDirectoryBrowserHost();
+}
+
+async function _validateServerResourceDirectoryImpl(pathValue, options={}){
+    const target = String(pathValue || '').trim();
+    if(!target) throw new Error('请选择资源文件夹');
+    const timeoutMs = Number(options.timeoutMs) > 0 ? Number(options.timeoutMs) : 8000;
+    if(options.signal?.aborted){
+        const abortErr = new Error('已取消目录校验');
+        abortErr.name = 'AbortError';
+        throw abortErr;
+    }
+    const ctl = _createDirectoryAbortController({...options, timeoutMs});
+    try {
+        const reqInit = {method:'GET', credentials:'same-origin'};
+        if(ctl.controller) reqInit.signal = ctl.controller.signal;
+        const response = await apiJsonResponse(assetManagerHttp.request(
+            '/api/storage-settings/browse?path=' + encodeURIComponent(target),
+            reqInit,
+        ));
+        return String(response?.path || target);
+    } catch(error){
+        if(ctl.timedOut()){
+            const timeoutErr = new Error('服务端目录校验超时（超过 8 秒），请重试');
+            timeoutErr.code = 'DIRECTORY_BROWSE_TIMEOUT';
+            throw timeoutErr;
+        }
+        throw error;
+    } finally {
+        ctl.cleanup();
+    }
 }
