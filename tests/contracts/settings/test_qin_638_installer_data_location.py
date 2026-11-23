@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -56,8 +57,9 @@ def test_fresh_install_writes_single_pointer_and_prod_cold_reads_same_location(t
 
 def test_paths_non_overlapping_normalizes_case_and_trailing_separators(tmp_path: Path) -> None:
     base = tmp_path / "Gods Workbench"
-    assert paths_non_overlapping(str(base), str(base) + "\\") is False
-    assert paths_non_overlapping(str(base).upper(), str(base).lower()) is False
+    assert paths_non_overlapping(str(base), str(base) + os.sep) is False
+    if os.name == "nt":
+        assert paths_non_overlapping(str(base).upper(), str(base).lower()) is False
     assert paths_non_overlapping(base, base / "data") is False
     assert paths_non_overlapping(base / "app", base) is False
     assert paths_non_overlapping(base, tmp_path / "Gods Workbench data") is True
