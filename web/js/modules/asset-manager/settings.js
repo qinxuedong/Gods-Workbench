@@ -1773,7 +1773,7 @@ function renderGlobalDirectorySettings(){
         host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${renderDataLocationBanner()}
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
-        ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取目录设置…'}</p>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        ${!directorySettingsReady ? `<div class="directory-status" role="status">${directorySettingsError ? '<span>请检查权限或连接后重新读取。</span> <button type="button" class="hw-btn" data-directory-reload data-directory-retry><i data-lucide="refresh-cw"></i>重试读取</button>' : '正在读取目录设置…'}</div>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
         <div class="directory-cards-column directory-cards-column--left">
         <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>客户端与默认目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div></section>
         ${renderDataLocationCard()}
@@ -3488,6 +3488,7 @@ export {
 // ---------------------------------------------------------------------------
 // QIN-627：数据位置卡片（当前根、四类分离、预检、迁移、只读横幅）
 // ---------------------------------------------------------------------------
+const DATA_LOCATION_LOAD_TIMEOUT_MS = 8000;
 const dataLocationState = {
     loading: false,
     ready: false,
@@ -3497,6 +3498,8 @@ const dataLocationState = {
     target: "",
     busy: false,
     poll: null,
+    seq: 0,
+    controller: null,
 };
 
 function dataLocationFormatBytes(value){
@@ -3563,7 +3566,7 @@ function renderDataLocationCard(){
     if(!dataLocationState.ready){
         return `<section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card data-location-card" data-board-data-location>
             <div class="asset-pref-title"><i data-lucide="database"></i><span>数据位置</span><button class="hw-btn hw-btn-icon" type="button" data-data-location-refresh title="重新读取数据位置" aria-label="重新读取数据位置"><i data-lucide="refresh-cw"></i></button></div>
-            ${errorBox || `<p class="directory-status" role="status">${dataLocationState.loading ? "正在读取数据位置…" : "等待读取数据位置"}</p>`}
+            ${errorBox ? `${errorBox}<div class="data-location-actions"><button class="hw-btn" type="button" data-data-location-refresh data-data-location-retry><i data-lucide="refresh-cw"></i>重试读取</button></div>` : `<p class="directory-status" role="status">${dataLocationState.loading ? "正在读取数据位置…" : "等待读取数据位置"}</p>`}
         </section>`;
     }
     return `<section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card data-location-card" data-board-data-location>
@@ -3600,7 +3603,7 @@ function renderDataLocationCard(){
 }
 
 function refreshDataLocationDom(){
-    const host = document.getElementById('storageSettingsOverlay');
+    const host = document.getElementById('storageSettingsOverlay') || document.getElementById('assetManagerRoot');
     if(!host) return;
     const card = host.querySelector('[data-board-data-location]');
     if(card) card.outerHTML = renderDataLocationCard();
@@ -3609,24 +3612,52 @@ function refreshDataLocationDom(){
     refreshIcons();
 }
 
-async function loadDataLocationData(){
-    if(dataLocationState.loading) return;
+async function loadDataLocationData({force = false} = {}){
+    if(dataLocationState.loading && !force) return;
+    const seq = ++dataLocationState.seq;
+    if(dataLocationState.controller){
+        try { dataLocationState.controller.abort(); } catch(_) {}
+    }
+    const controller = typeof AbortController === 'function' ? new AbortController() : null;
+    dataLocationState.controller = controller;
     dataLocationState.loading = true;
+    dataLocationState.error = '';
     refreshDataLocationDom();
+    let timer = 0;
     try{
-        const snapshot = await apiJsonResponse(fetch('/api/data-location', {credentials:'same-origin', cache:'no-store'}));
+        const timeoutPromise = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                try { controller?.abort?.(); } catch(_) {}
+                reject(new Error('读取数据位置超时（超过 8 秒），请重试。'));
+            }, DATA_LOCATION_LOAD_TIMEOUT_MS);
+        });
+        const requestInit = {credentials:'same-origin', cache:'no-store', ...(controller ? {signal: controller.signal} : {})};
+        const snapshot = await Promise.race([
+            apiJsonResponse(fetch('/api/data-location', requestInit)),
+            timeoutPromise,
+        ]);
+        if(seq !== dataLocationState.seq) return;
         dataLocationState.snapshot = snapshot;
         dataLocationState.error = '';
         dataLocationState.ready = true;
         if(dataLocationReadOnly()) dataLocationState.check = null;
     }catch(error){
-        dataLocationState.error = error.message || '数据位置读取失败';
+        if(seq !== dataLocationState.seq) return;
+        dataLocationState.error = error?.name === 'AbortError'
+            ? '读取数据位置已取消或超时，请重试。'
+            : (error?.message || '数据位置读取失败');
     }finally{
-        dataLocationState.loading = false;
-        refreshDataLocationDom();
-        if(dataLocationActiveMigration()){
-            clearTimeout(dataLocationState.poll);
-            dataLocationState.poll = setTimeout(() => { loadDataLocationData(); }, 900);
+        clearTimeout(timer);
+        if(dataLocationState.controller === controller){
+            dataLocationState.controller = null;
+        }
+        if(seq === dataLocationState.seq){
+            dataLocationState.loading = false;
+            refreshDataLocationDom();
+            if(dataLocationActiveMigration()){
+                clearTimeout(dataLocationState.poll);
+                dataLocationState.poll = setTimeout(() => { loadDataLocationData(); }, 900);
+            }
         }
     }
 }
@@ -3725,7 +3756,7 @@ async function rollbackDataLocation(){
 }
 
 function handleDataLocationClick(event){
-    if(event.target.closest('[data-data-location-refresh]')){ loadDataLocationData(); return; }
+    if(event.target.closest('[data-data-location-refresh]')){ loadDataLocationData({force: true}); return; }
     if(event.target.closest('[data-data-location-check]')){ checkDataLocationTarget(); return; }
     if(event.target.closest('[data-data-location-start]')){ startDataLocationMigration(); return; }
     if(event.target.closest('[data-data-location-cancel]')){ cancelDataLocationMigration(); return; }

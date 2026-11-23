@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 781,
+  "authorization_basis": "GitHub Issue #781 QIN-636, 2026-11-23",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-636-directory-settings-load.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-781.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-636-directory-settings-load.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #781 QIN-636, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-636: 目录设置与数据位置读取 8s 超时离开纯 loading、代际防乱序、Tauri bridge 有界降级与可点击重试；只写本票分片，基础卫生账本与硬计数保持不变。"
+}
