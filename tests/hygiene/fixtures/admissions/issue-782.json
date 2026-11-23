@@ -1,0 +1,25 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 782,
+  "authorization_basis": "GitHub Issue #782 QIN-637, 2026-11-23",
+  "files": [
+    "gw/settings/native_picker.py",
+    "tests/contracts/settings/test_qin411_412_native_picker.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-637-install-folder-picker-and-root-menu.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-782.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-637-install-folder-picker-and-root-menu.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #782 QIN-637, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-637: 安装包添加资源文件夹选夹（AC-A）与侧栏已添加资源根右键菜单（AC-B）回归修复；只写本票分片，基础账本与硬计数保持不变。"
+}
