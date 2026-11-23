@@ -406,6 +406,8 @@ window.WorkbenchAssets = (() => {
 
   function closeShellOrganizeMenu() {
     document.getElementById('assetOrganizeMenu')?.remove();
+    const catEl = (typeof categories !== 'undefined' && categories) || document.getElementById('assetCategories');
+    catEl?.querySelectorAll?.('.is-context-open').forEach(el => el.classList.remove('is-context-open'));
   }
 
   function showShellOrganizeToast(text, undoable = false) {
@@ -422,6 +424,12 @@ window.WorkbenchAssets = (() => {
 
   function openShellOrganizeMenu(target, clientX, clientY) {
     closeShellOrganizeMenu();
+    const catEl = (typeof categories !== 'undefined' && categories) || document.getElementById('assetCategories');
+    if (target?.key && catEl?.querySelector) {
+      try {
+        catEl.querySelector(`[data-asset-tree-entry="${CSS.escape(String(target.key))}"]`)?.classList.add('is-context-open');
+      } catch (_) {}
+    }
     const menu = document.createElement('div');
     menu.id = 'assetOrganizeMenu';
     menu.className = 'asset-organize-menu';
@@ -475,8 +483,8 @@ window.WorkbenchAssets = (() => {
       menu.appendChild(btn);
     });
 
-    menu.style.left = `${Math.min(clientX, window.innerWidth - 230)}px`;
-    menu.style.top = `${Math.min(clientY, window.innerHeight - 180)}px`;
+    menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - 230))}px`;
+    menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - 240))}px`;
     document.body.appendChild(menu);
     window.lucide?.createIcons();
   }
@@ -828,11 +836,11 @@ window.WorkbenchAssets = (() => {
       }
     });
 
-    // 右键整理菜单
+    // 右键整理菜单：左栏树区域统一屏蔽浏览器原生菜单，仅可整理节点唤起黑金自定义菜单
     button.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
       if (organizeBridge()?.canOrganize(row.key)) {
-        e.preventDefault();
-        e.stopPropagation();
         openShellOrganizeMenu(row, e.clientX, e.clientY);
       }
     });
@@ -1139,10 +1147,24 @@ window.WorkbenchAssets = (() => {
       requestSidebarSnapshot();
     }).catch(error => { setVaultStatus(error.message); });
   }
+  let boundCategories = null;
+  let categoriesContextMenuHandler = null;
   function bindElements() {
     frame = document.getElementById('assetVaultFrame');
     status = document.getElementById('assetVaultStatus');
     categories = document.getElementById('assetCategories');
+    if (categories !== boundCategories) {
+      if (boundCategories && categoriesContextMenuHandler) {
+        boundCategories.removeEventListener('contextmenu', categoriesContextMenuHandler);
+      }
+      boundCategories = categories;
+      if (boundCategories) {
+        categoriesContextMenuHandler = (e) => { e.preventDefault(); };
+        boundCategories.addEventListener('contextmenu', categoriesContextMenuHandler);
+      } else {
+        categoriesContextMenuHandler = null;
+      }
+    }
     const nextCreateButton = document.getElementById('assetSidebarCreate');
     if (nextCreateButton !== createButton) {
       createButton?.removeEventListener('click', createButtonClickHandler);

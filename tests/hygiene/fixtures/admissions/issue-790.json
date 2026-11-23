@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 790,
+  "authorization_basis": "GitHub Issue #790 QIN-641, 2026-11-23",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-625-resource-folder-regression.test.mjs",
+    "tests/frontend/qin-641-resource-folder-ux.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-790.json",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/organize.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-641-resource-folder-ux.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #790 QIN-641, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-641: 修复添加资源文件夹选夹自动提交、未自动填名及左栏右键/移出刷新问题；只写本票分片，基础账本与硬计数保持不变。"
+}
