@@ -943,28 +943,17 @@
       if (!quiet || !authGate.isAuthenticated()) window.dispatchEvent(new CustomEvent('gw-auth-state', { detail: { ...this.authState } }));
       if (!quiet && authGate.isAuthenticated()) { this.syncTelemetry(); this.syncOnlineStatus(); this.syncStageProgress(); }
 
-      // QIN-633 个人本机可信直入守卫：
+      // QIN-633 / QIN-634 个人本机可信直入守卫：
       // 正在兑换或已认证时，绝不误弹「首次设置 · 创建管理员」；
-      // 若已认证且已建立本机身份：
-      // 1. 若携带有首启一次性恢复码且尚未展示，安全展示恢复码保存弹窗；
-      // 2. 否则若 accountModal 打开且展示的不是恢复码，安全关闭。
+      // 个人本机模式下已认证且已建立本机身份时，静默直入工作台（不弹恢复码或登录窗，
+      // 恢复找回能力保留在底层待团队协作接入）；若 accountModal 处于打开状态则安全关闭。
       const isBootstrapping = Boolean(window.GWTrustedLocal && (window.GWTrustedLocal.state === 'bootstrapping'));
-      const pendingCodes = this.authState.trusted_local?.recovery_codes;
-      const hasRecoveryCodes = Array.isArray(pendingCodes) && pendingCodes.length > 0;
       if (this.authState.auth_mode === 'local_account' && this.authState.setup_required && !this.authState.authenticated && !isBootstrapping && !this.setupPromptShown) {
         this.setupPromptShown = true;
         this.openAccountModal();
       } else if (this.authState.authenticated && this.authState.trusted_local?.established) {
-        if (hasRecoveryCodes && !this.recoveryCodesShown) {
-          const shown = this.renderTrustedLocalRecoveryCodes(pendingCodes);
-          if (shown) {
-            this.recoveryCodesShown = true;
-          }
-        } else if (document.getElementById('accountModal')?.classList.contains('open')) {
-          const isRecoveryDialog = Boolean(document.getElementById('localRecoveryCodes'));
-          if (!isRecoveryDialog) {
-            this.closeModal('accountModal');
-          }
+        if (document.getElementById('accountModal')?.classList.contains('open')) {
+          this.closeModal('accountModal');
         }
       } else if (document.getElementById('accountModal')?.classList.contains('open')) {
         this.renderAccountModalContent();
