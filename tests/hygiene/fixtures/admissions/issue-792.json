@@ -1,0 +1,23 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 792,
+  "authorization_basis": "GitHub Issue #792 QIN-643, 2026-11-23",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-643-task-center-ux.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-792.json",
+    "web/css/pages/task-center.css",
+    "web/js/modules/i18n/task-center.js",
+    "web/js/modules/task-center.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-643-task-center-ux.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #792 QIN-643, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-643: 修复协作「中心」6 列合理列宽与黑金样式、任务详情中文错误码解释与主次折叠层级、5 秒无变化静默刷新及正常态降级红框误报；仅写本票分片，基础卫生账本与硬计数保持不变。"
+}

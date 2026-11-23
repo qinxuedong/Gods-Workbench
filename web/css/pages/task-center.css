@@ -113,3 +113,204 @@ body.gw-page--task-center .data-gap.is-error {
   border-radius: var(--sf-radius-control, 6px);
   padding: 12px;
 }
+
+/* QIN-643 AC1: 对齐黑金硬件设计系统与 6 列表格合理列宽，防止操作列与时间列被截断 */
+body.gw-page--task-center .task-table-wrap {
+  background: var(--sf-content) !important;
+  border: 1px solid var(--sf-line) !important;
+  border-radius: var(--sf-radius-panel, 8px) !important;
+  overflow-x: auto;
+}
+body.gw-page--task-center .task-table {
+  width: 100%;
+  min-width: 560px;
+  table-layout: fixed;
+  border-collapse: separate;
+  border-spacing: 0;
+  color: var(--sf-text);
+}
+body.gw-page--task-center .task-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 38px;
+  padding: 0 10px;
+  background: var(--sf-surface) !important;
+  color: var(--sf-muted) !important;
+  border-bottom: 1px solid var(--sf-line) !important;
+  font-size: var(--gw-type-label-md, 12px) !important;
+  font-weight: var(--gw-weight-medium, 500) !important;
+  text-align: left;
+  white-space: nowrap;
+}
+body.gw-page--task-center .task-table th:nth-child(1) { width: auto; min-width: 168px; }
+body.gw-page--task-center .task-table th:nth-child(2) { width: 78px; }
+body.gw-page--task-center .task-table th:nth-child(3) { width: 92px; }
+body.gw-page--task-center .task-table th:nth-child(4) { width: 108px; }
+body.gw-page--task-center .task-table th:nth-child(5) { width: 112px; }
+body.gw-page--task-center .task-table th:nth-child(6) { width: 96px; text-align: right; }
+
+body.gw-page--task-center .task-table tbody td {
+  padding: 10px;
+  vertical-align: middle;
+  border-bottom: 1px solid var(--sf-line) !important;
+  color: var(--sf-text) !important;
+  font-size: var(--gw-type-body-sm, 13px);
+}
+body.gw-page--task-center .task-table tbody tr:last-child td {
+  border-bottom: 0 !important;
+}
+body.gw-page--task-center .task-table tbody tr:hover td {
+  background: rgba(223, 195, 132, 0.06) !important;
+}
+body.gw-page--task-center .task-table tbody tr.is-selected td {
+  background: rgba(223, 195, 132, 0.11) !important;
+}
+body.gw-page--task-center .task-table tbody tr.is-selected td:first-child {
+  box-shadow: inset 2px 0 0 var(--gold-primary);
+}
+body.gw-page--task-center .task-table tbody td:nth-child(5) {
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--gw-type-label-md, 12px);
+  color: var(--sf-muted) !important;
+}
+body.gw-page--task-center .task-table tbody td:nth-child(6) {
+  white-space: nowrap;
+  text-align: right;
+}
+body.gw-page--task-center .task-table tbody td:nth-child(6) .hw-btn {
+  white-space: nowrap;
+}
+body.gw-page--task-center .task-detail-trigger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--sf-text);
+  text-align: left;
+  cursor: pointer;
+}
+body.gw-page--task-center .task-detail-trigger strong {
+  display: block;
+  max-width: 100%;
+  color: var(--sf-text);
+  font-weight: var(--gw-weight-medium, 500);
+  overflow-wrap: anywhere;
+}
+body.gw-page--task-center .task-detail-trigger span {
+  display: block;
+  max-width: 100%;
+  color: var(--sf-muted);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-sm, 11px);
+  overflow-wrap: anywhere;
+}
+body.gw-page--task-center .task-detail-trigger:hover strong {
+  color: var(--gold-primary);
+}
+html[data-theme="light"] body.gw-page--task-center .task-detail-trigger:hover strong {
+  color: var(--accent-dark, var(--gold-primary));
+}
+
+/* QIN-643 AC2: 任务详情弹窗黑金样式与主次信息层级 */
+body.gw-page--task-center .task-detail-dialog {
+  padding: 0;
+  border: 1px solid var(--sf-line-strong) !important;
+  border-radius: var(--sf-radius-panel, 8px) !important;
+  background: var(--sf-surface) !important;
+  color: var(--sf-text) !important;
+}
+body.gw-page--task-center .task-detail-head {
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--sf-line);
+  background: var(--sf-surface);
+}
+body.gw-page--task-center .task-detail-head p {
+  color: var(--sf-muted);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-md, 12px);
+}
+body.gw-page--task-center .task-detail-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px 16px;
+  margin-bottom: 14px;
+  border: 1px solid var(--sf-line);
+  border-radius: var(--sf-radius-panel, 8px);
+  background: var(--sf-content);
+}
+body.gw-page--task-center .task-detail-summary-card.is-failed {
+  border-color: rgba(255, 127, 120, 0.45);
+  background: rgba(255, 127, 120, 0.06);
+}
+body.gw-page--task-center .task-detail-summary-card.is-succeeded {
+  border-color: rgba(223, 195, 132, 0.3);
+}
+body.gw-page--task-center .task-detail-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+body.gw-page--task-center .task-detail-summary-title {
+  margin: 0;
+  font-size: var(--gw-type-headline-sm, 16px);
+  font-weight: var(--gw-weight-bold, 700);
+  color: var(--sf-text);
+}
+body.gw-page--task-center .task-detail-summary-text {
+  margin: 0;
+  font-size: var(--gw-type-body-md, 14px);
+  line-height: 1.55;
+  color: var(--sf-text);
+}
+body.gw-page--task-center .task-detail-next-step {
+  margin: 2px 0 0;
+  padding: 8px 10px;
+  border-radius: var(--sf-radius-control, 6px);
+  border-left: 3px solid var(--gold-primary);
+  background: rgba(223, 195, 132, 0.08);
+  font-size: var(--gw-type-body-sm, 13px);
+  line-height: 1.5;
+  color: var(--sf-text);
+}
+body.gw-page--task-center .task-detail-tech {
+  margin-top: 16px;
+  padding: 10px 12px;
+  border: 1px dashed var(--sf-line);
+  border-radius: var(--sf-radius-control, 6px);
+  background: rgba(255, 255, 255, 0.02);
+}
+body.gw-page--task-center .task-detail-tech > summary {
+  cursor: pointer;
+  user-select: none;
+  font-size: var(--gw-type-label-md, 12px);
+  font-weight: var(--gw-weight-medium, 500);
+  color: var(--sf-muted);
+}
+body.gw-page--task-center .task-detail-tech[open] > summary {
+  margin-bottom: 12px;
+  color: var(--sf-text);
+}
+body.gw-page--task-center .task-detail-tech pre {
+  margin: 0;
+  padding: 10px;
+  border-radius: var(--sf-radius-control, 6px);
+  background: var(--sf-surface);
+  border: 1px solid var(--sf-line);
+  font-family: var(--gw-font-mono);
+  font-size: var(--gw-type-label-md, 12px);
+  overflow-x: auto;
+  color: var(--sf-muted);
+}
+body.gw-page--task-center .observability-notice {
+  border-radius: var(--sf-radius-control, 6px);
+}
