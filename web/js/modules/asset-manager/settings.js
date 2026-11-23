@@ -1721,7 +1721,7 @@ function renderPurgeConfirmModal(){
 function renderAllowedRootsSettings(){
     if(!canManageAllowedRoots()) return '';
     const statusLabel = root => root.availability === 'available' ? '在线'
-        : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
+        : root.availability === 'probing' ? '探活中' : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
     const seenPaths = new Set();
     const uniqueRoots = [];
     for(const root of (allowedRootSettingsState.roots || [])){
@@ -1768,7 +1768,7 @@ function renderGlobalDirectorySettings(){
     if(permissionsSettingsPage){
         host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="shield-check"></i>允许根权限管理</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取允许根配置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
-        ${!directorySettingsReady ? `<p class="directory-status" role="status">${directorySettingsError ? '请检查权限或连接后重新读取。' : '正在读取允许根权限…'}</p>` : `<fieldset class="permissions-roots-fieldset" ${directorySettingsSaving ? 'disabled' : ''}>${renderAllowedRootsSettings()}</fieldset>${renderWorkspaceSettingsBody()}${renderServerDirectoryBrowser()}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
+        ${!directorySettingsReady ? `<div class="directory-status" role="status">${directorySettingsError ? '<span>请检查权限或连接后重新读取。</span> <button type="button" class="hw-btn" data-directory-reload data-directory-retry><i data-lucide="refresh-cw"></i>重试读取</button>' : '正在读取允许根权限…'}</div>` : `<fieldset class="permissions-roots-fieldset" ${directorySettingsSaving ? 'disabled' : ''}>${renderAllowedRootsSettings()}</fieldset>${renderWorkspaceSettingsBody()}${renderServerDirectoryBrowser()}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
     } else {
         host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${renderDataLocationBanner()}

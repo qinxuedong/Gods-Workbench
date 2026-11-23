@@ -1,0 +1,32 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 791,
+  "authorization_basis": "GitHub Issue #791 QIN-642, 2026-11-23",
+  "files": [
+    "gw/api/routes_settings.py",
+    "gw/core/storage.py",
+    "gw/settings/service.py",
+    "tests/contracts/settings/test_qin_642_mapped_drive_and_fast_roots.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-642-directory-settings-fast-boot.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-791.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/settings/test_qin_642_mapped_drive_and_fast_roots.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #791 QIN-642, 2026-11-23",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-642-directory-settings-fast-boot.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #791 QIN-642, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-642: Windows 映射网络盘同命名空间重解析对齐与跨权限会话指引、允许根快速快照（probe=0）及目录设置首屏异步拆解；只写本票分片，基础卫生账本与硬计数保持不变。"
+}
