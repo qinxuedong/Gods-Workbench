@@ -57,6 +57,8 @@ fn command_for(python: &Path, backend_root: &Path, args: &[&str]) -> Command {
         .env("GW_RUNTIME_MODE", "prod")
         .env("GW_HOST", "127.0.0.1")
         .env("GW_PORT", "2077")
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -182,7 +184,7 @@ pub fn issue_ticket(
     if !status.success() {
         return Err("本机票据签发失败，请使用密码登录".into());
     }
-    let text = String::from_utf8(stdout).map_err(|_| "本机票据输出不是有效文本".to_string())?;
+    let text = String::from_utf8_lossy(&stdout);
     parse_ticket_url(&text, host, port)
 }
 
