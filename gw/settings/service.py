@@ -1003,7 +1003,7 @@ class StorageAllowedRootsService:
             pass
         return identities
 
-    def get_snapshot(self) -> StorageAllowedRootsSnapshot:
+    def get_snapshot(self, *, probe: bool = True) -> StorageAllowedRootsSnapshot:
         state = self._state.read()
         try:
             purging_markers = _DEFAULT_CASCADE_HOOKS["purging_root_markers"]()
@@ -1011,6 +1011,13 @@ class StorageAllowedRootsService:
             purging_markers = {}
         if not isinstance(purging_markers, dict):
             purging_markers = {}
+
+        def _probing_status() -> dict[str, str]:
+            return {
+                "availability": "probing",
+                "availability_reason": "",
+                "availability_message": "正在检查目录连接…",
+            }
 
         roots: list[StorageAllowedRoot] = []
         for path in storage.environment_allowed_roots():
@@ -1020,12 +1027,16 @@ class StorageAllowedRootsService:
                 str(item)
                 for item in state.get("system_aliases", {}).get(root_id, [])
             ]
-            candidates = [
-                item
-                for item in storage.mount_alias_candidates(path_text)
-                if storage.directory_path_key(item["path"])
-                not in {storage.directory_path_key(alias) for alias in aliases}
-            ]
+            candidates = (
+                [
+                    item
+                    for item in storage.mount_alias_candidates(path_text)
+                    if storage.directory_path_key(item["path"])
+                    not in {storage.directory_path_key(alias) for alias in aliases}
+                ]
+                if probe
+                else []
+            )
             roots.append(
                 StorageAllowedRoot(
                     id=root_id,
@@ -1034,7 +1045,7 @@ class StorageAllowedRootsService:
                     read_only=True,
                     aliases=aliases,
                     alias_candidates=candidates,
-                    **self._path_status(path_text),
+                    **(self._path_status(path_text) if probe else _probing_status()),
                 )
             )
         clean_records = _deduplicate_root_records(state.get("roots", []))
@@ -1053,14 +1064,18 @@ class StorageAllowedRootsService:
                 }
                 candidates = []
             elif active:
-                status = self._path_status(path_text)
                 aliases = [str(item) for item in record.get("aliases", [])]
-                candidates = [
-                    item
-                    for item in storage.mount_alias_candidates(path_text)
-                    if storage.directory_path_key(item["path"])
-                    not in {storage.directory_path_key(alias) for alias in aliases}
-                ]
+                if probe:
+                    status = self._path_status(path_text)
+                    candidates = [
+                        item
+                        for item in storage.mount_alias_candidates(path_text)
+                        if storage.directory_path_key(item["path"])
+                        not in {storage.directory_path_key(alias) for alias in aliases}
+                    ]
+                else:
+                    status = _probing_status()
+                    candidates = []
             else:
                 status = {
                     "availability": "removed",

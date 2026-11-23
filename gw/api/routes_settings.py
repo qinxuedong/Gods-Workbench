@@ -264,11 +264,12 @@ def _require_storage_admin(authorization: str | None, x_user_role: str):
     status_code=status.HTTP_200_OK,
 )
 def get_storage_allowed_roots(
+    probe: bool = Query(True, description="是否执行磁盘与网络挂载探活；传 false 可秒级返回基础允许根列表"),
     authorization: str | None = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role", description="用户角色权限"),
 ):
     _require_storage_admin(authorization, x_user_role)
-    return default_storage_allowed_roots_service.get_snapshot()
+    return default_storage_allowed_roots_service.get_snapshot(probe=probe)
 
 
 @router.post(

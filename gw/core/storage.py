@@ -336,6 +336,19 @@ def _iter_reparse_points(path: Path) -> Iterator[Path]:
             yield current
 
 
+def _reparse_target_within_root(path: Path, target: Path, root: Path) -> bool:
+    """检查重解析点目标是否位于允许根内；同盘符命名空间下兼容映射盘 resolve 展开。"""
+    if target == root or target.is_relative_to(root):
+        return True
+    if not _same_path_namespace(path, root):
+        return False
+    try:
+        resolved_root = root.resolve()
+    except (OSError, RuntimeError, ValueError):
+        return False
+    return target == resolved_root or target.is_relative_to(resolved_root)
+
+
 def _ensure_reparse_targets_within_roots(path: Path, roots: list[Path]) -> None:
     """Windows 路径经重解析点时，逐个确认目标仍位于授权根内。"""
     if os.name != "nt":
@@ -343,7 +356,7 @@ def _ensure_reparse_targets_within_roots(path: Path, roots: list[Path]) -> None:
     try:
         for reparse_point in _iter_reparse_points(path):
             target = reparse_point.resolve()
-            if not any(target == root or target.is_relative_to(root) for root in roots):
+            if not any(_reparse_target_within_root(path, target, root) for root in roots):
                 raise CleanroomException(
                     403,
                     "PATH_OUTSIDE_ALLOWED_ROOTS",
@@ -692,6 +705,21 @@ def _network_root_path(raw_path: str) -> str | None:
     return None
 
 
+def _is_unmapped_windows_drive(raw_path: str) -> bool:
+    """识别 Windows 当前会话下未挂载的盘符（如跨权限会话不可见的映射网络盘）。"""
+    if os.name != "nt":
+        return False
+    drive, _tail = ntpath.splitdrive(raw_path)
+    if not drive or drive.startswith(("\\\\", "//")):
+        return False
+    try:
+        import ctypes
+
+        return ctypes.windll.kernel32.GetDriveTypeW(drive + "\\") == 1
+    except (AttributeError, OSError, ValueError):
+        return False
+
+
 def _probe_mount_sync(raw_path: str) -> dict[str, str | bool]:
     candidate = Path(raw_path)
     network_path = _is_network_path(raw_path)
@@ -715,7 +743,10 @@ def _probe_mount_sync(raw_path: str) -> dict[str, str | bool]:
                 message = "当前服务账户无权读取该网络共享"
             except OSError:
                 code = "MOUNT_OFFLINE"
-                message = "网络目录不可达，或服务账户看不到映射盘"
+                message = "网络目录不可达，或当前服务会话看不到映射盘；可改用 UNC 共享路径（如 \\\\服务器\\共享名\\...）"
+        elif _is_unmapped_windows_drive(raw_path):
+            code = "MOUNT_OFFLINE"
+            message = "该盘符在当前服务会话不可见或未连接；若为映射网络盘，请在同用户会话运行或改用 UNC 共享路径（如 \\\\服务器\\共享名\\...）"
         return {"available": False, "reason": code, "message": message}
     except PermissionError:
         return {"available": False, "reason": "MOUNT_ACCESS_DENIED", "message": "当前服务账户无权读取该目录"}
