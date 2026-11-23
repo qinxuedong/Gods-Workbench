@@ -218,3 +218,62 @@ def test_pick_native_response_never_fabricates_paths(monkeypatch, status_value, 
         )
     assert response.status_code == 200, response.text
     assert response.json()["path"] is None
+
+
+def test_pick_directory_win32_fallback_when_tkinter_missing(monkeypatch):
+    """Windows 无 tkinter（如 CPython embeddable）时子进程脚本应走 _pick_win32_com 回退，并返回三态结构。"""
+    import builtins
+    import io
+    import json
+    import sys
+
+    ns: dict[str, object] = {}
+    exec(compile(native_picker._PICKER_CHILD_SCRIPT, "<picker_child>", "exec"), ns)  # noqa: S102
+
+    real_import = builtins.__import__
+
+    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+        if name == "tkinter":
+            raise ImportError("No module named 'tkinter'")
+        return real_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", fake_import)
+    monkeypatch.setattr(sys, "platform", "win32")
+    monkeypatch.setattr(sys, "argv", ["picker", "选择文件夹", ""])
+
+    for expected in (
+        {"status": "selected", "path": "<win32-picked-dir>"},
+        {"status": "cancelled"},
+        {"status": "unavailable", "reason": "win32-dialog-error"},
+    ):
+        buf = io.StringIO()
+        monkeypatch.setattr(sys, "stdout", buf)
+        monkeypatch.setitem(ns, "_pick_win32_com", lambda title, initial_dir, res=expected: res)
+        rc = ns["main"]()
+        assert rc == 0
+        assert json.loads(buf.getvalue().strip()) == expected
+
+
+def test_pick_directory_parses_selected_and_passes_no_window_on_win32(monkeypatch):
+    """子进程成功返回 selected 时正确解析，并在 Windows 上传入 CREATE_NO_WINDOW。"""
+    import sys
+
+    captured: dict[str, object] = {}
+
+    def fake_run(cmd, **kwargs):
+        captured["cmd"] = cmd
+        captured["kwargs"] = kwargs
+        return subprocess.CompletedProcess(
+            cmd,
+            0,
+            stdout='{"status": "selected", "path": "<win32-folder>"}\n',
+            stderr="",
+        )
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = native_picker.pick_directory("选择文件夹", "<initial>", timeout_seconds=15)
+    assert result == {"status": "selected", "path": "<win32-folder>", "reason": None}
+    assert captured["kwargs"]["timeout"] == 15
+    assert captured["kwargs"]["shell"] is False
+    if sys.platform == "win32":
+        assert captured["kwargs"]["creationflags"] == getattr(subprocess, "CREATE_NO_WINDOW", 0)

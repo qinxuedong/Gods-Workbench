@@ -6651,6 +6651,7 @@ function assetRackRoots(){
         return facets.map(root => ({
             id:String(root.id || ''),
             name:String(root.name || '未命名来源'),
+            path:String(root.path || ''),
             count:Number(root.count || 0),
             availability:String(root.availability || ''),
             aliases:Array.isArray(root.aliases) ? root.aliases.map(String) : [],
@@ -6717,14 +6718,19 @@ let registryDiskFolderPermissionDenied = false;
 let registryDiskFolderPermissionNoticed = false;
 let assetAllowedRootPathsPromise = null;
 const assetAllowedRootPaths = new Map();
-async function loadAssetAllowedRootPaths(){
+async function loadAssetAllowedRootPaths(options={}){
     // 历史索引根（root_xxx）不在本机库清单里，磁盘路径只能从允许根快照取；
-    // 快照仅 admin 可读，editor 403 时缓存保持为空，磁盘目录浏览自然降级为仅素材推导。
+    // 快照仅 admin 可读，editor 403 或冷启动未认证失败时不永久缓存空 Map，允许就绪后重试。
+    const force = Boolean(options?.force);
+    if(force) assetAllowedRootPathsPromise = null;
     if(assetAllowedRootPathsPromise) return assetAllowedRootPathsPromise;
-    assetAllowedRootPathsPromise = (async () => {
+    const promise = (async () => {
+        let succeeded = false;
         try {
             const snapshot = await apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin'}));
+            succeeded = true;
             gwCall('settings', 'applyAllowedRootSettingsData', snapshot);
+            assetAllowedRootPaths.clear();
             (Array.isArray(snapshot?.roots) ? snapshot.roots : []).forEach(root => {
                 const id = String(root?.id || '');
                 const path = String(root?.path || '').trim();
@@ -6737,9 +6743,12 @@ async function loadAssetAllowedRootPaths(){
                 }
             });
         } catch(_) {}
+        if(!succeeded && assetAllowedRootPathsPromise === promise) assetAllowedRootPathsPromise = null;
+        if(succeeded && typeof notifyShellTreeSnapshot === 'function') notifyShellTreeSnapshot();
         return assetAllowedRootPaths;
     })();
-    return assetAllowedRootPathsPromise;
+    assetAllowedRootPathsPromise = promise;
+    return promise;
 }
 function assetRackRootDiskPath(rootId){
     const id = String(rootId || '');
@@ -6747,7 +6756,7 @@ function assetRackRootDiskPath(rootId){
     const board = assetRackBoard();
     const source = (board?.sources || []).find(item => String(item.id || '') === id);
     const root = assetRackRoots().find(item => String(item.id || '') === id);
-    const path = source?.path || (root?.path || '') || assetAllowedRootPaths.get(id) || '';
+    const path = source?.path || (root?.path || '') || assetAllowedRootPaths.get(id) || assetTreeResolveRootPath(id, root?.name || '') || '';
     return String(path || '').trim();
 }
 function assetRackDiskDirectories(rootId, relPath=''){
@@ -7279,6 +7288,7 @@ function serializeAssetRackFolderNode(rootId, node, depth=1){
         key,
         name: node.name,
         path: node.path,
+        isRoot: false,
         count: loading ? '' : totalCount,
         loading,
         depth,
@@ -7306,8 +7316,13 @@ function gwAssetTreeSnapshot(){
         const loading = !hasFacet && root.count == null;
         const offline = String(root.availability || '').toLowerCase() === 'offline' || String(facetRoot?.availability || '').toLowerCase() === 'offline';
 
+        const resolvedPath = assetRackRootDiskPath(root.id);
         return {
             id: String(root.id || ''),
+            rootId: String(root.id || ''),
+            aliases: Array.isArray(root.aliases) ? root.aliases.map(String) : [],
+            path: resolvedPath,
+            isRoot: true,
             name: root.name,
             icon: 'hard-drive',
             count,
@@ -8056,8 +8071,15 @@ async function handleClick(event){
     }
     const directoryBrowserClose = target.closest?.('[data-server-directory-close]');
     if(directoryBrowserClose){
-        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false};
+        serverDirectoryBrowserState.abortController?.abort?.();
+        serverDirectoryBrowserState = {...serverDirectoryBrowserState, open:false, loading:false, abortController:null};
         gwCall('settings', 'renderServerDirectoryBrowserHost');
+        return;
+    }
+    const directoryBrowserRetry = target.closest?.('[data-server-directory-retry]');
+    if(directoryBrowserRetry){
+        const retryPath = directoryBrowserRetry.dataset.serverDirectoryRetry || null;
+        await gwCall('settings', 'loadServerDirectoryBrowser', retryPath || null);
         return;
     }
     const directoryBrowserParent = target.closest?.('[data-server-directory-parent]');
@@ -8274,39 +8296,66 @@ async function handleClick(event){
     if(target.closest?.('[data-board-source-close]')){ gwCall('organize', 'closeBoardSourceModal'); return; }
     if(target.closest?.('[data-board-source-editor-cancel]')){ gwCall('organize', 'cancelBoardSourceEditor'); return; }
     if(target.closest?.('[data-board-source-pick]')){
+        if(boardSourceState.picking || boardSourceState.validating || boardSourceState.saving) return;
+        boardSourceState.abortController?.abort?.();
         const generation = Number(boardSourceState.generation || 0) + 1;
+        const controller = typeof AbortController === 'function' ? new AbortController() : null;
         boardSourceState.generation = generation;
+        boardSourceState.abortController = controller;
         boardSourceState.error = '';
         boardSourceState.picking = true;
         boardSourceState.validating = false;
         gwCall('organize', 'renderBoardSourceModal');
-        await gwCall('settings', 'pickServerDirectoryNative', 'boardSource', {onSelect: async pathValue => {
-            if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
-            boardSourceState.existingId = '';
-            boardSourceState.path = String(pathValue || '').trim();
-            boardSourceState.picking = false;
-            boardSourceState.validating = true;
-            gwCall('organize', 'renderBoardSourceModal');
-            try {
-                const validatedPath = await gwCall('settings', 'validateServerResourceDirectory', boardSourceState.path);
+        await gwCall('settings', 'pickServerDirectoryNative', 'boardSource', {
+            signal: controller?.signal,
+            onCancel: () => {
                 if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
-                boardSourceState.path = String(validatedPath || boardSourceState.path).trim();
+                boardSourceState.picking = false;
                 boardSourceState.validating = false;
+                boardSourceState.abortController = null;
                 gwCall('organize', 'renderBoardSourceModal');
-            } catch(error) {
+            },
+            onUnavailable: reason => {
                 if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.picking = false;
                 boardSourceState.validating = false;
-                boardSourceState.error = Number(error?.status) === 400 || Number(error?.status) === 404 || Number(error?.status) >= 500
-                    ? '当前文件夹后端不可访问，需授权（共享）给后端'
-                    : (error?.message || '目录访问校验失败');
+                boardSourceState.abortController = null;
+                boardSourceState.error = `无法弹出本机原生文件夹选择对话框（${String(reason || '未知原因')}），请重试或手动输入路径`;
                 gwCall('organize', 'renderBoardSourceModal');
                 setStatus(boardSourceState.error);
-                return;
-            }
-            await gwCall('organize', 'confirmBoardSource', {atomicRegistration:true});
-        }});
+            },
+            onSelect: async pathValue => {
+                if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                boardSourceState.existingId = '';
+                boardSourceState.path = String(pathValue || '').trim();
+                boardSourceState.picking = false;
+                boardSourceState.validating = true;
+                gwCall('organize', 'renderBoardSourceModal');
+                try {
+                    const validatedPath = await gwCall('settings', 'validateServerResourceDirectory', boardSourceState.path, {signal:controller?.signal, timeoutMs:8000});
+                    if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                    boardSourceState.path = String(validatedPath || boardSourceState.path).trim();
+                    boardSourceState.validating = false;
+                    boardSourceState.abortController = null;
+                    gwCall('organize', 'renderBoardSourceModal');
+                } catch(error) {
+                    if(!boardSourceState.open || Number(boardSourceState.generation || 0) !== generation) return;
+                    if(error?.name === 'AbortError' && controller?.signal?.aborted) return;
+                    boardSourceState.validating = false;
+                    boardSourceState.abortController = null;
+                    boardSourceState.error = Number(error?.status) === 400 || Number(error?.status) === 404 || Number(error?.status) >= 500
+                        ? '当前文件夹后端不可访问，需授权（共享）给后端'
+                        : (error?.message || '目录访问校验失败');
+                    gwCall('organize', 'renderBoardSourceModal');
+                    setStatus(boardSourceState.error);
+                    return;
+                }
+                await gwCall('organize', 'confirmBoardSource', {atomicRegistration:true});
+            },
+        });
         if(boardSourceState.open && Number(boardSourceState.generation || 0) === generation){
             boardSourceState.picking = false;
+            boardSourceState.abortController = null;
             gwCall('organize', 'renderBoardSourceModal');
         }
         return;
@@ -11624,6 +11673,8 @@ function scheduleDeferredBootRequests(){
         // 【QIN-628 AC5】工作区指示器只展示执行端与结果落点；与治理建议同属首屏后读取，
         // 不在列表在途时再发一条非首屏请求。夹具未加载该域函数时安全跳过。
         if(typeof loadWorkspaceContext === 'function') void loadWorkspaceContext();
+        // QIN-637 AC-B：首屏就绪后主动拉取允许根路径并同步外壳侧栏，避免未展开子目录前右键根无路径可用。
+        if(typeof loadAssetAllowedRootPaths === 'function') void loadAssetAllowedRootPaths();
         // 用户可能已经在首屏期间点开收集箱：已加载过就不再补一次，避免同一份数据读两遍。
         if(!inboxLoaded){
             void gwLoad('inbox').then(m => m.loadAssetInbox()).then(() => {
