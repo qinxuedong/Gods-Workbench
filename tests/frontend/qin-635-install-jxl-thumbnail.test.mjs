@@ -35,15 +35,19 @@ test('QIN-635：.jxl 纳入缩略图代理准入且不纳入浏览器直通集�
 
 test('QIN-635：能力探测不支持 JXL 时 assetPreviewUrl 附带 fallback=webp，withPreviewFallbackUrl 幂等', () => {
   const factory = new Function(`
+    let clientJxlSupport = false;
+    let clientJxlProbePromise = null;
+    const JXL_SUPPORT_PROBE_URI = 'data:image/jxl;base64,/woIELASCAgQBABw';
     let thumbnailCacheVersion = 0;
     const ASSET_PREVIEW_RENDER_VERSION = '2026.08.01.5';
     const ASSET_VIDEO_EXTENSIONS = new Set(['mp4']);
     const ASSET_PREVIEW_EXTENSIONS = new Set(['jxl', 'png']);
     ${functionBody(ASSET_MANAGER, 'assetFileExtension')}
     ${functionBody(ASSET_MANAGER, 'assetSupportsImagePreview')}
+    ${functionBody(ASSET_MANAGER, 'detectJxlSupport')}
+    ${functionBody(ASSET_MANAGER, 'applyClientJxlFallbackParam')}
     ${functionBody(ASSET_MANAGER, 'withPreviewFallbackUrl')}
     ${functionBody(ASSET_MANAGER, 'assetPreviewUrl')}
-    clientJxlSupport = false;
     return { assetPreviewUrl, withPreviewFallbackUrl };
   `);
   const { assetPreviewUrl, withPreviewFallbackUrl } = factory();

@@ -1794,39 +1794,6 @@ function assetFileExtension(item={}){
 function assetSupportsImagePreview(item={}){
     return ASSET_PREVIEW_EXTENSIONS.has(assetFileExtension(item));
 }
-let clientJxlSupport = null;
-let clientJxlProbePromise = null;
-// 1x1 最小合法 JXL codestream，仅用于一次性非阻塞探测当前渲染内核是否支持 image/jxl。
-const JXL_SUPPORT_PROBE_URI = 'data:image/jxl;base64,/woIELASCAgQBABw';
-function detectJxlSupport(){
-    if(clientJxlSupport !== null) return Promise.resolve(clientJxlSupport);
-    if(clientJxlProbePromise) return clientJxlProbePromise;
-    if(typeof Image !== 'function') return Promise.resolve(null);
-    clientJxlProbePromise = new Promise(resolve => {
-        const probe = new Image();
-        const finish = (supported) => {
-            clientJxlSupport = supported;
-            resolve(supported);
-        };
-        probe.onload = () => finish(probe.naturalWidth > 0);
-        probe.onerror = () => finish(false);
-        probe.src = JXL_SUPPORT_PROBE_URI;
-    });
-    return clientJxlProbePromise;
-}
-function withPreviewFallbackUrl(src=''){
-    const raw = String(src || '');
-    if(!raw || !raw.includes('/api/media-preview')) return '';
-    try {
-        const base = typeof document !== 'undefined' && document.baseURI ? document.baseURI : 'http://localhost';
-        const parsed = new URL(raw, base);
-        if(parsed.searchParams.get('fallback') === 'webp') return '';
-        parsed.searchParams.set('fallback', 'webp');
-        return `${parsed.pathname}${parsed.search}`;
-    } catch(_) {
-        return raw.includes('fallback=webp') ? '' : `${raw}${raw.includes('?') ? '&' : '?'}fallback=webp`;
-    }
-}
 // 缩略图走服务端缩放代理（/api/media-preview），把大原图降到 ~256px 再传给浏览器。素材多时滚动只解码小图，
 // 不再因为加载/解码整张原图而卡。仅对本地 /output、/assets 的图片/视频生效，其它地址原样返回。
 function assetPreviewUrl(url, w=256, item={}){
@@ -1857,11 +1824,7 @@ function assetPreviewUrl(url, w=256, item={}){
         // 旧版 url 参数没有资产元数据，保留会话级版本（不再因任务完成而变化）
         if(thumbnailCacheVersion) params.set('v', String(thumbnailCacheVersion));
     }
-    if(!video){
-        if(clientJxlSupport === false) params.set('fallback', 'webp');
-        else if(clientJxlSupport === null) void detectJxlSupport();
-    }
-    return `/api/media-preview?${params.toString()}`;
+    if(!video) applyClientJxlFallbackParam(params); return `/api/media-preview?${params.toString()}`;
 }
 function assetVideoUrl(url, item={}){
     const raw = String(url || '');
@@ -5036,71 +4999,9 @@ async function loadAll(){
     const bootstrapOk = await registryBootstrap.then(() => true, () => false);
     if(bootstrapOk && registryRequestId === registryRequestSeq) registryBootstrapError = '';
 }
-const REGISTRY_PREVIEW_TIMEOUT_MS = 8000;
-const registryPreviewWatchdogs = new Map();
-let registryPreviewSrcObserver = null;
-function clearRegistryPreviewWatchdog(image){
-    const timer = registryPreviewWatchdogs.get(image);
-    if(timer){
-        clearTimeout(timer);
-        registryPreviewWatchdogs.delete(image);
-    }
-}
-function clearRegistryPreviewWatchdogs(){
-    for(const timer of registryPreviewWatchdogs.values()) clearTimeout(timer);
-    registryPreviewWatchdogs.clear();
-}
-function replaceImageWithPreviewUnavailable(image){
-    if(!image?.isConnected) return;
-    clearRegistryPreviewWatchdog(image);
-    const fallback = document.createElement('div');
-    fallback.className = 'asset-file-icon preview-unavailable';
-    fallback.innerHTML = `<i data-lucide="file-image"></i><span>${escapeHtml(image.dataset.previewFallback || '文件')}</span><small>暂无预览</small>`;
-    image.replaceWith(fallback);
-    refreshIcons();
-}
-function attachRegistryPreviewWatchdog(image, revision=registryPreviewScheduleRevision){
-    if(!image || !image.isConnected) return;
-    const src = image.getAttribute('src') || '';
-    if(!src || src === REGISTRY_PREVIEW_PLACEHOLDER) return;
-    if(image.complete && image.naturalWidth > 0){
-        clearRegistryPreviewWatchdog(image);
-        image.dataset.previewReady = 'true';
-        image.removeAttribute('aria-busy');
-        return;
-    }
-    clearRegistryPreviewWatchdog(image);
-    image.setAttribute('aria-busy', 'true');
-    if(image.dataset.previewWatchdogBound !== '1'){
-        image.dataset.previewWatchdogBound = '1';
-        image.addEventListener('load', () => {
-            clearRegistryPreviewWatchdog(image);
-            if(!image.isConnected) return;
-            image.dataset.previewReady = 'true';
-            image.removeAttribute('aria-busy');
-        });
-    }
-    const timer = setTimeout(() => {
-        registryPreviewWatchdogs.delete(image);
-        if(revision !== registryPreviewScheduleRevision || !image.isConnected) return;
-        const currentSrc = image.getAttribute('src') || image.src || '';
-        const fallbackUrl = image.dataset.jxlFallbackAttempted !== '1' ? withPreviewFallbackUrl(currentSrc) : '';
-        if(fallbackUrl){
-            image.dataset.jxlFallbackAttempted = '1';
-            attachRegistryPreviewWatchdog(image, revision);
-            image.src = fallbackUrl;
-            return;
-        }
-        image.dataset.registryPreviewFailed = 'true';
-        image.removeAttribute('aria-busy');
-        replaceImageWithPreviewUnavailable(image);
-    }, REGISTRY_PREVIEW_TIMEOUT_MS);
-    registryPreviewWatchdogs.set(image, timer);
-}
 function disconnectRegistryPreviewScheduling(){
     registryPreviewScheduleRevision += 1;
-    clearRegistryPreviewObservers();
-    clearRegistryPreviewWatchdogs();
+    clearRegistryPreviewObservers(); clearRegistryPreviewWatchdogs();
     registryPreviewQueueRevision += 1;
     registryPreviewQueue = [];
     registryVirtualScrollCleanup?.();
@@ -5115,9 +5016,7 @@ function disconnectRegistryPreviewScheduling(){
 }
 function clearRegistryPreviewObservers(){
     registryPreviewObserver?.disconnect?.();
-    registryPreviewObserver = null;
-    registryPreviewSrcObserver?.disconnect?.();
-    registryPreviewSrcObserver = null;
+    registryPreviewObserver = null; registryPreviewSrcObserver?.disconnect?.(); registryPreviewSrcObserver = null;
     registryPreviewFallbackCleanup?.();
     registryPreviewFallbackCleanup = null;
     gwCall('lut', 'clearRegistryLutThumbObserver');
@@ -5354,22 +5253,10 @@ function scheduleRegistryPreviewImages(){
         const scrollRoot = root.querySelector('.registry-assets-scroll');
         const images = [...root.querySelectorAll('img[data-registry-preview-src]')];
         if(!scrollRoot || !images.length) return;
-        if(typeof MutationObserver === 'function'){
-            const srcObserver = new MutationObserver(mutations => {
-                if(revision !== registryPreviewScheduleRevision) return;
-                mutations.forEach(mutation => {
-                    if(mutation.type === 'attributes' && mutation.target?.tagName === 'IMG'){
-                        attachRegistryPreviewWatchdog(mutation.target, revision);
-                    }
-                });
-            });
-            srcObserver.observe(scrollRoot, {subtree:true, attributes:true, attributeFilter:['src']});
-            registryPreviewSrcObserver = srcObserver;
-        }
         // Chromium can occasionally miss an observer notification while the
         // registry scroll container is being repainted. Keep the same
         // viewport-bounded scroll pass active even when the observer exists.
-        scheduleRegistryPreviewFallback(scrollRoot);
+        observeRegistryPreviewWatchdogs(scrollRoot, revision); scheduleRegistryPreviewFallback(scrollRoot);
         if(typeof IntersectionObserver !== 'function'){
             return;
         }
@@ -10401,6 +10288,118 @@ document.addEventListener('error', event => {
     // 微任务内替换为可见失败占位，确保目标 img 上的队列 error 监听先同步释放并发槽位。
     queueMicrotask(() => replaceImageWithPreviewUnavailable(image));
 }, true);
+
+// ===== QIN-635：JXL 能力探测、请求级回退与慢请求看门狗（置于 6355 行之后以保持存量 select 行号基线） =====
+let clientJxlSupport = null;
+let clientJxlProbePromise = null;
+const JXL_SUPPORT_PROBE_URI = 'data:image/jxl;base64,/woIELASCAgQBABw';
+const REGISTRY_PREVIEW_TIMEOUT_MS = 8000;
+const registryPreviewWatchdogs = new Map();
+let registryPreviewSrcObserver = null;
+function detectJxlSupport(){
+    if(clientJxlSupport !== null) return Promise.resolve(clientJxlSupport);
+    if(clientJxlProbePromise) return clientJxlProbePromise;
+    if(typeof Image !== 'function') return Promise.resolve(null);
+    clientJxlProbePromise = new Promise(resolve => {
+        const probe = new Image();
+        const finish = (supported) => {
+            clientJxlSupport = supported;
+            resolve(supported);
+        };
+        probe.onload = () => finish(probe.naturalWidth > 0);
+        probe.onerror = () => finish(false);
+        probe.src = JXL_SUPPORT_PROBE_URI;
+    });
+    return clientJxlProbePromise;
+}
+function applyClientJxlFallbackParam(params){
+    if(clientJxlSupport === false) params.set('fallback', 'webp');
+    else if(clientJxlSupport === null) void detectJxlSupport();
+}
+function withPreviewFallbackUrl(src=''){
+    const raw = String(src || '');
+    if(!raw || !raw.includes('/api/media-preview')) return '';
+    try {
+        const base = typeof document !== 'undefined' && document.baseURI ? document.baseURI : 'http://localhost';
+        const parsed = new URL(raw, base);
+        if(parsed.searchParams.get('fallback') === 'webp') return '';
+        parsed.searchParams.set('fallback', 'webp');
+        return `${parsed.pathname}${parsed.search}`;
+    } catch(_) {
+        return raw.includes('fallback=webp') ? '' : `${raw}${raw.includes('?') ? '&' : '?'}fallback=webp`;
+    }
+}
+function clearRegistryPreviewWatchdog(image){
+    const timer = registryPreviewWatchdogs.get(image);
+    if(timer){
+        clearTimeout(timer);
+        registryPreviewWatchdogs.delete(image);
+    }
+}
+function clearRegistryPreviewWatchdogs(){
+    for(const timer of registryPreviewWatchdogs.values()) clearTimeout(timer);
+    registryPreviewWatchdogs.clear();
+}
+function replaceImageWithPreviewUnavailable(image){
+    if(!image?.isConnected) return;
+    clearRegistryPreviewWatchdog(image);
+    const fallback = document.createElement('div');
+    fallback.className = 'asset-file-icon preview-unavailable';
+    fallback.innerHTML = `<i data-lucide="file-image"></i><span>${escapeHtml(image.dataset.previewFallback || '文件')}</span><small>暂无预览</small>`;
+    image.replaceWith(fallback);
+    refreshIcons();
+}
+function attachRegistryPreviewWatchdog(image, revision=registryPreviewScheduleRevision){
+    if(!image || !image.isConnected) return;
+    const src = image.getAttribute('src') || '';
+    if(!src || src === REGISTRY_PREVIEW_PLACEHOLDER) return;
+    if(image.complete && image.naturalWidth > 0){
+        clearRegistryPreviewWatchdog(image);
+        image.dataset.previewReady = 'true';
+        image.removeAttribute('aria-busy');
+        return;
+    }
+    clearRegistryPreviewWatchdog(image);
+    image.setAttribute('aria-busy', 'true');
+    if(image.dataset.previewWatchdogBound !== '1'){
+        image.dataset.previewWatchdogBound = '1';
+        image.addEventListener('load', () => {
+            clearRegistryPreviewWatchdog(image);
+            if(!image.isConnected) return;
+            image.dataset.previewReady = 'true';
+            image.removeAttribute('aria-busy');
+        });
+    }
+    const timer = setTimeout(() => {
+        registryPreviewWatchdogs.delete(image);
+        if(revision !== registryPreviewScheduleRevision || !image.isConnected) return;
+        const currentSrc = image.getAttribute('src') || image.src || '';
+        const fallbackUrl = image.dataset.jxlFallbackAttempted !== '1' ? withPreviewFallbackUrl(currentSrc) : '';
+        if(fallbackUrl){
+            image.dataset.jxlFallbackAttempted = '1';
+            attachRegistryPreviewWatchdog(image, revision);
+            image.src = fallbackUrl;
+            return;
+        }
+        image.dataset.registryPreviewFailed = 'true';
+        image.removeAttribute('aria-busy');
+        replaceImageWithPreviewUnavailable(image);
+    }, REGISTRY_PREVIEW_TIMEOUT_MS);
+    registryPreviewWatchdogs.set(image, timer);
+}
+function observeRegistryPreviewWatchdogs(scrollRoot, revision){
+    if(typeof MutationObserver !== 'function' || !scrollRoot) return;
+    const srcObserver = new MutationObserver(mutations => {
+        if(revision !== registryPreviewScheduleRevision) return;
+        mutations.forEach(mutation => {
+            if(mutation.type === 'attributes' && mutation.target?.tagName === 'IMG'){
+                attachRegistryPreviewWatchdog(mutation.target, revision);
+            }
+        });
+    });
+    srcObserver.observe(scrollRoot, {subtree:true, attributes:true, attributeFilter:['src']});
+    registryPreviewSrcObserver = srcObserver;
+}
 root.addEventListener('pointerover', event => {
     const thumb = event.target?.closest?.('.asset-grid .asset-thumb');
     if(!thumb || thumb.contains(event.relatedTarget)) return;
