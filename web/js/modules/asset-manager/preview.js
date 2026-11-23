@@ -1459,7 +1459,7 @@ function renderDetailViewerMedia(source, item, type){
     if(type === 'model') return renderDetailModelMedia(source, item);
     if(type === 'image'){
         const rawPreview = ASSET_BROWSER_PREVIEW_EXTENSIONS.has(extension) ? url : assetPreviewUrl(url, 2048, item);
-        return `<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" draggable="false">`;
+        return `<img class="asset-lightbox-image" src="${escapeAttr(rawPreview)}" alt="${escapeAttr(item.name || '素材预览')}" data-preview-fallback="${escapeAttr(extension.toUpperCase() || 'IMAGE')}" draggable="false">`;
     }
     const thumbnail = source === 'workflow' ? workflowThumb(item) : assetThumb(item);
     return `<div class="asset-detail-thumbnail-fallback" aria-label="${escapeAttr(item.name || '素材缩略图')}"><div class="asset-thumb">${thumbnail}</div></div>`;
@@ -1760,7 +1760,7 @@ function renderDetailImageVersionsPanel(){
             const selected=String(detailViewerState.imageVersionSelectedId)===String(version.id);
             const url=detailImageVersionUrl(assetId,version);
             const thumbnail=version.is_original
-                ? `/api/media-preview?w=220&asset_id=${encodeURIComponent(assetId)}&v=${encodeURIComponent(Number(item.updated_at || item.indexed_at || 0))}`
+                ? assetPreviewUrl(item.url || url, 220, item)
                 : `${url}${url.includes('?')?'&':'?'}w=220`;
             const thumbMedia = (version.edit && typeof version.edit === 'object')
                 ? renderMediaNodeParametricSvg({ ...item, id: `ver-thumb-${version.id}` }, version.edit, url, thumbnail)

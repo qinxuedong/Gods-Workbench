@@ -287,13 +287,22 @@ def media_preview(
     if str(payload.get("metadata") or "").lower() in {"1", "true", "yes"}:
         return media_proxy.descriptor(payload)
 
+    accept = request.headers.get("accept")
+    if accept and "_accept" not in payload:
+        payload["_accept"] = accept
+
     # 主体隔离：private 禁止共享缓存；no-cache 强制每次 revalidate；must-revalidate
     # 禁止断网时拿陈旧副本。ETag 由源身份 + 格式 + 宽度算出，不用带版本参数的 URL。
-    headers = {"Cache-Control": "private, no-cache, must-revalidate"}
+    headers = {
+        "Cache-Control": "private, no-cache, must-revalidate",
+        "Vary": "Accept",
+    }
     descriptor = repo.preview_etag(payload)
     if descriptor is not None:
         etag = str(descriptor["etag"])
         headers["ETag"] = etag
+        if descriptor.get("fallback"):
+            headers["X-GW-Preview-Fallback"] = str(descriptor["fallback"])
         if _if_none_match_hits(if_none_match, etag):
             return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
         # 复用本次请求里 preview_etag 已经完成的输入解析与允许根准入校验。
@@ -312,6 +321,8 @@ def media_preview(
     else:
         # 解析失败不能吞：交给 preview_bytes 原样抛既有 403/404/503。
         result = repo.preview_bytes(payload)
+    if result.get("fallback"):
+        headers["X-GW-Preview-Fallback"] = str(result["fallback"])
     return Response(content=result["bytes"], media_type=result["media_type"], headers=headers)
 
 

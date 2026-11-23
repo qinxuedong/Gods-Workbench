@@ -920,12 +920,12 @@ Know it will pass,
 
 And strength you will gain.`;
 const ASSET_EDITABLE_TEXT_EXTENSIONS = new Set(['txt','csv','tsv','json','xml','md']);
-const ASSET_IMAGE_PREVIEW_EXTENSIONS = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','heic','heif','avif','raw','svg','eps','psd','ai','cdr']);
-const ASSET_PREVIEW_EXTENSIONS = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','heic','heif','avif','raw','svg','eps','psd','ai','cdr',...ASSET_DOCUMENT_PREVIEW_EXTENSIONS,...ASSET_3D_PREVIEW_EXTENSIONS,...ASSET_FONT_PREVIEW_EXTENSIONS,...ASSET_AUDIO_PREVIEW_EXTENSIONS]);
+const ASSET_IMAGE_PREVIEW_EXTENSIONS = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','heic','heif','avif','jxl','raw','svg','eps','psd','ai','cdr']);
+const ASSET_PREVIEW_EXTENSIONS = new Set(['jpg','jpeg','png','gif','webp','bmp','tiff','tif','heic','heif','avif','jxl','raw','svg','eps','psd','ai','cdr',...ASSET_DOCUMENT_PREVIEW_EXTENSIONS,...ASSET_3D_PREVIEW_EXTENSIONS,...ASSET_FONT_PREVIEW_EXTENSIONS,...ASSET_AUDIO_PREVIEW_EXTENSIONS]);
 const ASSET_BROWSER_PREVIEW_EXTENSIONS = new Set(['jpg','jpeg','png','gif','webp','bmp','svg','avif']);
 const ASSET_VIDEO_EXTENSIONS = new Set(['mp4','webm','mov','m4v','avi','mkv','flv','mts','m2ts','wmv','mpeg','mpg','ts','mxf','vob','ogv','3gp']);
 const ASSET_BROWSER_VIDEO_EXTENSIONS = new Set(['mp4','webm','mov','m4v']);
-const LOCAL_MEDIA_EXTS = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif|raw|svg|eps|psd|ai|cdr|pdf|txt|csv|tsv|json|xml|html?|md|rtf|docx?|odt|pptx?|odp|xlsx?|ods|stl|3mf|obj|fbx|gltf|glb|usd|usdz|step|stp|iges|igs|dxf|ply|3ds|dae|ifc|wrl|vrml|blend|c4d|max|ma|mb|ttf|otf|ttc|otc|woff2?|mp4|webm|mov|m4v|avi|mkv|flv|mts|m2ts|wmv|mpeg|mpg|ts|mxf|vob|ogv|3gp|mp3|wav|flac|ogg|m4a|aac)(\?|#|$)/i;
+const LOCAL_MEDIA_EXTS = /\.(jpe?g|png|gif|webp|bmp|tiff?|heic|heif|avif|jxl|raw|svg|eps|psd|ai|cdr|pdf|txt|csv|tsv|json|xml|html?|md|rtf|docx?|odt|pptx?|odp|xlsx?|ods|stl|3mf|obj|fbx|gltf|glb|usd|usdz|step|stp|iges|igs|dxf|ply|3ds|dae|ifc|wrl|vrml|blend|c4d|max|ma|mb|ttf|otf|ttc|otc|woff2?|mp4|webm|mov|m4v|avi|mkv|flv|mts|m2ts|wmv|mpeg|mpg|ts|mxf|vob|ogv|3gp|mp3|wav|flac|ogg|m4a|aac)(\?|#|$)/i;
 const SEARCH_INPUT_IDS = new Set(['registrySearch','assetSearch','workflowSearch','promptSearch','localSearch','localUploadSearch','canvasAssetSearch']);
 
 function refreshIcons(){ if(window.lucide) lucide.createIcons(); }
@@ -1824,7 +1824,7 @@ function assetPreviewUrl(url, w=256, item={}){
         // 旧版 url 参数没有资产元数据，保留会话级版本（不再因任务完成而变化）
         if(thumbnailCacheVersion) params.set('v', String(thumbnailCacheVersion));
     }
-    return `/api/media-preview?${params.toString()}`;
+    if(!video) applyClientJxlFallbackParam(params); return `/api/media-preview?${params.toString()}`;
 }
 function assetVideoUrl(url, item={}){
     const raw = String(url || '');
@@ -5001,7 +5001,7 @@ async function loadAll(){
 }
 function disconnectRegistryPreviewScheduling(){
     registryPreviewScheduleRevision += 1;
-    clearRegistryPreviewObservers();
+    clearRegistryPreviewObservers(); clearRegistryPreviewWatchdogs();
     registryPreviewQueueRevision += 1;
     registryPreviewQueue = [];
     registryVirtualScrollCleanup?.();
@@ -5016,7 +5016,7 @@ function disconnectRegistryPreviewScheduling(){
 }
 function clearRegistryPreviewObservers(){
     registryPreviewObserver?.disconnect?.();
-    registryPreviewObserver = null;
+    registryPreviewObserver = null; registryPreviewSrcObserver?.disconnect?.(); registryPreviewSrcObserver = null;
     registryPreviewFallbackCleanup?.();
     registryPreviewFallbackCleanup = null;
     gwCall('lut', 'clearRegistryLutThumbObserver');
@@ -5256,7 +5256,7 @@ function scheduleRegistryPreviewImages(){
         // Chromium can occasionally miss an observer notification while the
         // registry scroll container is being repainted. Keep the same
         // viewport-bounded scroll pass active even when the observer exists.
-        scheduleRegistryPreviewFallback(scrollRoot);
+        observeRegistryPreviewWatchdogs(scrollRoot, revision); scheduleRegistryPreviewFallback(scrollRoot);
         if(typeof IntersectionObserver !== 'function'){
             return;
         }
@@ -10323,12 +10323,132 @@ document.addEventListener('error', event => {
     }
     const image = event.target?.closest?.('img[data-preview-fallback]');
     if(!image) return;
+    if(image.dataset.jxlFallbackAttempted !== '1'){
+        const fallbackUrl = withPreviewFallbackUrl(image.getAttribute('src') || image.src || '');
+        if(fallbackUrl){
+            event.stopPropagation();
+            image.dataset.jxlFallbackAttempted = '1';
+            attachRegistryPreviewWatchdog(image, registryPreviewScheduleRevision);
+            image.src = fallbackUrl;
+            return;
+        }
+    }
+    clearRegistryPreviewWatchdog(image);
+    // 微任务内替换为可见失败占位，确保目标 img 上的队列 error 监听先同步释放并发槽位。
+    queueMicrotask(() => replaceImageWithPreviewUnavailable(image));
+}, true);
+
+// ===== QIN-635：JXL 能力探测、请求级回退与慢请求看门狗（置于 6355 行之后以保持存量 select 行号基线） =====
+let clientJxlSupport = null;
+let clientJxlProbePromise = null;
+const JXL_SUPPORT_PROBE_URI = 'data:image/jxl;base64,/woIELASCAgQBABw';
+const REGISTRY_PREVIEW_TIMEOUT_MS = 8000;
+const registryPreviewWatchdogs = new Map();
+let registryPreviewSrcObserver = null;
+function detectJxlSupport(){
+    if(clientJxlSupport !== null) return Promise.resolve(clientJxlSupport);
+    if(clientJxlProbePromise) return clientJxlProbePromise;
+    if(typeof Image !== 'function') return Promise.resolve(null);
+    clientJxlProbePromise = new Promise(resolve => {
+        const probe = new Image();
+        const finish = (supported) => {
+            clientJxlSupport = supported;
+            resolve(supported);
+        };
+        probe.onload = () => finish(probe.naturalWidth > 0);
+        probe.onerror = () => finish(false);
+        probe.src = JXL_SUPPORT_PROBE_URI;
+    });
+    return clientJxlProbePromise;
+}
+function applyClientJxlFallbackParam(params){
+    if(clientJxlSupport === false) params.set('fallback', 'webp');
+    else if(clientJxlSupport === null) void detectJxlSupport();
+}
+function withPreviewFallbackUrl(src=''){
+    const raw = String(src || '');
+    if(!raw || !raw.includes('/api/media-preview')) return '';
+    try {
+        const base = typeof document !== 'undefined' && document.baseURI ? document.baseURI : 'http://localhost';
+        const parsed = new URL(raw, base);
+        if(parsed.searchParams.get('fallback') === 'webp') return '';
+        parsed.searchParams.set('fallback', 'webp');
+        return `${parsed.pathname}${parsed.search}`;
+    } catch(_) {
+        return raw.includes('fallback=webp') ? '' : `${raw}${raw.includes('?') ? '&' : '?'}fallback=webp`;
+    }
+}
+function clearRegistryPreviewWatchdog(image){
+    const timer = registryPreviewWatchdogs.get(image);
+    if(timer){
+        clearTimeout(timer);
+        registryPreviewWatchdogs.delete(image);
+    }
+}
+function clearRegistryPreviewWatchdogs(){
+    for(const timer of registryPreviewWatchdogs.values()) clearTimeout(timer);
+    registryPreviewWatchdogs.clear();
+}
+function replaceImageWithPreviewUnavailable(image){
+    if(!image?.isConnected) return;
+    clearRegistryPreviewWatchdog(image);
     const fallback = document.createElement('div');
     fallback.className = 'asset-file-icon preview-unavailable';
     fallback.innerHTML = `<i data-lucide="file-image"></i><span>${escapeHtml(image.dataset.previewFallback || '文件')}</span><small>暂无预览</small>`;
     image.replaceWith(fallback);
     refreshIcons();
-}, true);
+}
+function attachRegistryPreviewWatchdog(image, revision=registryPreviewScheduleRevision){
+    if(!image || !image.isConnected) return;
+    const src = image.getAttribute('src') || '';
+    if(!src || src === REGISTRY_PREVIEW_PLACEHOLDER) return;
+    if(image.complete && image.naturalWidth > 0){
+        clearRegistryPreviewWatchdog(image);
+        image.dataset.previewReady = 'true';
+        image.removeAttribute('aria-busy');
+        return;
+    }
+    clearRegistryPreviewWatchdog(image);
+    image.setAttribute('aria-busy', 'true');
+    if(image.dataset.previewWatchdogBound !== '1'){
+        image.dataset.previewWatchdogBound = '1';
+        image.addEventListener('load', () => {
+            clearRegistryPreviewWatchdog(image);
+            if(!image.isConnected) return;
+            image.dataset.previewReady = 'true';
+            image.removeAttribute('aria-busy');
+        });
+    }
+    const timer = setTimeout(() => {
+        registryPreviewWatchdogs.delete(image);
+        if(revision !== registryPreviewScheduleRevision || !image.isConnected) return;
+        const currentSrc = image.getAttribute('src') || image.src || '';
+        const fallbackUrl = image.dataset.jxlFallbackAttempted !== '1' ? withPreviewFallbackUrl(currentSrc) : '';
+        if(fallbackUrl){
+            image.dataset.jxlFallbackAttempted = '1';
+            attachRegistryPreviewWatchdog(image, revision);
+            image.src = fallbackUrl;
+            return;
+        }
+        image.dataset.registryPreviewFailed = 'true';
+        image.removeAttribute('aria-busy');
+        replaceImageWithPreviewUnavailable(image);
+    }, REGISTRY_PREVIEW_TIMEOUT_MS);
+    registryPreviewWatchdogs.set(image, timer);
+}
+function observeRegistryPreviewWatchdogs(scrollRoot, revision){
+    if(typeof MutationObserver !== 'function' || !scrollRoot) return;
+    const srcObserver = new MutationObserver(mutations => {
+        if(revision !== registryPreviewScheduleRevision) return;
+        mutations.forEach(mutation => {
+            if(mutation.type === 'attributes' && mutation.target?.tagName === 'IMG'){
+                attachRegistryPreviewWatchdog(mutation.target, revision);
+            }
+        });
+    });
+    srcObserver.observe(scrollRoot, {subtree:true, attributes:true, attributeFilter:['src']});
+    registryPreviewSrcObserver = srcObserver;
+}
 root.addEventListener('pointerover', event => {
     const thumb = event.target?.closest?.('.asset-grid .asset-thumb');
     if(!thumb || thumb.contains(event.relatedTarget)) return;
