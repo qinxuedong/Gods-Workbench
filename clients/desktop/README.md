@@ -37,7 +37,7 @@ The local backend is launched as follows:
 - **Single Instance**: Arbitrated via atomic exclusive lock file creation (`create_new`). Concurrent or subsequent launches wake and focus the existing desktop window (even if hidden in the system tray) and cleanly exit without spawning duplicate client processes or duplicate backends.
 - **Lifecycle**: Backends launched by the desktop client terminate when the user chooses "Quit" from the tray menu. Backends launched externally (such as via `start.bat`) are never stopped by the desktop client.
 
-## Windows standard installer (QIN-626 / QIN-638)
+## Windows standard installer (QIN-626)
 
 The Windows NSIS installer ships the desktop shell, a private CPython 3.11.9 embeddable runtime, the `gw/` backend source tree, `web/`, `run.py`, hash-locked wheels, and `bundle-manifest.json` under `backend/`. It uses `perMachine` mode (replacing the earlier `currentUser` default; defaulting to `%ProgramFiles%\Gods Workbench`, changeable in the wizard) and provides a second wizard page for the user data directory (fresh installs default to `%LOCALAPPDATA%\Gods Workbench data` for the originally logged-in standard user, persisted in the single authoritative bootstrap pointer `%LOCALAPPDATA%\GodsWorkbench\runtime-root.json`; upgrades preserve existing `%LOCALAPPDATA%\GodsWorkbench` data or existing pointers). The install directory and the effective data directory must remain distinct and non-overlapping after path normalization; the installer, backend, and desktop shell all verify this relationship.
 
