@@ -120,10 +120,13 @@ test('1500ms 与 5000ms 慢预检期间显示检查状态，完成前不提交',
     assert.equal(harness.calls.confirm, 0);
     gate.resolve();
     await pending;
-    assert.equal(harness.calls.confirm, 1);
-    assert.deepEqual(harness.calls.options, { atomicRegistration: true });
+    assert.equal(harness.calls.confirm, 0);
+    assert.equal(harness.state.validating, false);
+    assert.equal(harness.state.path, 'Z:/shared/library');
+    assert.equal(harness.calls.options, null);
   }
 
+  assert.match(manager, /\[data-board-source-confirm\][\s\S]*confirmBoardSource/);
   assert.match(organize, /正在检查服务端目录访问权限；关闭可取消，检查不会写入授权或来源/);
   assert.match(organize, /boardSourceState\.saving \? 'disabled' : ''/);
 });

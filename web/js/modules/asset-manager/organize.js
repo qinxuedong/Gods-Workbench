@@ -253,6 +253,7 @@ import {
     setBoardSourceState,
     setDetailMediaLibraryDragId,
     setDetailViewerFontListCollapsed,
+    setLocalLibraries,
     setPendingBatchDelete,
     setPendingDeleteAssetId,
     setPendingDeletePromptId,
@@ -932,6 +933,20 @@ function removeResourceFolderViewState(rootTarget, identity){
         registryStatus.overview.roots = registryStatus.overview.roots.filter(root =>
             ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
     }
+    const libMatchesRemoved = lib => {
+        const candidates = [lib?.id, lib?.root_id, lib?.storage_root_id, ...(Array.isArray(lib?.aliases) ? lib.aliases : [])]
+            .map(v => String(v || '')).filter(Boolean);
+        return candidates.some(id => ids.has(id));
+    };
+    if(Array.isArray(localLibraries) && typeof setLocalLibraries === 'function'){
+        setLocalLibraries(localLibraries.filter(lib => !libMatchesRemoved(lib)));
+    }
+    if(Array.isArray(storageSettingsState?.localLibraries)){
+        storageSettingsState.localLibraries = storageSettingsState.localLibraries.filter(lib => !libMatchesRemoved(lib));
+    }
+    if(typeof assetAllowedRootPaths?.delete === 'function'){
+        ids.forEach(id => assetAllowedRootPaths.delete(String(id)));
+    }
     const rootKeys = [...ids, rootTarget.rootId].filter(Boolean).map(String);
     if(rootTarget.key) assetTreeExpanded.delete(rootTarget.key);
     rootKeys.forEach(rootId => assetTreeExpanded.delete(`mine:root:${rootId}::__root__`));
@@ -947,6 +962,7 @@ function removeResourceFolderViewState(rootTarget, identity){
         void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('资源文件夹已更新，但列表刷新失败', error));
     }
     render();
+    if(typeof notifyShellTreeSnapshot === 'function') notifyShellTreeSnapshot();
 }
 function togglePreviewDeleteCategory(id){
     const keys = ['image','video','storyboard','other'];
@@ -1104,7 +1120,7 @@ function renderBoardSourceModal(){
         <div class="storage-settings-head"><div><strong id="boardSourceTitle">添加资源文件夹</strong><span>添加一个可上传和分类的素材目录。</span></div><button type="button" data-board-source-close aria-label="关闭" ${boardSourceState.saving ? 'disabled' : ''}><i data-lucide="x"></i></button></div>
         <div class="board-source-form-wrap"><div class="board-source-form-head"><strong>添加素材路径</strong><span>可选择已有来源，或添加新的本机 / NAS 路径。</span></div><div class="board-source-form">
             <label><span>已有来源</span><select id="boardSourceExisting" class="board-source-select" ${fieldsDisabled ? 'disabled' : ''}><option value="">新建素材路径</option>${localLibraries.map(lib => `<option value="${escapeAttr(lib.id)}" ${boardSourceState.existingId === lib.id ? 'selected' : ''}>${escapeHtml(lib.name)} · ${escapeHtml(lib.path || '')}</option>`).join('')}</select></label>
-            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name || '用户素材')}" placeholder="例如：NAS 品牌素材" ${fieldsDisabled ? 'disabled' : ''}></label>
+            <label><span>来源名称</span><input id="boardSourceName" maxlength="40" value="${escapeAttr(boardSourceState.name ?? '用户素材')}" placeholder="例如：NAS 品牌素材" ${fieldsDisabled ? 'disabled' : ''}></label>
             <label class="board-source-path-label"><span>素材路径</span><div class="board-source-path-row"><input id="boardSourcePath" value="${escapeAttr(boardSourceState.path || '')}" placeholder="D:\\Assets 或 NAS 共享目录" ${fieldsDisabled ? 'disabled' : ''}><button class="hw-btn hw-btn-icon" type="button" data-board-source-pick aria-label="选择文件夹" title="选择文件夹" ${fieldsDisabled ? 'disabled' : ''}><i data-lucide="folder-open"></i></button></div></label>
             ${pickerStatusHtml}
             ${errorHtml}
@@ -1119,7 +1135,7 @@ function openBoardSourceModal(boardId='', editor='new'){
     boardSourceFocusTarget = (active && active !== document.body && typeof active.focus === 'function')
         ? active
         : (window.parent?.document?.getElementById('assetSidebarCreate') || document.querySelector('#assetBoardTabs [data-board-create]') || null);
-    boardSourceState.abortController?.abort?.(); setBoardSourceState({open:true, boardId:'', editor:editor || 'new', existingId:'', name:'上传素材', path:'', error:'', saving:false, picking:false, validating:false, abortController:null, generation:Number(boardSourceState?.generation || 0)});
+    boardSourceState.abortController?.abort?.(); setBoardSourceState({open:true, boardId:'', editor:editor || 'new', existingId:'', name:'用户素材', nameCustom:false, pickedValidatedPath:'', path:'', error:'', saving:false, picking:false, validating:false, abortController:null, generation:Number(boardSourceState?.generation || 0)});
     renderBoardSourceModal();
 }
 function closeBoardSourceModal(){
@@ -1164,7 +1180,10 @@ async function confirmBoardSource(options={}){
             if(Number(boardSourceState.generation || 0) !== generation) return;
         } else {
             if(!path){ boardSourceState.error = '请输入素材路径'; setStatus(boardSourceState.error); return; }
-            source = await attachPathToAssetBoard('', name, path, options);
+            const effectiveOptions = options.atomicRegistration === undefined && boardSourceState.pickedValidatedPath && boardSourceState.pickedValidatedPath === path
+                ? {...options, atomicRegistration:true}
+                : options;
+            source = await attachPathToAssetBoard('', name, path, effectiveOptions);
             if(Number(boardSourceState.generation || 0) !== generation) return;
         }
         if(!source) return;
