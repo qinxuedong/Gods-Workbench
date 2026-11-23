@@ -1,0 +1,31 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 780,
+  "authorization_basis": "GitHub Issue #780 QIN-635, 2026-11-23",
+  "files": [
+    "gw/api/routes_media.py",
+    "gw/media/repository.py",
+    "tests/contracts/media/test_qin_635_install_jxl_thumbnail.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-635-install-jxl-thumbnail.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-780.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/media/test_qin_635_install_jxl_thumbnail.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #780 QIN-635, 2026-11-23",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-635-install-jxl-thumbnail.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #780 QIN-635, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-635: 安装包 JXL 缩略图格式协商、安全回退与慢请求看门狗；只写本票分片，基础账本与硬计数保持不变。"
+}

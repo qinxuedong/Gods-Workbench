@@ -633,33 +633,57 @@ MAX_THUMBNAIL_BYTES = 15 * 1024
 
 
 def _decode_jxl_source(path: Path) -> bytes:
-    ffmpeg = _tool("ffmpeg")
-    try:
-        result = subprocess.run(
-            [
-                ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-i",
-                str(path),
-                "-frames:v",
-                "1",
-                "-f",
-                "image2pipe",
-                "-vcodec",
-                "png",
-                "pipe:1",
-            ],
-            capture_output=True,
-            timeout=FFMPEG_TIMEOUT,
-            check=False,
-        )
-    except (OSError, subprocess.TimeoutExpired):
-        _unavailable("/api/media", "JXL_DECODE_FAILED", "JXL 素材解码失败")
-    if result.returncode != 0 or not result.stdout:
-        _unavailable("/api/media", "JXL_DECODE_FAILED", "JXL 素材解码失败")
-    return result.stdout
+    ffmpeg = resolve_ffmpeg_tool("ffmpeg").path
+    if ffmpeg:
+        try:
+            result = subprocess.run(
+                [
+                    ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-i",
+                    str(path),
+                    "-frames:v",
+                    "1",
+                    "-f",
+                    "image2pipe",
+                    "-vcodec",
+                    "png",
+                    "pipe:1",
+                ],
+                capture_output=True,
+                timeout=FFMPEG_TIMEOUT,
+                check=False,
+            )
+            if result.returncode == 0 and result.stdout:
+                return result.stdout
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    # 若安装环境无 ffmpeg 或其未编入 libjxl，复用官方 libjxl 工具链 djxl 解码。
+    from gw.core import jxl_tool
+    import tempfile
+
+    djxl, _ = jxl_tool._find_tool("djxl")
+    if djxl:
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                out_png = Path(tmp) / "decoded.png"
+                result = subprocess.run(
+                    [djxl, str(path), str(out_png)],
+                    capture_output=True,
+                    timeout=FFMPEG_TIMEOUT,
+                    check=False,
+                )
+                if result.returncode == 0 and out_png.is_file():
+                    decoded = out_png.read_bytes()
+                    if decoded:
+                        return decoded
+        except (OSError, subprocess.TimeoutExpired):
+            pass
+
+    _unavailable("/api/media", "JXL_DECODE_FAILED", "JXL 素材解码失败")
 
 
 def _encode_jxl_thumbnail(png_bytes: bytes) -> bytes:
@@ -1325,6 +1349,22 @@ def _image_pixel_width(target: Path) -> int | None:
         return None
 
 
+def _resolve_effective_preview_format(
+    settings: dict[str, Any], payload: dict[str, Any] | None = None
+) -> tuple[ThumbnailFormat, bool]:
+    """按请求显式回退参数与 Accept 协商当次响应格式，绝不改写用户设置。"""
+    configured = _thumbnail_format(settings)
+    if configured != "jxl":
+        return configured, False
+    fallback = str((payload or {}).get("fallback") or "").strip().lower()
+    if fallback == "webp":
+        return "webp", True
+    accept = str((payload or {}).get("_accept") or "").strip().lower()
+    if "image/webp" in accept and "image/jxl" not in accept:
+        return "webp", True
+    return configured, False
+
+
 def _canonical_generated_hit(
     settings: dict[str, Any],
     source: Path,
@@ -1332,6 +1372,7 @@ def _canonical_generated_hit(
     width: int,
     *,
     directory: Path | None = None,
+    image_format: ThumbnailFormat | None = None,
 ) -> Path | None:
     """预生成缩略图（QIN-508 命名）是否可直接供预览复用。
 
@@ -1340,10 +1381,11 @@ def _canonical_generated_hit(
     """
     if directory is None:
         _, directory = resolve_cache_directory(settings, source)
+    target_format = image_format or _thumbnail_format(settings)
     name = _thumbnail_filename(
         key,
         width=width if key.startswith("media-") else None,
-        image_format=_thumbnail_format(settings),
+        image_format=target_format,
     )
     target = directory / name
     if not _cache_is_fresh(target, source):
@@ -1353,14 +1395,23 @@ def _canonical_generated_hit(
     return target
 
 
-def _prune_stale_preview_cache(directory: Path, name_prefix: str, keep: Path) -> None:
+def _prune_stale_preview_cache(
+    directory: Path,
+    name_prefix: str,
+    keep: Path,
+    *,
+    same_suffix_only: bool = False,
+) -> None:
     """清理同素材同宽度的旧预览缓存（源身份变化后残留的孤儿文件）。"""
     try:
         entries = list(directory.glob(name_prefix + "*"))
     except OSError:
         return
+    keep_suffix = keep.suffix.lower()
     for entry in entries:
         if entry == keep:
+            continue
+        if same_suffix_only and entry.suffix.lower() != keep_suffix:
             continue
         try:
             if entry.is_file():
@@ -1449,7 +1500,9 @@ def preview_etag(payload: dict[str, Any]) -> dict[str, Any] | None:
         width = max(64, min(2048, width))
         video = path.suffix.lower() in _VIDEO_SUFFIXES
         settings = get_thumbnail_settings()
-        image_format = _thumbnail_format(settings)
+        image_format, format_overridden = _resolve_effective_preview_format(
+            settings, payload
+        )
         media_type = "image/jpeg" if video else MIME_BY_SUFFIX["." + image_format]
         _, cache_dir = _preview_cache_dir(settings, path)
         # 一次 stat 同时喂给 ETag 键与缩略图缓存键：两次 stat 之间源文件若被替换，
@@ -1478,6 +1531,8 @@ def preview_etag(payload: dict[str, Any]) -> dict[str, Any] | None:
             "cache_dir": cache_dir,
             "source": source,
             "identity": identity,
+            "effective_format": image_format,
+            "fallback": "webp" if format_overridden else None,
         }
     except (CleanroomException, OSError, ValueError, TypeError, KeyError):
         return None
@@ -1508,6 +1563,10 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
         else storage.relative_display(path)
     )
 
+    fallback_reason: str | None = None
+    same_suffix_prune = False
+    directory: Path | None = None
+
     try:
         prepared_identity = (payload or {}).get("_identity")
         identity = (
@@ -1522,8 +1581,13 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
             if isinstance(prepared_settings, dict)
             else get_thumbnail_settings()
         )
-        image_format = _thumbnail_format(settings)
-        media_type = MIME_BY_SUFFIX["." + image_format]
+        image_format, format_overridden = _resolve_effective_preview_format(
+            settings, payload
+        )
+        if format_overridden and not video:
+            fallback_reason = "webp"
+            same_suffix_prune = True
+        media_type = "image/jpeg" if video else MIME_BY_SUFFIX["." + image_format]
         # 批量预热会把同一分桶的目录解析结果传进来：目录解析带进程内锁（Windows
         # 并发建目录会撞车），逐项解析等于把整批并发压成串行。
         prepared_dir = (payload or {}).get("_cache_dir")
@@ -1539,19 +1603,42 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
         # 降级必须留痕：否则「生成了但没落盘」只能靠事后数文件才发现。
         traceback.print_exception(type(exc), exc, exc.__traceback__)
         _count_preview_cache("degraded")
-        data, media_type = _live_preview_bytes(
-            path, width, video=video, image_format=image_format
-        )
-        return {"bytes": data, "media_type": media_type, "source": source}
+        try:
+            data, media_type = _live_preview_bytes(
+                path, width, video=video, image_format=image_format
+            )
+        except CleanroomException as live_exc:
+            if (
+                not video
+                and image_format == "jxl"
+                and path.suffix.lower() != ".jxl"
+                and live_exc.code in ("FFMPEG_NOT_AVAILABLE", "JXL_ENCODING_FAILED")
+            ):
+                data, media_type = _live_preview_bytes(
+                    path, width, video=False, image_format="webp"
+                )
+                fallback_reason = "webp"
+            else:
+                raise
+        res: dict[str, Any] = {"bytes": data, "media_type": media_type, "source": source}
+        if fallback_reason:
+            res["fallback"] = fallback_reason
+        return res
 
     if _cache_is_fresh(target, path):
         cached = _cached_preview_bytes(target)
         if cached is not None:
             _count_preview_cache("hit")
             _prune_stale_preview_cache(
-                directory, _preview_cache_stem(key, width) + "-", target
+                directory,
+                _preview_cache_stem(key, width) + "-",
+                target,
+                same_suffix_only=same_suffix_prune,
             )
-            return {"bytes": cached, "media_type": media_type, "source": source}
+            res = {"bytes": cached, "media_type": media_type, "source": source}
+            if fallback_reason:
+                res["fallback"] = fallback_reason
+            return res
         # 坏缓存（截断 / 非图片）：清掉后按未命中重算。
         try:
             target.unlink()
@@ -1561,7 +1648,12 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
     if not video:
         try:
             canonical = _canonical_generated_hit(
-                settings, path, key, width, directory=directory
+                settings,
+                path,
+                key,
+                width,
+                directory=directory,
+                image_format=image_format,
             )
         except (CleanroomException, OSError):
             canonical = None
@@ -1570,15 +1662,40 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
             if cached is not None:
                 _count_preview_cache("hit")
                 _prune_stale_preview_cache(
-                    directory, _preview_cache_stem(key, width) + "-", canonical
+                    directory,
+                    _preview_cache_stem(key, width) + "-",
+                    canonical,
+                    same_suffix_only=same_suffix_prune,
                 )
                 media_type = MIME_BY_SUFFIX.get(canonical.suffix.lower(), media_type)
-                return {"bytes": cached, "media_type": media_type, "source": source}
+                res = {"bytes": cached, "media_type": media_type, "source": source}
+                if fallback_reason:
+                    res["fallback"] = fallback_reason
+                return res
 
     _count_preview_cache("miss")
-    data, media_type = _live_preview_bytes(
-        path, width, video=video, image_format=image_format
-    )
+    try:
+        data, media_type = _live_preview_bytes(
+            path, width, video=video, image_format=image_format
+        )
+    except CleanroomException as live_exc:
+        if (
+            not video
+            and image_format == "jxl"
+            and path.suffix.lower() != ".jxl"
+            and live_exc.code in ("FFMPEG_NOT_AVAILABLE", "JXL_ENCODING_FAILED")
+        ):
+            image_format = "webp"
+            fallback_reason = "webp"
+            same_suffix_prune = True
+            target = directory / _preview_cache_name(
+                key, width, identity, video=False, image_format="webp"
+            )
+            data, media_type = _live_preview_bytes(
+                path, width, video=False, image_format="webp"
+            )
+        else:
+            raise
     try:
         _atomic_write_bytes(target, data, durable=False)
         # 预热是批量场景：每写一项就扫一遍目录找旧源身份残留是 O(n²)，几百项就会
@@ -1586,12 +1703,18 @@ def preview_bytes(payload: dict[str, Any]) -> dict[str, Any]:
         # 统一清理，浏览器侧单次预览仍照常清理。
         if not (payload or {}).get("_skip_prune"):
             _prune_stale_preview_cache(
-                directory, _preview_cache_stem(key, width) + "-", target
+                directory,
+                _preview_cache_stem(key, width) + "-",
+                target,
+                same_suffix_only=same_suffix_prune,
             )
     except (CleanroomException, OSError):
         # 写盘失败不影响本次预览可用性，但如实记为降级，下次仍会重试落盘。
         _count_preview_cache("degraded")
-    return {"bytes": data, "media_type": media_type, "source": source}
+    res = {"bytes": data, "media_type": media_type, "source": source}
+    if fallback_reason:
+        res["fallback"] = fallback_reason
+    return res
 
 
 def _video_frame_bytes(path: Path, width: int) -> bytes:
