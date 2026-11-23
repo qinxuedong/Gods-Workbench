@@ -176,7 +176,13 @@ def trusted_bootstrap(payload: TrustedBootstrap, request: Request):
     now = time.time()
     with local_accounts.database() as db:
         db.execute("BEGIN IMMEDIATE")
-        if not local_accounts.consume_bootstrap_ticket(db, jti, now):
+        if not local_accounts.consume_bootstrap_ticket(
+            db,
+            jti,
+            now,
+            device_fingerprint=fingerprint,
+            expires_at=float(claims["exp"]),
+        ):
             raise CleanroomException(
                 401,
                 "TRUSTED_LOCAL_BOOTSTRAP_INVALID",

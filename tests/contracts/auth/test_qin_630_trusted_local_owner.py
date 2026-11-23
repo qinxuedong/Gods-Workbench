@@ -707,3 +707,27 @@ def test_auth_dir_strips_inherited_non_controlled_principal_on_init(tmp_path):
     payload = json.loads(check.stdout)
     assert payload["ok"] is True
     assert "auth_dir" in payload["checked"]
+
+
+def test_trusted_open_succeeds_under_running_backend_lock_and_blocks_replay(trusted_env, monkeypatch):
+    """后端进程已持 data_dir_lock（LOCK_HELD）时，签发票据仍可兑换且防重放。"""
+    from gw.core import local_accounts, trusted_local
+
+    def simulate_lock_held():
+        raise CleanroomException(
+            503,
+            "DATA_LOCATION_QUIESCING",
+            "数据位置迁移或其他进程占用中（LOCK_HELD），本机账户写入已暂停",
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(local_accounts, "database", simulate_lock_held)
+        ticket = trusted_local.issue_bootstrap_ticket()
+
+    with make_client() as client:
+        ok = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["authenticated"] is True
+        replay = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert replay.status_code == 401
+        assert replay.json()["detail"]["code"] == "TRUSTED_LOCAL_BOOTSTRAP_INVALID"

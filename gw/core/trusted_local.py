@@ -460,15 +460,21 @@ def issue_bootstrap_ticket(*, now: float | None = None) -> str:
 
     from gw.core import local_accounts
 
-    with local_accounts.database() as db:
-        db.execute("BEGIN IMMEDIATE")
-        local_accounts.record_bootstrap_ticket(
-            db,
-            str(payload["jti"]),
-            fingerprint,
-            issued_at,
-            float(payload["exp"]),
-        )
+    try:
+        with local_accounts.database() as db:
+            db.execute("BEGIN IMMEDIATE")
+            local_accounts.record_bootstrap_ticket(
+                db,
+                str(payload["jti"]),
+                fingerprint,
+                issued_at,
+                float(payload["exp"]),
+            )
+    except CleanroomException as exc:
+        # 桌面端等场景中，后端主进程已启动并持有 data_dir_lock（LOCK_HELD）；
+        # 外部 trusted-open 子进程无法抢锁预写库，交由持有锁的后端在兑换时原子落库防重放。
+        if exc.code != "DATA_LOCATION_QUIESCING" or "LOCK_HELD" not in exc.message:
+            raise
     _write_restricted_file(pending_ticket_path(), ticket.encode("ascii"))
     return ticket
 
