@@ -899,12 +899,14 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
             const result = await saveAllowedRootRemoval(identity.allowedRootId, {throwOnError:true});
             if(!current()) return {status:'stale'};
             removeResourceFolderViewState(rootTarget, identity);
+            void loadAssetAllowedRootPaths({force:true}).then(() => notifyShellTreeSnapshot()).catch(() => null);
             setStatus('资源文件夹已移出资源库');
             return {status:'removed', result};
         }
         const result = await saveAllowedRootPurge(identity.allowedRootId, {throwOnError:true});
         if(!current()) return {status:'stale'};
         removeResourceFolderViewState(rootTarget, identity);
+        void loadAssetAllowedRootPaths({force:true}).then(() => notifyShellTreeSnapshot()).catch(() => null);
         setStatus('资源文件夹索引已清除');
         return {status:'purged', result};
     } catch(error){
@@ -1119,7 +1121,8 @@ function openBoardSourceModal(boardId='', editor='new'){
     boardSourceFocusTarget = (active && active !== document.body && typeof active.focus === 'function')
         ? active
         : (window.parent?.document?.getElementById('assetSidebarCreate') || document.querySelector('#assetBoardTabs [data-board-create]') || null);
-    setBoardSourceState({open:true, boardId:'', editor:editor || 'new', existingId:'', name:'上传素材', path:'', error:'', saving:false, generation:Number(boardSourceState?.generation || 0)});
+    boardSourceState.abortController?.abort?.();
+    setBoardSourceState({open:true, boardId:'', editor:editor || 'new', existingId:'', name:'上传素材', path:'', error:'', saving:false, picking:false, validating:false, abortController:null, generation:Number(boardSourceState?.generation || 0)});
     renderBoardSourceModal();
 }
 function closeBoardSourceModal(){
@@ -1127,6 +1130,8 @@ function closeBoardSourceModal(){
     // 成功文案 / 刷新 / 侧栏重绘；已在途的请求允许服务端完成（阶段B），真实
     // 状态由下次 facets/settings 刷新恢复。
     boardSourceState.generation = Number(boardSourceState.generation || 0) + 1;
+    boardSourceState.abortController?.abort?.();
+    boardSourceState.abortController = null;
     boardSourceState.saving = false;
     boardSourceState.picking = false;
     boardSourceState.validating = false;
@@ -1170,7 +1175,7 @@ async function confirmBoardSource(options={}){
         if(!source) return;
         closeBoardSourceModal();
         if(source.path && source.id) assetAllowedRootPaths.set(source.id, source.path);
-        void loadAssetAllowedRootPaths().catch(() => null);
+        void loadAssetAllowedRootPaths({force:true}).then(() => notifyShellTreeSnapshot()).catch(() => null);
         void refreshRegistryFacetData().catch(() => null);
         notifyShellTreeSnapshot();
         render();
