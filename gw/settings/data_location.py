@@ -42,11 +42,16 @@ from typing import Any
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import (
     DATA_LOCATION_SCHEMA_VERSION,
+    DEFAULT_INSTALLER_DATA_DIR_NAME,
+    MODE_PROD,
     MODE_TEST,
     PROD_DATA_LOCATION_INVALID,
     RuntimePathError,
     RuntimePaths,
     data_location_pointer_path,
+    has_existing_production_data,
+    normalize_compare_path,
+    paths_non_overlapping,
     read_data_location_pointer,
     resolve_runtime_paths,
 )
@@ -1402,6 +1407,13 @@ def _excluded_summary(excluded: list[dict[str, Any]]) -> list[dict[str, Any]]:
     ]
 
 
+def _install_directory() -> Path:
+    raw = os.environ.get("GW_INSTALL_DIR", "").strip()
+    if raw:
+        return Path(raw)
+    return _paths().repo_root
+
+
 def status_snapshot() -> dict[str, Any]:
     window = get_write_window()
     try:
@@ -1424,6 +1436,7 @@ def status_snapshot() -> dict[str, Any]:
     return {
         "data_location": str(location),
         "bootstrap_root": str(bootstrap_root()),
+        "install_dir": str(_install_directory()),
         "pointer": pointer,
         "pointer_error": pointer_error,
         "categories": [
@@ -2031,6 +2044,151 @@ def validate_pointer_or_raise(exc: RuntimePathError) -> None:  # pragma: no cove
     raise exc
 
 
+def inspect_existing_data_location(*, localappdata: Path | None = None) -> dict[str, Any]:
+    """只读探测生产态引导目录与既有数据位置，供安装向导判定新装或升级保留。"""
+    try:
+        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env={})
+    except RuntimePathError as exc:
+        raise CleanroomException(500, exc.code, str(exc)) from None
+    pointer_file = data_location_pointer_path(paths.runtime_root)
+    pointer_payload = read_data_location_pointer(paths.runtime_root)
+    legacy_has_data = has_existing_production_data(paths.runtime_root)
+    has_existing = pointer_payload is not None or legacy_has_data
+    effective = paths.data_location if paths.data_location is not None else paths.runtime_root
+    suggested_fresh = paths.runtime_root.parent / DEFAULT_INSTALLER_DATA_DIR_NAME
+    return {
+        "has_existing": has_existing,
+        "pointer_present": pointer_payload is not None,
+        "legacy_data_present": legacy_has_data,
+        "pointer_path": str(pointer_file),
+        "bootstrap_root": str(paths.runtime_root),
+        "effective_data_location": str(effective if has_existing else suggested_fresh),
+        "suggested_fresh_location": str(suggested_fresh),
+    }
+
+
+def installer_init_data_location(
+    target: str,
+    *,
+    install_dir: str | None = None,
+    localappdata: Path | None = None,
+) -> dict[str, Any]:
+    """安装向导提交阶段：复用 627 预检与单一权威指针写入新装数据位置。"""
+    try:
+        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env={})
+    except RuntimePathError as exc:
+        raise CleanroomException(500, exc.code, str(exc)) from None
+
+    pointer_file = data_location_pointer_path(paths.runtime_root)
+    pointer_payload = read_data_location_pointer(paths.runtime_root)
+    legacy_has_data = has_existing_production_data(paths.runtime_root)
+    current_effective = paths.data_location if paths.data_location is not None else paths.runtime_root
+
+    candidate_raw = Path(target)
+    if not candidate_raw.is_absolute():
+        _fail(400, "DATA_LOCATION_NOT_ABSOLUTE", "数据位置必须是绝对路径")
+    _reject_links(candidate_raw)
+    try:
+        resolved = candidate_raw.resolve(strict=False)
+    except (OSError, RuntimeError, ValueError):
+        _fail(400, "REJECTED_TARGET", "目标路径无法安全解析")
+
+    if install_dir:
+        install_path = Path(install_dir)
+        if not install_path.is_absolute():
+            _fail(400, "INVALID_INSTALL_DIR", "软件安装目录必须是绝对路径")
+        _reject_links(install_path)
+        if not paths_non_overlapping(install_path, resolved):
+            _fail(409, "TARGET_OVERLAP", "软件目录与数据目录不能相同或互相包含")
+
+    if pointer_payload is not None or legacy_has_data:
+        if normalize_compare_path(resolved) == normalize_compare_path(current_effective):
+            return {
+                "ok": True,
+                "created": False,
+                "preserved_existing": True,
+                "pointer_path": str(pointer_file),
+                "data_location": str(current_effective),
+            }
+        _fail(
+            409,
+            "EXISTING_DATA_PRESERVED",
+            "检测到已有生产数据或引导指针，升级必须保留既有数据路径",
+        )
+
+    from gw.core import storage
+
+    reason = storage.describe_resource_folder_rejection(str(resolved))
+    if reason:
+        _fail(400, "REJECTED_TARGET", f"数据位置不可用：{reason}")
+    if resolved.exists():
+        if not resolved.is_dir():
+            _fail(400, "REJECTED_TARGET", "数据位置必须是目录")
+        try:
+            if any(resolved.iterdir()):
+                _fail(409, "TARGET_NOT_EMPTY", "目标目录必须为空目录或尚不存在")
+        except OSError:
+            _fail(400, "REJECTED_TARGET", "目标目录无法安全读取")
+
+    free = _anchored_free_bytes(resolved)
+    if free < SPACE_HEADROOM_BYTES:
+        _fail(
+            507,
+            "INSUFFICIENT_SPACE",
+            "目标空间不足，需要至少 %d 字节可用" % SPACE_HEADROOM_BYTES,
+        )
+    _write_probe(resolved)
+    try:
+        resolved.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        _fail(400, "NOT_WRITABLE", "无法创建数据目录")
+
+    payload = {
+        "schema_version": POINTER_SCHEMA_VERSION,
+        "revision": 1,
+        "data_location": str(resolved),
+        "previous_location": None,
+        "last_migration": {
+            "source": "installer",
+            "created_at": _now(),
+        },
+        "keep_user_data": True,
+        "updated_at": _now(),
+    }
+    _atomic_write_json(pointer_file, payload)
+    return {
+        "ok": True,
+        "created": True,
+        "preserved_existing": False,
+        "pointer_path": str(pointer_file),
+        "data_location": str(resolved),
+    }
+
+
+def _cli_main(argv: list[str] | None = None) -> int:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Gods-Workbench 数据位置引导工具")
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--inspect-existing", action="store_true", help="只读探测既有生产数据与指针")
+    group.add_argument("--installer-init", action="store_true", help="安装向导初始化新装数据目录指针")
+    parser.add_argument("--target", help="选定的数据目录绝对路径")
+    parser.add_argument("--install-dir", help="软件安装目录绝对路径，用于互不包含校验")
+    args = parser.parse_args(argv)
+    try:
+        if args.inspect_existing:
+            result = inspect_existing_data_location()
+        else:
+            if not args.target:
+                raise CleanroomException(400, "TARGET_REQUIRED", "缺少 --target 参数")
+            result = installer_init_data_location(args.target, install_dir=args.install_dir)
+    except CleanroomException as exc:
+        print(json.dumps({"ok": False, "code": exc.code, "message": exc.message}, ensure_ascii=False))
+        return 1
+    print(json.dumps(result, ensure_ascii=False))
+    return 0
+
+
 __all__ = [
     "ALL_CATEGORIES",
     "CATEGORY_CACHE",
@@ -2042,6 +2200,8 @@ __all__ = [
     "cancel_migration",
     "check_target",
     "current_location",
+    "inspect_existing_data_location",
+    "installer_init_data_location",
     "journal_path",
     "migration_status",
     "pointer_state",
@@ -2053,3 +2213,7 @@ __all__ = [
     "status_snapshot",
     "validate_pointer_or_raise",
 ]
+
+
+if __name__ == "__main__":
+    raise SystemExit(_cli_main())

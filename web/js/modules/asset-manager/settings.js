@@ -3489,6 +3489,7 @@ export {
 // QIN-627：数据位置卡片（当前根、四类分离、预检、迁移、只读横幅）
 // ---------------------------------------------------------------------------
 const DATA_LOCATION_LOAD_TIMEOUT_MS = 8000;
+const DATA_LOCATION_TIMEOUT_MS = DATA_LOCATION_LOAD_TIMEOUT_MS;
 const dataLocationState = {
     loading: false,
     ready: false,
@@ -3500,6 +3501,11 @@ const dataLocationState = {
     poll: null,
     seq: 0,
     controller: null,
+    loadGeneration: 0,
+    checkGeneration: 0,
+    loadController: null,
+    checkController: null,
+    timeoutMs: DATA_LOCATION_TIMEOUT_MS,
 };
 
 function dataLocationFormatBytes(value){
@@ -3573,8 +3579,9 @@ function renderDataLocationCard(){
         <div class="asset-pref-title"><i data-lucide="database"></i><span>数据位置</span><button class="hw-btn hw-btn-icon" type="button" data-data-location-refresh title="重新读取数据位置" aria-label="重新读取数据位置" ${busy ? "disabled" : ""}><i data-lucide="refresh-cw"></i></button></div>
         ${errorBox}
         <div class="data-location-summary">
-            <div><span>程序与引导位置</span><strong title="${escapeAttr(String(snapshot.bootstrap_root || ""))}">${escapeHtml(String(snapshot.bootstrap_root || ""))}</strong></div>
-            <div><span>当前数据位置</span><strong title="${escapeAttr(String(snapshot.data_location || ""))}">${escapeHtml(String(snapshot.data_location || ""))}</strong></div>
+            <div><span>生效软件目录</span><strong style="min-width:0;overflow-wrap:anywhere;word-break:break-word;" title="${escapeAttr(String(snapshot.install_dir || ""))}">${escapeHtml(String(snapshot.install_dir || "—"))}</strong></div>
+            <div><span>引导目录</span><strong style="min-width:0;overflow-wrap:anywhere;word-break:break-word;" title="${escapeAttr(String(snapshot.bootstrap_root || ""))}">${escapeHtml(String(snapshot.bootstrap_root || ""))}</strong></div>
+            <div><span>当前数据位置</span><strong style="min-width:0;overflow-wrap:anywhere;word-break:break-word;" title="${escapeAttr(String(snapshot.data_location || ""))}">${escapeHtml(String(snapshot.data_location || ""))}</strong></div>
             <div><span>指针版本</span><strong>${Number(pointer.revision || 1)}${pointer.present ? "" : "（默认位置）"}</strong></div>
             <div><span>可用空间</span><strong>${dataLocationFormatBytes(snapshot.disk?.free_bytes)} / ${dataLocationFormatBytes(snapshot.disk?.total_bytes)}</strong></div>
         </div>
@@ -3613,23 +3620,28 @@ function refreshDataLocationDom(){
 }
 
 async function loadDataLocationData({force = false} = {}){
-    if(dataLocationState.loading && !force) return;
+    if(dataLocationState.loading && !force && !dataLocationState.loadController && !dataLocationState.controller) return;
     const seq = ++dataLocationState.seq;
+    dataLocationState.loadGeneration = seq;
     if(dataLocationState.controller){
         try { dataLocationState.controller.abort(); } catch(_) {}
     }
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     dataLocationState.controller = controller;
+    dataLocationState.loadController = controller;
     dataLocationState.loading = true;
     dataLocationState.error = '';
     refreshDataLocationDom();
     let timer = 0;
+    let timedOut = false;
+    const timeoutMs = Number(dataLocationState.timeoutMs) > 0 ? Number(dataLocationState.timeoutMs) : DATA_LOCATION_LOAD_TIMEOUT_MS;
     try{
         const timeoutPromise = new Promise((_, reject) => {
             timer = setTimeout(() => {
+                timedOut = true;
                 try { controller?.abort?.(); } catch(_) {}
                 reject(new Error('读取数据位置超时（超过 8 秒），请重试。'));
-            }, DATA_LOCATION_LOAD_TIMEOUT_MS);
+            }, timeoutMs);
         });
         const requestInit = {credentials:'same-origin', cache:'no-store', ...(controller ? {signal: controller.signal} : {})};
         const snapshot = await Promise.race([
@@ -3643,13 +3655,16 @@ async function loadDataLocationData({force = false} = {}){
         if(dataLocationReadOnly()) dataLocationState.check = null;
     }catch(error){
         if(seq !== dataLocationState.seq) return;
-        dataLocationState.error = error?.name === 'AbortError'
-            ? '读取数据位置已取消或超时，请重试。'
-            : (error?.message || '数据位置读取失败');
+        dataLocationState.error = timedOut
+            ? '读取数据位置超时（超过 8 秒），请重试。'
+            : (error?.name === 'AbortError'
+                ? '读取数据位置已取消或超时，请重试。'
+                : (error?.message || '数据位置读取失败'));
     }finally{
         clearTimeout(timer);
         if(dataLocationState.controller === controller){
             dataLocationState.controller = null;
+            dataLocationState.loadController = null;
         }
         if(seq === dataLocationState.seq){
             dataLocationState.loading = false;
@@ -3673,21 +3688,42 @@ function selectedDataLocationCategories(){
 async function checkDataLocationTarget(){
     const target = String(dataLocationState.target || '').trim();
     if(!target){ dataLocationState.error = '请输入新的数据位置绝对路径'; refreshDataLocationDom(); return; }
+    if(dataLocationState.checkController){
+        try{ dataLocationState.checkController.abort(); }catch(_err){}
+    }
+    const generation = ++dataLocationState.checkGeneration;
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null;
+    dataLocationState.checkController = controller;
     dataLocationState.busy = true;
     dataLocationState.error = '';
     refreshDataLocationDom();
+    let timedOut = false;
+    const timeoutMs = Number(dataLocationState.timeoutMs) > 0 ? Number(dataLocationState.timeoutMs) : DATA_LOCATION_TIMEOUT_MS;
+    const timer = controller ? setTimeout(() => {
+        timedOut = true;
+        try{ controller.abort(); }catch(_err){}
+    }, timeoutMs) : null;
     try{
-        dataLocationState.check = await apiJsonResponse(fetch('/api/data-location/check', {
+        const fetchOptions = {
             method:'POST', credentials:'same-origin',
             headers:{'Content-Type':'application/json'},
             body:JSON.stringify({target, categories:selectedDataLocationCategories()}),
-        }));
+        };
+        if(controller) fetchOptions.signal = controller.signal;
+        const checked = await apiJsonResponse(fetch('/api/data-location/check', fetchOptions));
+        if(generation !== dataLocationState.checkGeneration) return;
+        dataLocationState.check = checked;
     }catch(error){
+        if(generation !== dataLocationState.checkGeneration) return;
         dataLocationState.check = null;
-        dataLocationState.error = error.message || '目标位置预检失败';
+        dataLocationState.error = timedOut ? '目标位置预检超时，请重试' : (error.message || '目标位置预检失败');
     }finally{
-        dataLocationState.busy = false;
-        refreshDataLocationDom();
+        if(timer) clearTimeout(timer);
+        if(generation === dataLocationState.checkGeneration){
+            dataLocationState.checkController = null;
+            dataLocationState.busy = false;
+            refreshDataLocationDom();
+        }
     }
 }
 

@@ -490,7 +490,7 @@ def write_release_config(output: Path, staging_backend: Path, version: str) -> P
             "windows": {
                 "nsis": {
                     "installerHooks": str(HOOKS_NSH),
-                    "installMode": "currentUser",
+                    "installMode": "perMachine",
                 }
             },
         },

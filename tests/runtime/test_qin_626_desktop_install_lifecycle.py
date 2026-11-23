@@ -329,7 +329,7 @@ def test_release_config_and_manifest_are_same_version(tmp_path: Path) -> None:
     assert manifest["capability_digest"] == BASELINE_DIGEST
     assert config["version"] == "2.3.4"
     assert config["bundle"]["targets"] == ["nsis"]
-    assert config["bundle"]["windows"]["nsis"]["installMode"] == "currentUser"
+    assert config["bundle"]["windows"]["nsis"]["installMode"] == "perMachine"
     assert str(staging_backend) in config["bundle"]["resources"]
     assert "packaging/upgrade.ps1" in config["bundle"]["resources"].values()
     assert config["bundle"]["windows"]["nsis"]["installerHooks"].endswith("hooks.nsh")
