@@ -9,7 +9,7 @@ const SETTINGS_JS = path.join(REPO_ROOT, "web/js/modules/asset-manager/settings.
 
 function loadSettingsHarness() {
   const source = fs.readFileSync(SETTINGS_JS, "utf8");
-  const start = source.indexOf("const DATA_LOCATION_TIMEOUT_MS =");
+  const start = source.indexOf("const DATA_LOCATION_LOAD_TIMEOUT_MS =");
   const end = source.indexOf("async function startDataLocationMigration");
   assert.ok(start > -1 && end > start, "应能定位 dataLocationState 模块片段");
   const snippet = source.slice(start, end);
