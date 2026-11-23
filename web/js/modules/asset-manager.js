@@ -1394,20 +1394,15 @@ async function loadGlobalDirectorySettings(){
     storageSettingsState.open = true; directorySettingsReady = false; directorySettingsError = '';
     Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
     try {
-        const signalInit = controller ? {signal: controller.signal} : {};
-        let refreshRootsPromise = Promise.resolve(null);
+        const signalInit = controller ? {signal: controller.signal} : {}; let refreshRootsPromise = Promise.resolve(null);
         const coreLoaded = await withDirectorySettingsTimeout((async () => {
             await loadRegistryPrincipal(); if(!isCurrentLoad()) return null;
             if(!canManageProjectWorkspaceSettings()) throw new Error('仅管理员可查看和修改目录设置');
-            if(canManageAllowedRoots()){
-                refreshRootsPromise = apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin', ...signalInit})).catch(() => null);
-            }
+            if(canManageAllowedRoots()) refreshRootsPromise = apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin', ...signalInit})).catch(() => null);
             return await Promise.all([
                 apiJsonResponse(assetManagerApi.getStorageSettings()),
                 apiJsonResponse(assetManagerApi.getThumbnailSettings()),
-                canManageAllowedRoots()
-                    ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots?probe=0', {method:'GET', credentials:'same-origin', ...signalInit})).catch(() => null)
-                    : Promise.resolve(null),
+                canManageAllowedRoots() ? apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots?probe=0', {method:'GET', credentials:'same-origin', ...signalInit})).catch(() => null) : Promise.resolve(null),
             ]);
         })(), 8000, '读取目录设置超时（超过 8 秒），请重试。', controller);
         if(!isCurrentLoad() || !coreLoaded) return;
@@ -1415,64 +1410,16 @@ async function loadGlobalDirectorySettings(){
         Promise.resolve(gwCall('settings', 'applyStorageSettingsData', storage)).catch(() => {});
         if(quickRoots) Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', quickRoots)).catch(() => {});
         Promise.resolve(gwCall('settings', 'applyThumbnailSettingsSnapshot', thumbnail, {loading:false})).catch(() => {});
-        if(!isCurrentLoad()) return;
-        directorySettingsReady = true;
-        currentStatusText = '目录已同步';
+        if(!isCurrentLoad()) return; directorySettingsReady = true; currentStatusText = '目录已同步';
         Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-
-        // 后台非阻塞异步刷新：慢盘探活、资产统计、工作区映射与 Tauri 客户端来源目录不阻塞首屏交互。
-        const refreshRootsTask = refreshRootsPromise
-            .then(probedRoots => {
-                if(!isCurrentLoad() || !probedRoots) return;
-                Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', probedRoots)).catch(() => {});
-                Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-            })
-            .catch(() => null);
-        const refreshStatusTask = apiJsonResponse(assetManagerApi.getRegistryStatus())
-            .then(status => {
-                if(!isCurrentLoad() || !status) return;
-                registryStatus = status;
-            })
-            .catch(() => null);
-        const refreshFacetsTask = apiJsonResponse(assetManagerApi.getRegistryFacets())
-            .then(facets => {
-                if(!isCurrentLoad() || !facets) return;
-                registryFacets = {
-                    kinds:Array.isArray(facets.kinds)?facets.kinds:registryFacets.kinds,
-                    categories:Array.isArray(facets.categories)?facets.categories:registryFacets.categories,
-                    tags:Array.isArray(facets.tags)?facets.tags:registryFacets.tags,
-                    collections:Array.isArray(facets.collections)?facets.collections:registryFacets.collections,
-                    roots:Array.isArray(facets.roots)?facets.roots:registryFacets.roots,
-                };
-            })
-            .catch(() => null);
-        const refreshWorkspaceTask = apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin', ...signalInit}))
-            .then(workspace => {
-                if(!isCurrentLoad() || !workspace) return;
-                Promise.resolve(gwCall('settings', 'applyWorkspaceSnapshot', workspace)).catch(() => {});
-                Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-            })
-            .catch(() => null);
-        const refreshClientSourceTask = isTauriClientMode()
-            ? withDirectorySettingsTimeout(Promise.resolve(gwCall('upload', 'loadClientUploadSourceDir')), 3000, '客户端来源目录读取超时', null)
-                .then(() => {
-                    if(!isCurrentLoad()) return;
-                    const inputEl = typeof document !== 'undefined' ? document.getElementById('clientUploadSourceDir') : null;
-                    if(inputEl && typeof clientUploadSourceDir === 'string' && document.activeElement !== inputEl){
-                        inputEl.value = clientUploadSourceDir;
-                    }
-                })
-                .catch(() => null)
-            : Promise.resolve(null);
-        Promise.allSettled([refreshRootsTask, refreshStatusTask, refreshFacetsTask, refreshWorkspaceTask, refreshClientSourceTask])
-            .finally(() => { if(directorySettingsAbortController === controller) directorySettingsAbortController = null; });
-    } catch(error){
-        if(directorySettingsAbortController === controller) directorySettingsAbortController = null;
-        if(!isCurrentLoad()) return;
-        directorySettingsReady = false;
-        directorySettingsError = error?.name === 'AbortError' ? '读取目录设置已取消或超时，请重试。' : (error?.message || '目录设置读取失败');
-        Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-    }
+        Promise.allSettled([
+            refreshRootsPromise.then(probed => { if(isCurrentLoad() && probed){ Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', probed)).catch(() => {}); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); } }).catch(() => null),
+            apiJsonResponse(assetManagerApi.getRegistryStatus()).then(status => { if(isCurrentLoad() && status) registryStatus = status; }).catch(() => null),
+            apiJsonResponse(assetManagerApi.getRegistryFacets()).then(facets => { if(isCurrentLoad() && facets) registryFacets = { kinds:Array.isArray(facets.kinds)?facets.kinds:registryFacets.kinds, categories:Array.isArray(facets.categories)?facets.categories:registryFacets.categories, tags:Array.isArray(facets.tags)?facets.tags:registryFacets.tags, collections:Array.isArray(facets.collections)?facets.collections:registryFacets.collections, roots:Array.isArray(facets.roots)?facets.roots:registryFacets.roots }; }).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin', ...signalInit})).then(ws => { if(isCurrentLoad() && ws){ Promise.resolve(gwCall('settings', 'applyWorkspaceSnapshot', ws)).catch(() => {}); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); } }).catch(() => null),
+            isTauriClientMode() ? withDirectorySettingsTimeout(Promise.resolve(gwCall('upload', 'loadClientUploadSourceDir')), 3000, '客户端来源目录读取超时', null).then(() => { if(!isCurrentLoad()) return; const el = typeof document !== 'undefined' ? document.getElementById('clientUploadSourceDir') : null; if(el && typeof clientUploadSourceDir === 'string' && document.activeElement !== el) el.value = clientUploadSourceDir; }).catch(() => null) : Promise.resolve(null),
+        ]).finally(() => { if(directorySettingsAbortController === controller) directorySettingsAbortController = null; });
+    } catch(error){ if(directorySettingsAbortController === controller) directorySettingsAbortController = null; if(!isCurrentLoad()) return; directorySettingsReady = false; directorySettingsError = error?.name === 'AbortError' ? '读取目录设置已取消或超时，请重试。' : (error?.message || '目录设置读取失败'); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); }
 }
 var directorySettingsLoadSeq = 0, directorySettingsAbortController = null, directorySettingsPagehideBound = false;
 function cancelGlobalDirectorySettingsLoad(){ directorySettingsLoadSeq += 1; try { directorySettingsAbortController?.abort?.(); } catch(_) {} directorySettingsAbortController = null; }
@@ -1485,64 +1432,22 @@ async function loadPermissionsAllowedRootsSettings(){
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     directorySettingsAbortController = controller;
     const isCurrentLoad = () => seq === directorySettingsLoadSeq;
-    storageSettingsState.open = true;
-    directorySettingsReady = false;
-    directorySettingsError = '';
-    Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
+    storageSettingsState.open = true; directorySettingsReady = false; directorySettingsError = ''; Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
     try {
         const signalInit = controller ? {signal: controller.signal} : {};
-        const coreLoaded = await withDirectorySettingsTimeout((async () => {
-            await loadRegistryPrincipal(); if(!isCurrentLoad()) return null;
-            if(!canManageAllowedRoots()) throw new Error('仅管理员可查看和修改允许根权限');
-            return await Promise.all([
-                apiJsonResponse(assetManagerApi.getStorageSettings()),
-                apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots?probe=0', {method:'GET', credentials:'same-origin', ...signalInit})),
-            ]);
-        })(), 8000, '读取允许根权限超时（超过 8 秒），请重试。', controller);
+        const coreLoaded = await withDirectorySettingsTimeout((async () => { await loadRegistryPrincipal(); if(!isCurrentLoad()) return null; if(!canManageAllowedRoots()) throw new Error('仅管理员可查看和修改允许根权限'); return await Promise.all([apiJsonResponse(assetManagerApi.getStorageSettings()), apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots?probe=0', {method:'GET', credentials:'same-origin', ...signalInit}))]); })(), 8000, '读取允许根权限超时（超过 8 秒），请重试。', controller);
         if(!isCurrentLoad() || !coreLoaded) return;
         const [storage, quickRoots] = coreLoaded;
         Promise.resolve(gwCall('settings', 'applyStorageSettingsData', storage)).catch(() => {});
         if(quickRoots) Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', quickRoots)).catch(() => {});
-        if(!isCurrentLoad()) return;
-        directorySettingsReady = true;
-        currentStatusText = '权限配置已同步';
+        if(!isCurrentLoad()) return; directorySettingsReady = true; currentStatusText = '权限配置已同步';
         Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-
-        const refreshRootsTask = apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin', ...signalInit}))
-            .then(probedRoots => {
-                if(!isCurrentLoad() || !probedRoots) return;
-                Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', probedRoots)).catch(() => {});
-                Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-            })
-            .catch(() => null);
-        const refreshFacetsTask = apiJsonResponse(assetManagerApi.getRegistryFacets())
-            .then(facets => {
-                if(!isCurrentLoad() || !facets) return;
-                registryFacets = {
-                    kinds:Array.isArray(facets.kinds) ? facets.kinds : registryFacets.kinds,
-                    categories:Array.isArray(facets.categories) ? facets.categories : registryFacets.categories,
-                    tags:Array.isArray(facets.tags) ? facets.tags : registryFacets.tags,
-                    collections:Array.isArray(facets.collections) ? facets.collections : registryFacets.collections,
-                    roots:Array.isArray(facets.roots) ? facets.roots : registryFacets.roots,
-                };
-            })
-            .catch(() => null);
-        const refreshWorkspaceTask = apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin', ...signalInit}))
-            .then(workspace => {
-                if(!isCurrentLoad() || !workspace) return;
-                Promise.resolve(gwCall('settings', 'applyWorkspaceSnapshot', workspace)).catch(() => {});
-                Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-            })
-            .catch(() => null);
-        Promise.allSettled([refreshRootsTask, refreshFacetsTask, refreshWorkspaceTask])
-            .finally(() => { if(directorySettingsAbortController === controller) directorySettingsAbortController = null; });
-    } catch(error){
-        if(directorySettingsAbortController === controller) directorySettingsAbortController = null;
-        if(!isCurrentLoad()) return;
-        directorySettingsReady = false;
-        directorySettingsError = error?.name === 'AbortError' ? '读取允许根权限已取消或超时，请重试。' : (error?.message || '允许根权限读取失败');
-        Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {});
-    }
+        Promise.allSettled([
+            apiJsonResponse(assetManagerHttp.request('/api/storage-settings/roots', {method:'GET', credentials:'same-origin', ...signalInit})).then(probed => { if(isCurrentLoad() && probed){ Promise.resolve(gwCall('settings', 'applyAllowedRootSettingsData', probed)).catch(() => {}); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); } }).catch(() => null),
+            apiJsonResponse(assetManagerApi.getRegistryFacets()).then(facets => { if(isCurrentLoad() && facets) registryFacets = { kinds:Array.isArray(facets.kinds)?facets.kinds:registryFacets.kinds, categories:Array.isArray(facets.categories)?facets.categories:registryFacets.categories, tags:Array.isArray(facets.tags)?facets.tags:registryFacets.tags, collections:Array.isArray(facets.collections)?facets.collections:registryFacets.collections, roots:Array.isArray(facets.roots)?facets.roots:registryFacets.roots }; }).catch(() => null),
+            apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin', ...signalInit})).then(ws => { if(isCurrentLoad() && ws){ Promise.resolve(gwCall('settings', 'applyWorkspaceSnapshot', ws)).catch(() => {}); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); } }).catch(() => null),
+        ]).finally(() => { if(directorySettingsAbortController === controller) directorySettingsAbortController = null; });
+    } catch(error){ if(directorySettingsAbortController === controller) directorySettingsAbortController = null; if(!isCurrentLoad()) return; directorySettingsReady = false; directorySettingsError = error?.name === 'AbortError' ? '读取允许根权限已取消或超时，请重试。' : (error?.message || '允许根权限读取失败'); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); }
 }
 let allowedRootMutationSeq = 0;
 function invalidateAllowedRootMutation(){

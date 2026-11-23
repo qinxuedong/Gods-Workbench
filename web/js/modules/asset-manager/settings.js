@@ -1721,8 +1721,7 @@ function renderPurgeConfirmModal(){
 function renderAllowedRootsSettings(){
     if(!canManageAllowedRoots()) return '';
     const statusLabel = root => root.availability === 'available' ? '在线'
-        : root.availability === 'probing' ? '探活中'
-        : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
+        : root.availability === 'probing' ? '探活中' : root.availability === 'removed' ? '已移除' : root.availability === 'invalid' ? '无效' : '离线';
     const seenPaths = new Set();
     const uniqueRoots = [];
     for(const root of (allowedRootSettingsState.roots || [])){
