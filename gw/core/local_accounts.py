@@ -79,7 +79,9 @@ def database():
 
     connection = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        from gw.core import trusted_local
+
+        trusted_local.ensure_auth_dir_restricted(path.parent)
         # QIN-627 L3：只读窗口内以 mode=ro 打开，跳过建表与迁移，保证 GET 仍可认证。
         from gw.core.write_window import open_sqlite, writes_blocked
 

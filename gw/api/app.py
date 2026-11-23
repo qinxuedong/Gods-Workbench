@@ -187,6 +187,15 @@ async def _app_lifespan(app: FastAPI):
                 recovery.get("action"),
             )
         default_god_canvas_service.recover_interrupted_jobs()
+        # 启动时预置并收紧 auth 目录权限，避免继承父目录宽松 ACL 阻断本机受信直入。
+        try:
+            from gw.core import trusted_local
+            from gw.core.write_window import writes_blocked
+
+            if not writes_blocked() and trusted_local.trusted_local_enabled():
+                trusted_local.ensure_auth_dir_restricted(runtime.auth_db.parent)
+        except Exception as exc:  # pragma: no cover - 收紧失败由后续验权显式拦截，不阻断服务启动
+            logging.getLogger("gw.api.app").warning("启动收紧认证目录权限异常：%s", exc)
         # FFmpeg/FFprobe 部署自检一行摘要（QIN-607）：无路径回显，异常不阻断启动。
         try:
             from gw.core.ffmpeg_resolver import probe_tool_version, resolve_ffmpeg_tool
