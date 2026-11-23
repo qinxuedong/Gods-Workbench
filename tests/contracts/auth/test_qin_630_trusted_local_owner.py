@@ -672,3 +672,62 @@ def test_existing_owner_blocks_new_ticket_when_device_key_is_lost(trusted_env):
     assert not key_path.exists()
     # 既有绑定不受影响
     assert len(read_table("trusted_local_owners")) == 1
+
+
+@pytest.mark.skipif(os.name != "nt", reason="Windows 目录继承 ACL 剥离仅在 Windows 上验证")
+def test_auth_dir_strips_inherited_non_controlled_principal_on_init(tmp_path):
+    """父目录带额外可继承主体时，初始化 auth 目录须自动剥离继承并通过 ACL 校验。"""
+    import json
+    import sys
+
+    from gw.core import trusted_local
+
+    parent_dir = tmp_path / "inherited_parent"
+    parent_dir.mkdir()
+    users_sid = "S-1-5-32-545"
+    grant = subprocess.run(
+        ["icacls", str(parent_dir), "/grant", f"*{users_sid}:(OI)(CI)(RX)"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert grant.returncode == 0, grant.stderr
+
+    auth_dir = parent_dir / "auth"
+    trusted_local.ensure_auth_dir_restricted(auth_dir)
+
+    verifier = Path(__file__).resolve().parents[3] / "clients" / "desktop" / "packaging" / "verify_trusted_acl.py"
+    check = subprocess.run(
+        [sys.executable, str(verifier), "--json", "--auth-dir", str(auth_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert check.returncode == 0, check.stdout + check.stderr
+    payload = json.loads(check.stdout)
+    assert payload["ok"] is True
+    assert "auth_dir" in payload["checked"]
+
+
+def test_trusted_open_succeeds_under_running_backend_lock_and_blocks_replay(trusted_env, monkeypatch):
+    """后端进程已持 data_dir_lock（LOCK_HELD）时，签发票据仍可兑换且防重放。"""
+    from gw.core import local_accounts, trusted_local
+
+    def simulate_lock_held():
+        raise CleanroomException(
+            503,
+            "DATA_LOCATION_QUIESCING",
+            "数据位置迁移或其他进程占用中（LOCK_HELD），本机账户写入已暂停",
+        )
+
+    with monkeypatch.context() as scoped:
+        scoped.setattr(local_accounts, "database", simulate_lock_held)
+        ticket = trusted_local.issue_bootstrap_ticket()
+
+    with make_client() as client:
+        ok = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert ok.status_code == 200, ok.text
+        assert ok.json()["authenticated"] is True
+        replay = client.post(BOOTSTRAP_PATH, json={"ticket": ticket})
+        assert replay.status_code == 401
+        assert replay.json()["detail"]["code"] == "TRUSTED_LOCAL_BOOTSTRAP_INVALID"

@@ -79,7 +79,9 @@ def database():
 
     connection = None
     try:
-        path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        from gw.core import trusted_local
+
+        trusted_local.ensure_auth_dir_restricted(path.parent)
         # QIN-627 L3：只读窗口内以 mode=ro 打开，跳过建表与迁移，保证 GET 仍可认证。
         from gw.core.write_window import open_sqlite, writes_blocked
 
@@ -593,15 +595,42 @@ def record_bootstrap_ticket(
     )
 
 
-def consume_bootstrap_ticket(db, jti: str, now: float) -> bool:
+def consume_bootstrap_ticket(
+    db,
+    jti: str,
+    now: float,
+    *,
+    device_fingerprint: str = "",
+    expires_at: float | None = None,
+) -> bool:
     """在**既有事务内**原子消费一张启动票据；成功返回 True。
 
-    已消费、已过期或不存在的票据一律返回 False，由调用方失败关闭。
+    已消费或已过期的票据一律返回 False；若签发时后端正持锁运行而未预登记，
+    在传入有效设备指纹与未过期时间时原子插入已消费记录以防止重放。
     """
     row = db.execute(
         "SELECT * FROM trusted_local_bootstrap_tickets WHERE jti=?", (str(jti),)
     ).fetchone()
-    if row is None or row["consumed_at"] is not None:
+    if row is None:
+        if not device_fingerprint or expires_at is None or float(expires_at) <= float(now):
+            return False
+        try:
+            db.execute(
+                "INSERT INTO trusted_local_bootstrap_tickets "
+                "(jti, device_fingerprint, issued_at, expires_at, consumed_at) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (
+                    str(jti),
+                    str(device_fingerprint),
+                    float(now),
+                    float(expires_at),
+                    float(now),
+                ),
+            )
+            return True
+        except sqlite3.IntegrityError:
+            return False
+    if row["consumed_at"] is not None:
         return False
     if float(row["expires_at"]) <= float(now):
         return False

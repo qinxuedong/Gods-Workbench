@@ -43,6 +43,7 @@ import stat
 import subprocess
 import tempfile
 import time
+from functools import lru_cache
 from pathlib import Path
 
 from gw.core.errors import CleanroomException
@@ -109,6 +110,10 @@ def pending_ticket_path() -> Path:
 # ---------------------------------------------------------------------------
 
 
+_RESTRICTED_AUTH_DIRS: set[Path] = set()
+
+
+@lru_cache(maxsize=1)
 def _windows_current_sid() -> str:
     """返回当前登录账户的 SID（不依赖系统语言）。"""
     result = subprocess.run(
@@ -126,20 +131,21 @@ def _windows_current_sid() -> str:
     )
 
 
-def _restrict_windows_acl(path: Path) -> None:
+def _restrict_windows_acl(path: Path, *, is_dir: bool = False) -> None:
     """用系统自带 icacls 施加显式受限 DACL（去继承 + 仅授受控主体）。"""
     current_sid = _windows_current_sid()
+    perm = "(OI)(CI)(F)" if is_dir else "(F)"
     result = subprocess.run(
         [
             "icacls",
             str(path),
             "/inheritance:r",
             "/grant:r",
-            f"*{current_sid}:(F)",
+            f"*{current_sid}:{perm}",
             "/grant:r",
-            f"*{_WINDOWS_SYSTEM_SID}:(F)",
+            f"*{_WINDOWS_SYSTEM_SID}:{perm}",
             "/grant:r",
-            f"*{_WINDOWS_ADMINISTRATORS_SID}:(F)",
+            f"*{_WINDOWS_ADMINISTRATORS_SID}:{perm}",
         ],
         capture_output=True,
         text=True,
@@ -151,6 +157,25 @@ def _restrict_windows_acl(path: Path) -> None:
             "TRUSTED_LOCAL_KEY_PERMISSIONS_UNSAFE",
             "无法为设备密钥施加受限访问控制，设备密钥未启用",
         )
+
+
+def restrict_directory_permissions(path: Path) -> None:
+    """收紧账户目录访问权限：Windows 仅授受控主体并去继承，Unix 为 0700。"""
+    if os.name == "nt":
+        _restrict_windows_acl(path, is_dir=True)
+        return
+    os.chmod(path, 0o700)
+
+
+def ensure_auth_dir_restricted(auth_dir: Path) -> Path:
+    """确保认证目录存在并已收紧访问控制（进程内按解析路径幂等记忆）。"""
+    auth_dir.mkdir(parents=True, exist_ok=True, mode=0o700)
+    resolved = auth_dir.resolve()
+    if resolved in _RESTRICTED_AUTH_DIRS:
+        return auth_dir
+    restrict_directory_permissions(auth_dir)
+    _RESTRICTED_AUTH_DIRS.add(resolved)
+    return auth_dir
 
 
 def _decode_acl_text(raw: bytes) -> str:
@@ -264,7 +289,7 @@ def verify_file_permissions(path: Path) -> None:
 
 def _write_restricted_file(path: Path, payload: bytes) -> None:
     """先保护并验证空临时文件，再写入秘密并原子替换目标。"""
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_auth_dir_restricted(path.parent)
     handle = tempfile.NamedTemporaryFile(
         dir=str(path.parent), prefix=f"{path.name}.", suffix=".tmp", delete=False
     )
@@ -329,7 +354,7 @@ def load_or_create_device_key() -> bytes:
     已创建的同一把密钥，保证所有进程使用同一信任根。
     """
     path = device_key_path()
-    path.parent.mkdir(parents=True, exist_ok=True)
+    ensure_auth_dir_restricted(path.parent)
     try:
         descriptor = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
     except FileExistsError:
@@ -435,15 +460,21 @@ def issue_bootstrap_ticket(*, now: float | None = None) -> str:
 
     from gw.core import local_accounts
 
-    with local_accounts.database() as db:
-        db.execute("BEGIN IMMEDIATE")
-        local_accounts.record_bootstrap_ticket(
-            db,
-            str(payload["jti"]),
-            fingerprint,
-            issued_at,
-            float(payload["exp"]),
-        )
+    try:
+        with local_accounts.database() as db:
+            db.execute("BEGIN IMMEDIATE")
+            local_accounts.record_bootstrap_ticket(
+                db,
+                str(payload["jti"]),
+                fingerprint,
+                issued_at,
+                float(payload["exp"]),
+            )
+    except CleanroomException as exc:
+        # 桌面端等场景中，后端主进程已启动并持有 data_dir_lock（LOCK_HELD）；
+        # 外部 trusted-open 子进程无法抢锁预写库，交由持有锁的后端在兑换时原子落库防重放。
+        if exc.code != "DATA_LOCATION_QUIESCING" or "LOCK_HELD" not in exc.message:
+            raise
     _write_restricted_file(pending_ticket_path(), ticket.encode("ascii"))
     return ticket
 

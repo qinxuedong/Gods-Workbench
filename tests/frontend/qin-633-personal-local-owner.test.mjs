@@ -410,26 +410,13 @@ test('bootstrap.js: 收到 200 响应且携带 recovery_codes 时在 result, ins
 // AC1 & AC4: 空库受信首启恢复码展示与用户交互确认
 // ---------------------------------------------------------------------------
 
-test('AC1: 可信首启直入且携带 recovery_codes 时，安全展示一次性恢复码弹窗供用户保存', async () => {
+test('保留组件能力: 直接调用 renderTrustedLocalRecoveryCodes 时可安全渲染恢复码弹窗', async () => {
     const mockCodes = ['RC-AAA1-BBB2', 'RC-CCC3-DDD4', 'RC-EEE5-FFF6', 'RC-GGG7-HHH8'];
-    const {deck, dialog, modal, openedModals} = deckHarness({
-        statusResponse: {
-            auth_mode: 'local_account',
-            authenticated: true,
-            principal: {username: 'local-owner', role: 'admin'},
-            setup_required: false,
-            trusted_local: {
-                enabled: true,
-                established: true,
-                needs_manual_claim: false,
-                mode: 'trusted_local',
-            },
-        },
-    });
-    deck.authState.trusted_local.recovery_codes = mockCodes;
+    const {deck, dialog, modal, openedModals} = deckHarness();
 
-    await deck.syncAuth();
+    const shown = deck.renderTrustedLocalRecoveryCodes(mockCodes);
 
+    assert.equal(shown, true);
     assert.equal(openedModals.includes('accountModal'), true);
     assert.equal(modal.classList.contains('open'), true);
     assert.match(dialog.innerHTML, /本机管理员已建立 · 请妥善保存恢复码/);
@@ -440,24 +427,10 @@ test('AC1: 可信首启直入且携带 recovery_codes 时，安全展示一次�
     assert.match(dialog.innerHTML, /已保存，进入工作台/);
 });
 
-test('AC1: 恢复码弹窗未勾选保存确认前禁用继续按钮，勾选后解禁，点击进入工作台安全关闭弹窗', async () => {
+test('保留组件能力: 恢复码弹窗未勾选保存确认前禁用继续按钮，勾选后解禁，点击进入工作台安全关闭弹窗', async () => {
     const mockCodes = ['RC-1111-2222', 'RC-3333-4444'];
-    const {deck, elements, closedModals} = deckHarness({
-        statusResponse: {
-            auth_mode: 'local_account',
-            authenticated: true,
-            principal: {username: 'local-owner', role: 'admin'},
-            setup_required: false,
-            trusted_local: {
-                enabled: true,
-                established: true,
-                needs_manual_claim: false,
-                mode: 'trusted_local',
-            },
-        },
-    });
-    deck.authState.trusted_local.recovery_codes = mockCodes;
-    await deck.syncAuth();
+    const {deck, elements, closedModals} = deckHarness();
+    deck.renderTrustedLocalRecoveryCodes(mockCodes);
 
     const checkbox = elements.get('localRecoverySaved');
     const continueBtn = elements.get('localRecoveryContinue');
@@ -499,8 +472,7 @@ test('AC2: 已有账户自动接管或二次启动（recovery_codes 为空）时
     assert.equal(openedModals.includes('accountModal'), false);
 });
 
-test('AC1/P1回归: 初始 DOM 无弹窗节点时，可信首启直入携带 recovery_codes 能自动创建 modal 并正确展示', async () => {
-    // 初始 DOM 绝无预置 modal 或 dialog 节点
+test('QIN-634: 个人本机可信首启直入即使携带 recovery_codes 也不得自动弹出恢复码保存弹窗', async () => {
     const harness = deckHarness({
         presetModal: false,
         statusResponse: {
@@ -516,9 +488,6 @@ test('AC1/P1回归: 初始 DOM 无弹窗节点时，可信首启直入携带 rec
             },
         },
     });
-
-    assert.equal(harness.document.getElementById('accountModal'), null, '初始不得存在 accountModal 节点');
-    assert.equal(harness.document.getElementById('accountModalDialog'), null, '初始不得存在 accountModalDialog 节点');
 
     const sampleCodes = ['RC-1111-2222', 'RC-3333-4444', 'RC-5555-6666', 'RC-7777-8888'];
     harness.deck.authState.trusted_local = {
@@ -527,24 +496,16 @@ test('AC1/P1回归: 初始 DOM 无弹窗节点时，可信首启直入携带 rec
         recovery_codes: sampleCodes,
     };
 
-    assert.equal(harness.deck.recoveryCodesShown, false);
-
     await harness.deck.syncAuth();
 
-    // 验证：自动创建了 modal 和 dialog 节点
-    const modal = harness.document.getElementById('accountModal');
-    const dialog = harness.document.getElementById('accountModalDialog');
-    assert.ok(modal, 'syncAuth 必须自动创建 accountModal 节点');
-    assert.ok(dialog, 'syncAuth 必须自动创建 accountModalDialog 节点');
-    assert.ok(harness.openedModals.includes('accountModal'), 'accountModal 必须被显式打开');
-    assert.match(dialog.innerHTML, /本机管理员已建立 · 请妥善保存恢复码/);
-    assert.match(dialog.innerHTML, /RC-1111-2222/);
-    assert.equal(harness.deck.recoveryCodesShown, true, '成功展示后方可置 recoveryCodesShown 为 true');
+    assert.equal(harness.openedModals.includes('accountModal'), false, '个人本机直入不得弹出 accountModal');
+    assert.equal(harness.document.getElementById('accountModal'), null, '不得自动创建恢复码弹窗节点');
+    assert.equal(harness.deck.recoveryCodesShown, false, '不得标记 recoveryCodesShown');
 });
 
-test('AC1/P1回归: 若初次渲染因故未成功展示恢复码，不得预先标记 recoveryCodesShown，后续 syncAuth 必须补显', async () => {
+test('QIN-634: 个人本机可信直入完成时，若已有打开的 accountModal 应自动关闭', async () => {
     const harness = deckHarness({
-        presetModal: false,
+        presetModal: true,
         statusResponse: {
             auth_mode: 'local_account',
             authenticated: true,
@@ -559,28 +520,19 @@ test('AC1/P1回归: 若初次渲染因故未成功展示恢复码，不得预先
         },
     });
 
-    const sampleCodes = ['RC-AAAA-BBBB'];
+    harness.deck.openAccountModal();
+    assert.equal(harness.document.getElementById('accountModal').classList.contains('open'), true);
+
     harness.deck.authState.trusted_local = {
         enabled: true,
         established: true,
-        recovery_codes: sampleCodes,
+        recovery_codes: ['RC-AAAA-BBBB'],
     };
 
-    // 模拟初次渲染时 ensureAccountModal 失败（如 document.body 尚未就绪）
-    const origEnsure = harness.deck.ensureAccountModal;
-    harness.deck.ensureAccountModal = () => null;
-
-    await harness.deck.syncAuth();
-    assert.equal(harness.deck.recoveryCodesShown, false, '渲染失败时绝对不得标记为已展示');
-
-    // 恢复正常环境后再次 syncAuth
-    harness.deck.ensureAccountModal = origEnsure;
     await harness.deck.syncAuth();
 
-    assert.equal(harness.deck.recoveryCodesShown, true, '恢复后二次 syncAuth 必须成功补显并标记已展示');
-    const dialog = harness.document.getElementById('accountModalDialog');
-    assert.ok(dialog);
-    assert.match(dialog.innerHTML, /RC-AAAA-BBBB/);
+    assert.equal(harness.document.getElementById('accountModal').classList.contains('open'), false, '已有打开的 accountModal 应被自动关闭');
+    assert.equal(harness.deck.recoveryCodesShown, false);
 });
 
 function createFloatingDeckHarness() {
