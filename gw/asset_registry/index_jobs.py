@@ -66,6 +66,10 @@ VIDEO_SUFFIXES = frozenset(
 # 视频探针/哈希可能耗时数秒，只按批次落盘会让运行中的 scanned 恒为 0。
 PROGRESS_MIN_INTERVAL_SECONDS = 0.2
 PROGRESS_BATCH_SIZE = 25
+# 温和节流：大目录扫描时每处理 50 个文件在锁外让出 5ms 时间片，避免单核 CPU
+# 持续打满并与预览请求/主服务事件循环竞争资源；小库（<50 项）零开销。
+SCAN_THROTTLE_EVERY = 50
+SCAN_THROTTLE_SECONDS = 0.005
 TERMINAL = {"succeeded", "failed", "cancelled", "interrupted"}
 ACTIONS = {
     "pause": {"queued", "running"},
@@ -2534,6 +2538,11 @@ class IndexJobs:
                                     job["scanned"] = len(files)
                                     self._save(job)
                             progress_saved_at = now
+                        if (
+                            SCAN_THROTTLE_SECONDS > 0
+                            and len(files) % SCAN_THROTTLE_EVERY == 0
+                        ):
+                            time.sleep(SCAN_THROTTLE_SECONDS)
                     except OSError:
                         with self.condition:
                             job = self._checkpoint(job_id, attempt)

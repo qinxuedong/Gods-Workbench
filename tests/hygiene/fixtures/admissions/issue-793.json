@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 793,
+  "authorization_basis": "GitHub Issue #793 QIN-644, 2026-11-23",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "gw/media/repository.py",
+    "tests/contracts/media/test_qin_644_preview_concurrency_tuning.py",
+    "tests/hygiene/fixtures/admissions/issue-793.json",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/media/test_qin_644_preview_concurrency_tuning.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #793 QIN-644, 2026-11-23",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-644: 资产扫描与缩略图加载高 CPU 占用性能调优；只写本票分片，基础账本与硬计数保持不变。"
+}
