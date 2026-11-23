@@ -642,6 +642,8 @@ def _decode_jxl_source(path: Path) -> bytes:
                     "-hide_banner",
                     "-loglevel",
                     "error",
+                    "-threads",
+                    "1",
                     "-i",
                     str(path),
                     "-frames:v",
@@ -697,6 +699,8 @@ def _encode_jxl_thumbnail(png_bytes: bytes) -> bytes:
                     "-hide_banner",
                     "-loglevel",
                     "error",
+                    "-threads",
+                    "1",
                     "-f",
                     "image2pipe",
                     "-vcodec",
@@ -1420,6 +1424,10 @@ def _prune_stale_preview_cache(
             continue
 
 
+_PREVIEW_DECODE_CONCURRENCY = max(2, min(4, (os.cpu_count() or 4) // 4 or 1))
+_PREVIEW_DECODE_SEMAPHORE = threading.BoundedSemaphore(_PREVIEW_DECODE_CONCURRENCY)
+
+
 def _live_preview_bytes(
     path: Path,
     width: int,
@@ -1427,14 +1435,19 @@ def _live_preview_bytes(
     video: bool,
     image_format: Literal["png", "jxl", "webp"] = "png",
 ) -> tuple[bytes, str]:
-    """实时生成预览（缓存不可用时唯一出路），不写盘。"""
-    if video:
-        return _video_frame_bytes(path, width), "image/jpeg"
-    extension = {"png": ".png", "jxl": ".jxl", "webp": ".webp"}[image_format]
-    return (
-        _thumbnail_bytes(path, width, image_format=image_format),
-        MIME_BY_SUFFIX[extension],
-    )
+    """实时生成预览（缓存不可用时唯一出路），不写盘。
+
+    仅在缓存未命中、需要实际解码/抽帧时获取全局并发信号量，防止冷加载
+    瞬间并发拉起过多解码线程或 ffmpeg 子进程打满 CPU。
+    """
+    with _PREVIEW_DECODE_SEMAPHORE:
+        if video:
+            return _video_frame_bytes(path, width), "image/jpeg"
+        extension = {"png": ".png", "jxl": ".jxl", "webp": ".webp"}[image_format]
+        return (
+            _thumbnail_bytes(path, width, image_format=image_format),
+            MIME_BY_SUFFIX[extension],
+        )
 
 
 #: 预览读路径只记忆「缓存目录解析结果」，不缓存缩略图字节，也不新增第二套
@@ -1727,6 +1740,8 @@ def _video_frame_bytes(path: Path, width: int) -> bytes:
             [
                 ffmpeg,
                 "-y",
+                "-threads",
+                "1",
                 "-i",
                 str(path),
                 "-frames:v",
@@ -1761,6 +1776,8 @@ def _pcm_envelope(path: Path) -> tuple[list[tuple[float, float]], float]:
             [
                 ffmpeg,
                 "-y",
+                "-threads",
+                "1",
                 "-i",
                 str(path),
                 "-vn",
@@ -2101,12 +2118,10 @@ PREVIEW_ALL_WIDTH = 256
 PREVIEW_ALL_MODES = ("fill", "rebuild")
 # 限速：每批之间让出 20ms，避免全库预热打满创作者 PC 或 NAS 的 CPU。
 PREVIEW_ALL_THROTTLE_SECONDS = 0.02
-# 并发度：Pillow 的解码/重采样/编码都在 C 层并释放 GIL，ffmpeg 走子进程，串行跑
-# 等于把 CPU 空出来。实测同一批 354 项（24 核）：纯解码 16 路 8.3x / 24 路 9.2x
-# 加速，加进程池并无额外收益（spawn 开销吃掉了 GIL 之外的那点提升），所以只用
-# 线程池，上限放宽到 32 便于在高核机器上显式压满。
-PREVIEW_ALL_DEFAULT_WORKERS = 16
-PREVIEW_ALL_MAX_WORKERS = 32
+# 并发度：桌面工作台需同时服务 WebView2 与主 API 响应，基于 CPU 核数采取保守
+# 并发上限，避免无节制拉起过多 PIL/ffmpeg 解码线程或子进程打满 CPU。
+PREVIEW_ALL_DEFAULT_WORKERS = 4
+PREVIEW_ALL_MAX_WORKERS = 8
 _PREVIEW_ALL_FLUSH_EVERY = 10
 # 状态写入的瞬时冲突重试次数（Windows 上并发读 + os.replace 会短暂 PermissionError）。
 _PREVIEW_ALL_WRITE_ATTEMPTS = 5
@@ -2275,7 +2290,7 @@ def _preview_all_workers(payload: dict[str, Any] | None) -> int:
             ) from None
         return max(1, min(PREVIEW_ALL_MAX_WORKERS, requested))
     cpu = os.cpu_count() or 4
-    return max(1, min(PREVIEW_ALL_DEFAULT_WORKERS, cpu))
+    return max(1, min(PREVIEW_ALL_DEFAULT_WORKERS, max(1, cpu // 4)))
 
 
 def _run_preview_all(

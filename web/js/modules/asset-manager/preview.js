@@ -1288,23 +1288,23 @@ function renderMediaNodeParametricSvg(item, edit, url, previewFallback=''){
     </svg>`;
 }
 function preloadDetailViewerNeighbors(){
-    const source = detailViewerState.source;
-    [detailViewerState.index-1,detailViewerState.index+1].forEach(index => {
-        const item = detailViewerState.items[index];
-        if(!item || detailViewerType(source,item) !== 'image') return;
-        const assetId = detailMediaCanvasPersistId(item,source);
-        const currentUrl = detailViewerUrl(source,item);
-        const url = assetId && !/\/image-versions\/[^/?#]+\/media(?:\?|#|$)/i.test(currentUrl)
-            ? `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media`
-            : String(item.assetUrl || item.asset_url || item.original_url || currentUrl || '');
-        const previewUrl = assetPreviewUrl(url, 1024, item) || url;
-        if(!previewUrl || detailViewerMediaPreloads.has(previewUrl)) return;
-        const image = new Image();
-        detailViewerMediaPreloads.set(previewUrl,image);
-        image.src = previewUrl;
-    });
-    while(detailViewerMediaPreloads.size > 6) detailViewerMediaPreloads.delete(detailViewerMediaPreloads.keys().next().value);
-}
+    if(preloadDetailViewerNeighbors._timer) clearTimeout(preloadDetailViewerNeighbors._timer);
+    preloadDetailViewerNeighbors._timer = setTimeout(() => { preloadDetailViewerNeighbors._timer = null;
+        const source = detailViewerState.source;
+        [detailViewerState.index-1,detailViewerState.index+1].forEach(index => {
+            const item = detailViewerState.items[index];
+            if(!item || detailViewerType(source,item) !== 'image') return;
+            const assetId = detailMediaCanvasPersistId(item,source);
+            const currentUrl = detailViewerUrl(source,item);
+            const url = assetId && !/\/image-versions\/[^/?#]+\/media(?:\?|#|$)/i.test(currentUrl) ? `/api/asset-registry/assets/${encodeURIComponent(assetId)}/media` : String(item.assetUrl || item.asset_url || item.original_url || currentUrl || '');
+            const previewUrl = assetPreviewUrl(url, 1024, item) || url;
+            if(!previewUrl || detailViewerMediaPreloads.has(previewUrl)) return;
+            const image = new Image();
+            detailViewerMediaPreloads.set(previewUrl,image);
+            image.src = previewUrl;
+        });
+        while(detailViewerMediaPreloads.size > 6) detailViewerMediaPreloads.delete(detailViewerMediaPreloads.keys().next().value);
+    }, 80); }
 function renderDetailMediaVideoControls(item={}){
     if(detailViewerType(detailViewerState.source,item) !== 'video') return '';
     const videoId = String(item.id || '');
