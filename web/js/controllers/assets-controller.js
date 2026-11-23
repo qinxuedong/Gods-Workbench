@@ -406,7 +406,8 @@ window.WorkbenchAssets = (() => {
 
   function closeShellOrganizeMenu() {
     document.getElementById('assetOrganizeMenu')?.remove();
-    categories?.querySelectorAll?.('.is-context-open').forEach(el => el.classList.remove('is-context-open'));
+    const catEl = (typeof categories !== 'undefined' && categories) || document.getElementById('assetCategories');
+    catEl?.querySelectorAll?.('.is-context-open').forEach(el => el.classList.remove('is-context-open'));
   }
 
   function showShellOrganizeToast(text, undoable = false) {
@@ -423,9 +424,10 @@ window.WorkbenchAssets = (() => {
 
   function openShellOrganizeMenu(target, clientX, clientY) {
     closeShellOrganizeMenu();
-    if (target?.key && categories?.querySelector) {
+    const catEl = (typeof categories !== 'undefined' && categories) || document.getElementById('assetCategories');
+    if (target?.key && catEl?.querySelector) {
       try {
-        categories.querySelector(`[data-asset-tree-entry="${CSS.escape(String(target.key))}"]`)?.classList.add('is-context-open');
+        catEl.querySelector(`[data-asset-tree-entry="${CSS.escape(String(target.key))}"]`)?.classList.add('is-context-open');
       } catch (_) {}
     }
     const menu = document.createElement('div');

@@ -1606,33 +1606,6 @@ document.addEventListener('click', event => {
         void saveAllowedRootsRequest(`/api/storage-settings/roots/${encodeURIComponent(rootId)}/aliases/confirm`, 'POST', {path, expected_version:expectedVersion});
     }
 });
-function boardSourceLeafFolderName(pathValue){
-    const raw = String(pathValue || '').trim().replace(/[\\/]+$/, '');
-    if(!raw || /^[A-Za-z]:$/.test(raw)) return '';
-    const parts = raw.split(/[\\/]+/).filter(Boolean);
-    const leaf = parts[parts.length - 1] || '';
-    return /^[A-Za-z]:$/.test(leaf) ? '' : leaf;
-}
-function isDefaultBoardSourceName(nameValue){
-    const name = String(nameValue || '').trim();
-    return !name || name === '用户素材' || name === '上传素材';
-}
-document.addEventListener('input', event => {
-    if(event.target?.id === 'boardSourceName'){
-        const nextName = String(event.target.value || '');
-        boardSourceState.name = nextName;
-        boardSourceState.nameCustom = !isDefaultBoardSourceName(nextName);
-        return;
-    }
-    if(event.target?.id === 'boardSourcePath'){
-        const nextPath = String(event.target.value || '');
-        boardSourceState.path = nextPath;
-        if(nextPath.trim() !== boardSourceState.pickedValidatedPath){
-            boardSourceState.pickedValidatedPath = '';
-        }
-        return;
-    }
-});
 document.addEventListener('change', event => {
     // 客户端来源目录只保存在客户端本机，不进入服务器 storage settings。
     const input = event.target?.closest?.('#clientUploadSourceDir');
@@ -8401,7 +8374,14 @@ async function handleClick(event){
     }
     const boardSourceSettings = target.closest?.('[data-board-source-settings]');
     if(boardSourceSettings){ gwCall('organize', 'openBoardSourceModal', boardSourceSettings.dataset.boardSourceSettings || activeTab); return; }
-    if(target.closest?.('[data-board-source-confirm]')){ await gwCall('organize', 'confirmBoardSource'); return; }
+    if(target.closest?.('[data-board-source-confirm]')){
+        const currentPath = String(document.getElementById('boardSourcePath')?.value || '').trim();
+        const confirmOpts = boardSourceState.pickedValidatedPath && currentPath === boardSourceState.pickedValidatedPath
+            ? {atomicRegistration:true}
+            : {};
+        await gwCall('organize', 'confirmBoardSource', confirmOpts);
+        return;
+    }
     const boardSourceAdd = target.closest?.('[data-board-source-add]');
     if(boardSourceAdd){ gwCall('organize', 'openBoardSourceModal', boardSourceAdd.dataset.boardSourceAdd || ''); return; }
     const boardSource = target.closest?.('[data-board-source]');
@@ -12815,3 +12795,31 @@ export {
     workflowThumb,
     workflowTreeEdit,
 };
+
+function boardSourceLeafFolderName(pathValue){
+    const raw = String(pathValue || '').trim().replace(/[\\/]+$/, '');
+    if(!raw || /^[A-Za-z]:$/.test(raw)) return '';
+    const parts = raw.split(/[\\/]+/).filter(Boolean);
+    const leaf = parts[parts.length - 1] || '';
+    return /^[A-Za-z]:$/.test(leaf) ? '' : leaf;
+}
+function isDefaultBoardSourceName(nameValue){
+    const name = String(nameValue || '').trim();
+    return !name || name === '用户素材' || name === '上传素材';
+}
+document.addEventListener('input', event => {
+    if(event.target?.id === 'boardSourceName'){
+        const nextName = String(event.target.value || '');
+        boardSourceState.name = nextName;
+        boardSourceState.nameCustom = !isDefaultBoardSourceName(nextName);
+        return;
+    }
+    if(event.target?.id === 'boardSourcePath'){
+        const nextPath = String(event.target.value || '');
+        boardSourceState.path = nextPath;
+        if(nextPath.trim() !== boardSourceState.pickedValidatedPath){
+            boardSourceState.pickedValidatedPath = '';
+        }
+        return;
+    }
+});

@@ -252,8 +252,7 @@ import {
     setBoardNavigationState,
     setBoardSourceState,
     setDetailMediaLibraryDragId,
-    setDetailViewerFontListCollapsed,
-    setLocalLibraries,
+    setDetailViewerFontListCollapsed, setLocalLibraries,
     setPendingBatchDelete,
     setPendingDeleteAssetId,
     setPendingDeletePromptId,
@@ -933,20 +932,6 @@ function removeResourceFolderViewState(rootTarget, identity){
         registryStatus.overview.roots = registryStatus.overview.roots.filter(root =>
             ![root.id, ...(root.aliases || [])].some(id => ids.has(String(id || ''))));
     }
-    const libMatchesRemoved = lib => {
-        const candidates = [lib?.id, lib?.root_id, lib?.storage_root_id, ...(Array.isArray(lib?.aliases) ? lib.aliases : [])]
-            .map(v => String(v || '')).filter(Boolean);
-        return candidates.some(id => ids.has(id));
-    };
-    if(Array.isArray(localLibraries) && typeof setLocalLibraries === 'function'){
-        setLocalLibraries(localLibraries.filter(lib => !libMatchesRemoved(lib)));
-    }
-    if(Array.isArray(storageSettingsState?.localLibraries)){
-        storageSettingsState.localLibraries = storageSettingsState.localLibraries.filter(lib => !libMatchesRemoved(lib));
-    }
-    if(typeof assetAllowedRootPaths?.delete === 'function'){
-        ids.forEach(id => assetAllowedRootPaths.delete(String(id)));
-    }
     const rootKeys = [...ids, rootTarget.rootId].filter(Boolean).map(String);
     if(rootTarget.key) assetTreeExpanded.delete(rootTarget.key);
     rootKeys.forEach(rootId => assetTreeExpanded.delete(`mine:root:${rootId}::__root__`));
@@ -961,8 +946,7 @@ function removeResourceFolderViewState(rootTarget, identity){
         void refreshRegistryFacetData().catch(error => reportRegistryWriteRefreshFailure('资源文件夹已更新，但目录计数刷新失败', error));
         void refreshRegistryAssets().catch(error => reportRegistryWriteRefreshFailure('资源文件夹已更新，但列表刷新失败', error));
     }
-    render();
-    if(typeof notifyShellTreeSnapshot === 'function') notifyShellTreeSnapshot();
+    if(typeof syncRemovedResourceFolderLibraries === 'function') syncRemovedResourceFolderLibraries(ids); render(); if(typeof notifyShellTreeSnapshot === 'function') notifyShellTreeSnapshot();
 }
 function togglePreviewDeleteCategory(id){
     const keys = ['image','video','storyboard','other'];
@@ -1180,10 +1164,7 @@ async function confirmBoardSource(options={}){
             if(Number(boardSourceState.generation || 0) !== generation) return;
         } else {
             if(!path){ boardSourceState.error = '请输入素材路径'; setStatus(boardSourceState.error); return; }
-            const effectiveOptions = options.atomicRegistration === undefined && boardSourceState.pickedValidatedPath && boardSourceState.pickedValidatedPath === path
-                ? {...options, atomicRegistration:true}
-                : options;
-            source = await attachPathToAssetBoard('', name, path, effectiveOptions);
+            source = await attachPathToAssetBoard('', name, path, options);
             if(Number(boardSourceState.generation || 0) !== generation) return;
         }
         if(!source) return;
@@ -3301,6 +3282,23 @@ GW_DEFERRED['organize'] = {
     syncWorkflowSelectionDom,
     togglePreviewDeleteCategory,
 };
+
+function syncRemovedResourceFolderLibraries(ids){
+    const libMatchesRemoved = lib => {
+        const candidates = [lib?.id, lib?.root_id, lib?.storage_root_id, ...(Array.isArray(lib?.aliases) ? lib.aliases : [])]
+            .map(v => String(v || '')).filter(Boolean);
+        return candidates.some(id => ids.has(id));
+    };
+    if(typeof localLibraries !== 'undefined' && Array.isArray(localLibraries) && typeof setLocalLibraries === 'function'){
+        setLocalLibraries(localLibraries.filter(lib => !libMatchesRemoved(lib)));
+    }
+    if(typeof storageSettingsState !== 'undefined' && Array.isArray(storageSettingsState?.localLibraries)){
+        storageSettingsState.localLibraries = storageSettingsState.localLibraries.filter(lib => !libMatchesRemoved(lib));
+    }
+    if(typeof assetAllowedRootPaths !== 'undefined' && typeof assetAllowedRootPaths?.delete === 'function'){
+        ids.forEach(id => assetAllowedRootPaths.delete(String(id)));
+    }
+}
 
 export {
     activateAssetBoard,

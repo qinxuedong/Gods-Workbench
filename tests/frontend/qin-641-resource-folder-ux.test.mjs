@@ -146,6 +146,11 @@ test('AC4 removeResourceFolderViewState 同步清理 localLibraries 与 allowedR
     'function removeResourceFolderViewState(rootTarget, identity){',
     '\nfunction togglePreviewDeleteCategory(',
   );
+  const syncLibsSource = extractFunction(
+    organizeSource,
+    'function syncRemovedResourceFolderLibraries(ids){',
+    '\nexport {',
+  );
 
   let currentLibraries = [
     { id: 'root_1', name: 'Input', path: '/data/Input' },
@@ -199,7 +204,7 @@ test('AC4 removeResourceFolderViewState 同步清理 localLibraries 与 allowedR
     'refreshRegistryAssets',
     'render',
     'notifyShellTreeSnapshot',
-    `${fnSource}\nreturn removeResourceFolderViewState;`,
+    `${syncLibsSource}\n${fnSource}\nreturn removeResourceFolderViewState;`,
   );
 
   let resourceFolderInternalViewSwitch = false;
