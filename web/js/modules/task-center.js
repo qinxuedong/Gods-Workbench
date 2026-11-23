@@ -120,6 +120,7 @@
   let requestGeneration = 0;
   let activeAbortController = null;
   let activePageAbortController = null;
+  let lastRenderedSignature = '';
 
   const tr = key => window.StudioI18n?.t?.(key) || key;
   const trf = (key, values = {}) => Object.entries(values).reduce((text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), tr(key));
@@ -622,8 +623,18 @@
   function dataGap(message = tr('taskCenter.noData'), {isError = false} = {}) { return `<div class="data-gap${isError ? ' is-error' : ''}"${isError ? ' role="alert"' : ''}>${esc(message)}</div>`; }
   function assetVolumeStateRow(message) { return `<div class="asset-volume-state-row" role="row"><div class="data-gap" role="cell" aria-colspan="3">${esc(message)}</div></div>`; }
   function isPermissionError(error) { return /401|403|权限|登录|forbidden|unauthor/i.test(String(error?.message || error || '')); }
+  function isTimeWindowSnapshotGapOnly(data) {
+    if (!data || data.data_status !== 'degraded') return false;
+    const degradedSources = Array.isArray(data.degraded_sources) ? data.degraded_sources : [];
+    const truncatedSources = Array.isArray(data.truncated_sources) ? data.truncated_sources : [];
+    const gaps = Array.isArray(data.data_gaps) ? data.data_gaps : [];
+    if (degradedSources.length > 0 || truncatedSources.length > 0) return false;
+    if (!gaps.length) return false;
+    return gaps.every(gap => /不记录时间戳|未生效|状态快照/.test(String(gap)) && !/SOURCE_UNAVAILABLE|SOURCE_WINDOW_TRUNCATED/.test(String(gap)));
+  }
   function noteDataStatus(data, label) {
     if (data?.data_status !== 'degraded') return;
+    if (isTimeWindowSnapshotGapOnly(data)) return;
     if (Array.isArray(data.degraded_sources) && data.degraded_sources.includes('permission') && state.role === 'reviewer') state.summaryOnly = true;
     pushDegraded(`${label} · ${tr('taskCenter.degradedData')}`, '');
   }
@@ -1044,6 +1055,32 @@
     document.querySelectorAll('[data-view]').forEach(tab => { const active = tab.dataset.view === state.view; tab.classList.toggle('active', active); tab.setAttribute('role', 'tab'); tab.setAttribute('aria-selected', String(active)); tab.setAttribute('tabindex', active ? '0' : '-1'); });
   }
 
+  function buildRenderSnapshotSignature() {
+    try {
+      const taskSnap = (state.tasks || []).map(t => `${t.id}:${t.status}:${t.updated_at || ''}:${JSON.stringify(t.progress ?? null)}:${t.error_safe || ''}`);
+      const eventSnap = (state.events || []).map(e => `${e.id}:${e.timestamp || ''}:${e.status || ''}:${e.message || ''}`);
+      const longSnap = (state.longTasks || []).map(t => `${t.id}:${t.status}:${t.updated_at || ''}:${JSON.stringify(t.progress ?? null)}`);
+      const stalledSnap = (state.stalledTasks || []).map(t => `${t.id}:${t.status}:${t.updated_at || ''}`);
+      const degradedSnap = (state.degraded || []).map(d => `${d.kind || ''}:${d.text || ''}`);
+      return JSON.stringify([
+        state.loading, state.view, state.range, state.source, state.level, state.status, state.stableId, state.selectedJobId,
+        state.loadError, state.loadErrorKind, state.tasksError, state.eventsError, state.permissionDenied, state.summaryOnly,
+        state.hasMore, state.taskHasMore, state.assetVolumeHasMore,
+        degradedSnap, taskSnap, eventSnap, longSnap, stalledSnap,
+        state.overview, state.series, state.health, state.sources, state.assetVolumes,
+      ]);
+    } catch (_) {
+      return '';
+    }
+  }
+
+  function updateRefreshStateText() {
+    const stamp = state.lastUpdated ? dateTime(state.lastUpdated) : tr('taskCenter.waitingForData');
+    const hasAnyErr = Boolean(state.loadError || state.tasksError || state.eventsError || state.renderError);
+    setText('#refreshState', state.loading ? tr('taskCenter.refreshing') : hasAnyErr ? tr('taskCenter.queryUnavailable') : `${tr('taskCenter.updatedAt')} ${stamp}`);
+    setText('#overviewUpdated', stamp); setText('#metricsUpdated', stamp);
+  }
+
   function render() {
     try {
       state.renderError = '';
@@ -1052,16 +1089,14 @@
         renderSummary(); renderSeries(); renderLongTaskProgress(); renderTaskStallAlerts(); renderAssetVolumes(); renderHealth(); renderFailures();
       }
       renderEvents(); renderTasks(); renderNotice(); updateTabCounts();
-      const stamp = state.lastUpdated ? dateTime(state.lastUpdated) : tr('taskCenter.waitingForData');
-      const hasAnyErr = Boolean(state.loadError || state.tasksError || state.eventsError || state.renderError);
-      setText('#refreshState', state.loading ? tr('taskCenter.refreshing') : hasAnyErr ? tr('taskCenter.queryUnavailable') : `${tr('taskCenter.updatedAt')} ${stamp}`);
-      setText('#overviewUpdated', stamp); setText('#metricsUpdated', stamp);
+      updateRefreshStateText();
       applyActiveViewState();
       const viewNav = q('#observationViews'); if (viewNav) viewNav.setAttribute('aria-label', tr('taskCenter.viewNavigation'));
       [['#throughputChart', 'taskCenter.responseBytes'], ['#metricThroughputChart', 'taskCenter.responseBytes'], ['#latencyChart', 'taskCenter.latencySample'], ['#metricLatencyChart', 'taskCenter.latencySample'], ['#longTaskProgress', 'taskCenter.longTasks']].forEach(([selector, key]) => { const chart = q(selector); if (chart) chart.setAttribute('aria-label', tr(key)); });
       const assetVolumeTable = q('#assetVolumeTable'); if (assetVolumeTable) assetVolumeTable.setAttribute('aria-label', tr('taskCenter.assetVolumes'));
       if (window.lucide?.createIcons) window.lucide.createIcons({attrs: {'aria-hidden': 'true'}});
       scheduleTaskTouchbarReport();
+      lastRenderedSignature = buildRenderSnapshotSignature();
     } catch (error) {
       state.renderError = error?.message || tr('taskCenter.queryUnavailable');
       if (!state.tasks.length) {
@@ -1119,14 +1154,138 @@
     return `${buttons ? `<div class="task-detail-actions">${buttons}</div>` : ''}${reasons}`;
   }
 
+  const TASK_ERROR_CATALOG = Object.freeze({
+    INDEX_ROOTS_CHANGED: {
+      zh: ['资源目录配置已变更，旧索引任务已失效', '在本次索引执行期间，资源文件夹列表或允许根目录发生了新增、移除或修改。请关闭本弹窗后重新触发一次「索引素材」即可。'],
+      en: ['Resource roots changed while indexing', 'Allowed asset roots were updated during this job. Re-run asset indexing to scan the latest folders.'],
+    },
+    INDEX_PATH_UNAVAILABLE: {
+      zh: ['目标文件夹当前不可访问', '服务端暂时无法读取该资源文件夹路径（可能盘符未挂载、共享断开或无读取权限）。请检查目录连通性后重试。'],
+      en: ['Target folder is currently unavailable', 'The server cannot access the folder path. Verify mount or permissions and retry.'],
+    },
+    INDEX_ROOT_NOT_FOUND: {
+      zh: ['未找到指定的资源根目录', '该资源目录已被移出或未在工作区登记。请在资产管理中重新添加对应资源文件夹。'],
+      en: ['Asset root not found', 'The root folder is missing or unregistered. Re-add it in Asset Manager.'],
+    },
+    PATH_OUTSIDE_ALLOWED_ROOTS: {
+      zh: ['路径超出已授权的资源目录范围', '目标路径不在系统允许访问的资源根目录内。请先在「目录与权限」中授权该目录。'],
+      en: ['Path is outside allowed roots', 'Authorize the folder under Directory & Permissions before retrying.'],
+    },
+    MOUNT_ALIAS_UNCONFIRMED: {
+      zh: ['映射盘或共享路径尚未确认同源关系', '请先在目录设置中确认该映射盘符与网络共享路径的对应关系后再重试。'],
+      en: ['Mount alias requires confirmation', 'Confirm the mapped drive and UNC path alias in directory settings.'],
+    },
+    PERMISSION_DENIED: {
+      zh: ['当前账号或服务端缺少执行权限', '请检查当前工作区席位权限或系统目录读取权限。'],
+      en: ['Permission denied', 'Check workspace role or filesystem read permissions.'],
+    },
+    TIMEOUT: {
+      zh: ['任务执行超时', '目标目录文件过多或网络存储响应过慢导致超时，建议拆分目录或稍后重试。'],
+      en: ['Task timed out', 'The operation took too long. Retry or split large directories.'],
+    },
+    CANCELLED: {
+      zh: ['任务已被手动取消', '任务已安全停止，未完成的扫描不会破坏已有素材源文件。'],
+      en: ['Task cancelled', 'The task was stopped safely by user request.'],
+    },
+    CANCELED: {
+      zh: ['任务已被手动取消', '任务已安全停止，未完成的扫描不会破坏已有素材源文件。'],
+      en: ['Task canceled', 'The task was stopped safely by user request.'],
+    },
+    JXL_DECODE_FAILED: {
+      zh: ['JXL 图像解码失败', '当前环境缺少可用的 JXL 解码器或源文件已损坏，请检查源文件完整性。'],
+      en: ['JXL decode failed', 'Check source image integrity or JXL decoder availability.'],
+    },
+    SERVICE_UNAVAILABLE: {
+      zh: ['后端执行服务暂时不可用', '相关后台服务正在重启或繁忙，请稍后刷新重试。'],
+      en: ['Backend service temporarily unavailable', 'Wait a moment and retry.'],
+    },
+  });
+
+  function describeTaskError(errorCode, rawMessage = '') {
+    const code = String(errorCode || '').trim().toUpperCase();
+    const isEn = locale() === 'en-US';
+    const entry = TASK_ERROR_CATALOG[code];
+    if (entry) {
+      const [title, nextStep] = isEn ? entry.en : entry.zh;
+      return {title, nextStep, code};
+    }
+    const fallbackTitle = isEn
+      ? `Task reported an issue${code ? ` (${code})` : ''}`
+      : `任务执行遇到异常${code ? `（${code}）` : ''}`;
+    const fallbackNext = rawMessage
+      ? String(rawMessage)
+      : (isEn ? 'Check the technical details below or retry the task.' : '可展开下方「技术细节」排查原始字段，或尝试重新执行该任务。');
+    return {title: fallbackTitle, nextStep: fallbackNext, code};
+  }
+
+  function summarizeTaskResult(job, task) {
+    const isEn = locale() === 'en-US';
+    const status = String(job?.status || task?.status || '').toLowerCase();
+    const result = job?.result && typeof job.result === 'object' ? job.result : null;
+    if (job?.has_error || job?.error_code || ['failed', 'interrupted'].includes(status)) {
+      const info = describeTaskError(job?.error_code || task?.error_safe, job?.error_message || '');
+      return {tone: 'is-failed', headline: info.title, nextStep: info.nextStep};
+    }
+    if (result) {
+      const parts = [];
+      const scanned = Number(result.scanned);
+      const indexed = Number(result.indexed ?? result.added ?? result.created);
+      const updated = Number(result.updated);
+      const skipped = Number(result.skipped);
+      const errors = Number(result.error_count ?? result.errors);
+      if (Number.isFinite(scanned)) parts.push(isEn ? `Scanned ${scanned}` : `共扫描 ${scanned} 项`);
+      if (Number.isFinite(indexed)) parts.push(isEn ? `indexed ${indexed}` : `新登记 ${indexed} 项`);
+      if (Number.isFinite(updated) && updated > 0) parts.push(isEn ? `updated ${updated}` : `更新 ${updated} 项`);
+      if (Number.isFinite(skipped) && skipped > 0) parts.push(isEn ? `skipped ${skipped}` : `跳过 ${skipped} 项`);
+      if (Number.isFinite(errors) && errors > 0) parts.push(isEn ? `${errors} errors` : `${errors} 项异常`);
+      if (parts.length) {
+        return {
+          tone: Number.isFinite(errors) && errors > 0 ? 'is-failed' : 'is-succeeded',
+          headline: parts.join(isEn ? ', ' : '，'),
+          nextStep: Number.isFinite(errors) && errors > 0
+            ? (isEn ? 'Some items failed during execution; check logs or technical details.' : '部分条目处理异常，可查看运行日志或展开下方技术细节确认。')
+            : '',
+        };
+      }
+    }
+    if (['succeeded', 'completed'].includes(status)) {
+      return {
+        tone: 'is-succeeded',
+        headline: isEn ? 'Task completed successfully.' : '任务已顺利完成。',
+        nextStep: '',
+      };
+    }
+    if (['running', 'recovering', 'cancel_requested'].includes(status)) {
+      return {
+        tone: 'is-running',
+        headline: isEn ? 'Task is currently running.' : '任务正在执行中，完成后会自动更新结果。',
+        nextStep: '',
+      };
+    }
+    return {
+      tone: '',
+      headline: isEn ? `Current status: ${statusText(status)}` : `当前状态：${statusText(status)}`,
+      nextStep: '',
+    };
+  }
+
   function renderDetail() {
     scheduleTaskTouchbarReport();
     const body = q('#taskDetailBody'); const task = detailTask(); if (!body || !task) return; setText('#taskDetailSubtitle', task.id);
     if (state.detailLoading) { body.innerHTML = `<div class="task-detail-loading skeleton">${esc(tr('taskCenter.loadingDetail'))}</div>`; return; }
     if (state.detailError) { body.innerHTML = `<div class="task-detail-error"><strong>${esc(tr('taskCenter.detailUnavailable'))}</strong><p>${esc(state.detailError)}</p>${detailRows(task)}</div>`; return; }
     if (!state.detail) { body.innerHTML = `<div class="task-detail-readonly"><p>${esc(tr('taskCenter.readOnlyDetail'))}</p>${detailRows(task)}</div>`; return; }
-    const job = state.detail; const progress = Object.entries(job.progress || {}).filter(([, value]) => ['number', 'boolean'].includes(typeof value)).slice(0, 8);
-    body.innerHTML = `<div class="task-detail-status">${renderStatus(job.status)}<span>${esc(trf('taskCenter.taskTypeLabel', {type: job.job_type || task.title}))}</span></div>${detailRows(job)}${job.has_error ? `<p class="task-safe-error">${esc(tr('taskCenter.safeError'))} · ${esc(job.error_code || '')}</p>` : ''}${job.result ? `<section class="task-detail-section"><h3>实际执行结果</h3><pre>${esc(JSON.stringify(job.result, null, 2))}</pre></section>` : ''}${progress.length ? `<section class="task-detail-section"><h3>${esc(tr('taskCenter.progress'))}</h3><dl class="task-progress-list">${progress.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(String(value))}</dd></div>`).join('')}</dl></section>` : ''}<section class="task-detail-section"><h3>${esc(tr('taskCenter.related'))}</h3>${renderRelated(job)}</section>${renderEventsDetail(job)}${renderActions()}`;
+    const job = state.detail;
+    const progress = Object.entries(job.progress || {}).filter(([, value]) => ['number', 'boolean'].includes(typeof value)).slice(0, 8);
+    const summary = summarizeTaskResult(job, task);
+    const title = taskDisplayName(job) || task.summary || task.title;
+    const summaryCard = `<section class="task-detail-summary-card ${esc(summary.tone)}"><div class="task-detail-summary-head"><h3 class="task-detail-summary-title">${esc(title)}</h3>${renderStatus(job.status)}</div><p class="task-detail-summary-text">${esc(summary.headline)}</p>${summary.nextStep ? `<p class="task-detail-next-step"><strong>${esc(tr('taskCenter.nextStep'))}：</strong>${esc(summary.nextStep)}</p>` : ''}</section>`;
+    const techParts = [
+      detailRows(job),
+      progress.length ? `<section class="task-detail-section"><h3>${esc(tr('taskCenter.progress'))}</h3><dl class="task-progress-list">${progress.map(([key, value]) => `<div><dt>${esc(key)}</dt><dd>${esc(String(value))}</dd></div>`).join('')}</dl></section>` : '',
+      job.result ? `<section class="task-detail-section"><h3>${esc(tr('taskCenter.rawResult'))}</h3><pre>${esc(JSON.stringify(job.result, null, 2))}</pre></section>` : '',
+    ].filter(Boolean).join('');
+    body.innerHTML = `${summaryCard}<section class="task-detail-section"><h3>${esc(tr('taskCenter.related'))}</h3>${renderRelated(job)}</section>${renderEventsDetail(job)}${renderActions()}<details class="task-detail-tech"><summary>${esc(tr('taskCenter.techDetails'))}</summary>${techParts}</details>`;
     if (window.lucide?.createIcons) window.lucide.createIcons({attrs: {'aria-hidden': 'true'}});
   }
 
@@ -1240,7 +1399,16 @@
     const controller = typeof AbortController === 'function' ? new AbortController() : null;
     activeAbortController = controller;
     const reqOpts = controller ? {signal: controller.signal} : undefined;
-    state.loading = true; state.assetVolumeLoading = !EMBEDDED; state.longTaskLoading = !EMBEDDED; state.loadError = ''; state.loadErrorKind = ''; state.tasksError = ''; state.eventsError = ''; state.renderError = ''; state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok'; if (!EMBEDDED) { state.stalledTasks = []; state.assetVolumes = []; } state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null; state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer'; render();
+    const prevSignature = background ? lastRenderedSignature : '';
+    state.loading = true;
+    state.assetVolumeLoading = !EMBEDDED && !background;
+    state.longTaskLoading = !EMBEDDED && !background;
+    state.loadError = ''; state.loadErrorKind = ''; state.tasksError = ''; state.eventsError = ''; state.renderError = '';
+    state.assetVolumeError = ''; state.longTasksError = ''; state.stalledTasksError = ''; state.stalledTasksDataStatus = 'ok';
+    if (!EMBEDDED && !background) { state.stalledTasks = []; state.assetVolumes = []; }
+    state.assetVolumeNextCursor = ''; state.assetVolumeHasMore = false; state.eventWindow = null; state.taskWindow = null;
+    state.degraded = []; state.degradedKinds = []; state.permissionDenied = false; state.summaryOnly = state.role === 'reviewer';
+    if (!background) render();
     const eventQuery = observationQuery(state.eventId ? {limit: 1, event_id: state.eventId} : {limit: 50}, 'events'); if (EMBEDDED && !eventQuery.get('source')) eventQuery.set('source', 'agent_runtime'); const taskQuery = observationQuery(state.jobId ? {limit: 1, job_id: state.jobId} : {limit: 50}, 'tasks'); const assetVolumeQueryString = assetVolumeQuery(); const longRunningQuery = observationQuery({range: 'all', limit: '50', status: 'running', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longQueuedQuery = observationQuery({range: 'all', limit: '50', status: 'queued', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longPausedQuery = observationQuery({range: 'all', limit: '50', status: 'paused', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longSucceededQuery = observationQuery({range: 'all', limit: '50', status: 'succeeded', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longFailedQuery = observationQuery({range: 'all', limit: '50', status: 'failed', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const longCanceledQuery = observationQuery({range: 'all', limit: '50', status: 'canceled', job_type: LONG_TASK_JOB_TYPES}, 'tasks'); const stalledQueuedQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['queued', 'historical']}, 'tasks'); const stalledRecoveringQuery = observationQuery({range: 'all', limit: '100', stall_classification: ['recovering', 'historical']}, 'tasks');
     const failed = (result, label) => { if (result.status === 'rejected') { const itemKind = degradeKind(result.reason); if (itemKind) { pushDegraded(degradeLabel(result.reason, label), itemKind); } else if (isPermissionError(result.reason)) { if (['reviewer', 'editor'].includes(String(state.role || ''))) { if (state.role === 'reviewer') state.summaryOnly = true; const notice = state.role === 'reviewer' ? tr('taskCenter.summaryOnly') : tr('taskCenter.degradedData'); pushDegraded(`${label} · ${notice}`, ''); } else state.permissionDenied = true; } else pushDegraded(degradeLabel(result.reason, label), ''); } };
     if (EMBEDDED) {
@@ -1296,7 +1464,12 @@
       } finally {
         if (gen === requestGeneration) {
           state.loading = false;
-          render();
+          const nextSignature = buildRenderSnapshotSignature();
+          if (background && prevSignature && nextSignature === prevSignature) {
+            updateRefreshStateText();
+          } else {
+            render();
+          }
           if (state.deepLinkPending) {
             state.deepLinkPending = false;
             if (state.jobId) await openTaskDetail(state.jobId);
@@ -1371,7 +1544,22 @@
         failed(assetVolumes, tr('taskCenter.assetVolumesUnavailable'));
       }
     } catch (error) { state.loadError = taskCenterDegradationNotice(error); }
-    finally { const shouldReload = finishDataRequest('refresh'); state.loading = false; state.assetVolumeLoading = false; state.longTaskLoading = false; render(); runQueuedReload(shouldReload); if (state.deepLinkPending) { state.deepLinkPending = false; if (state.jobId) { state.view = 'tasks'; syncUrl(); render(); await openTaskDetail(state.jobId); } else if (state.eventId) { state.view = 'logs'; syncUrl(); render(); await focusEventDeepLink(state.eventId); } } }
+    finally {
+      const shouldReload = finishDataRequest('refresh');
+      state.loading = false; state.assetVolumeLoading = false; state.longTaskLoading = false;
+      const nextSignature = buildRenderSnapshotSignature();
+      if (background && prevSignature && nextSignature === prevSignature) {
+        updateRefreshStateText();
+      } else {
+        render();
+      }
+      runQueuedReload(shouldReload);
+      if (state.deepLinkPending) {
+        state.deepLinkPending = false;
+        if (state.jobId) { state.view = 'tasks'; syncUrl(); render(); await openTaskDetail(state.jobId); }
+        else if (state.eventId) { state.view = 'logs'; syncUrl(); render(); await focusEventDeepLink(state.eventId); }
+      }
+    }
   }
 
   async function loadMoreEvents() {

@@ -216,6 +216,9 @@
     "taskCenter.confirmCancel": { zh: "继续取消", en: "Continue cancellation" },
     "taskCenter.actionFailed": { zh: "任务操作失败", en: "Task action failed" },
     "taskCenter.actionAccepted": { zh: "任务操作已提交", en: "Task action accepted" },
-    "taskCenter.taskTypeLabel": { zh: "类型：{type}", en: "Type: {type}" }
+    "taskCenter.taskTypeLabel": { zh: "类型：{type}", en: "Type: {type}" },
+    "taskCenter.nextStep": { zh: "下一步建议", en: "Suggested next step" },
+    "taskCenter.techDetails": { zh: "技术细节（任务 ID / 原始字段）", en: "Technical details (IDs & raw fields)" },
+    "taskCenter.rawResult": { zh: "原始执行结果", en: "Raw execution result" }
   });
 })();
