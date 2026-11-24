@@ -76,7 +76,15 @@ $runPy = Join-Path $backend "run.py"
 if (-not (Test-Path -LiteralPath $python)) { Fail "安装缺少私有 Python 运行时" }
 if (-not (Test-Path -LiteralPath $runPy)) { Fail "安装缺少后端入口" }
 
-$bootstrapDir = Join-Path $effectiveLocalAppData "GodsWorkbench"
+$newBootstrapDir = Join-Path $effectiveLocalAppData "Gods Workbench"
+$legacyBootstrapDir = Join-Path $effectiveLocalAppData "GodsWorkbench"
+$bootstrapDir = $newBootstrapDir
+if (-not (Test-Path -LiteralPath (Join-Path $newBootstrapDir "runtime-root.json"))) {
+  $legacyPtr = Join-Path $legacyBootstrapDir "runtime-root.json"
+  if (Test-Path -LiteralPath $legacyPtr) {
+    $bootstrapDir = $legacyBootstrapDir
+  }
+}
 $pointerPath = Join-Path $bootstrapDir "runtime-root.json"
 $pointerExistedBefore = Test-Path -LiteralPath $pointerPath
 $dataDirExistedBefore = ($SelectedDataDir -and (Test-Path -LiteralPath $SelectedDataDir))

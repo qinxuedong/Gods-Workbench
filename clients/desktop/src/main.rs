@@ -976,16 +976,47 @@ fn load_installed_manifest() -> Result<Option<BundleManifest>, String> {
     }
 }
 
-fn bootstrap_data_root() -> Result<PathBuf, String> {
-    let base = std::env::var_os("LOCALAPPDATA")
+fn localappdata_root() -> Result<PathBuf, String> {
+    std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())?;
-    Ok(base.join("GodsWorkbench"))
+        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())
 }
 
-fn production_data_root() -> Result<PathBuf, String> {
-    let bootstrap = bootstrap_data_root()?;
+fn bootstrap_data_root_in(base: &Path) -> PathBuf {
+    base.join("Gods Workbench")
+}
+
+fn bootstrap_data_root() -> Result<PathBuf, String> {
+    Ok(bootstrap_data_root_in(&localappdata_root()?))
+}
+
+fn legacy_bootstrap_data_root_in(base: &Path) -> PathBuf {
+    base.join("GodsWorkbench")
+}
+
+fn legacy_installer_data_root_in(base: &Path) -> PathBuf {
+    base.join("Gods Workbench data")
+}
+
+fn has_existing_production_data_at(root: &Path) -> bool {
+    if root.join("auth").join("auth.sqlite3").is_file() {
+        return true;
+    }
+    for sub in ["data", "video"] {
+        let dir = root.join(sub);
+        if dir.is_dir() {
+            if let Ok(mut entries) = fs::read_dir(&dir) {
+                if entries.next().is_some() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn read_pointer_data_location(bootstrap: &Path) -> Result<Option<PathBuf>, String> {
     let pointer_path = bootstrap.join("runtime-root.json");
     match fs::symlink_metadata(&pointer_path) {
         Ok(meta) => {
@@ -1013,11 +1044,44 @@ fn production_data_root() -> Result<PathBuf, String> {
             if !path.is_absolute() {
                 return Err("数据位置指针路径必须是绝对路径".to_string());
             }
-            Ok(path)
+            Ok(Some(path))
         }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(bootstrap),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(_) => Err("数据位置指针无法安全核验".to_string()),
     }
+}
+
+fn production_data_root_in(base: &Path) -> Result<PathBuf, String> {
+    let new_bootstrap = bootstrap_data_root_in(base);
+    let legacy_bootstrap = legacy_bootstrap_data_root_in(base);
+    // 先校验新、旧两处指针：任一存在但损坏必须失败关闭，不因新目录存在 data 而跳过。
+    let new_pointer = read_pointer_data_location(&new_bootstrap)?;
+    let legacy_pointer = read_pointer_data_location(&legacy_bootstrap)?;
+    if let Some(path) = new_pointer {
+        return Ok(path);
+    }
+    if let Some(path) = legacy_pointer {
+        return Ok(path);
+    }
+    let default_user_data = new_bootstrap.join("user data");
+    if has_existing_production_data_at(&default_user_data) {
+        return Ok(default_user_data);
+    }
+    if has_existing_production_data_at(&new_bootstrap) {
+        return Ok(new_bootstrap);
+    }
+    if has_existing_production_data_at(&legacy_bootstrap) {
+        return Ok(legacy_bootstrap);
+    }
+    let legacy_data = legacy_installer_data_root_in(base);
+    if has_existing_production_data_at(&legacy_data) {
+        return Ok(legacy_data);
+    }
+    Ok(default_user_data)
+}
+
+fn production_data_root() -> Result<PathBuf, String> {
+    production_data_root_in(&localappdata_root()?)
 }
 
 fn install_directory() -> Result<PathBuf, String> {
@@ -3919,5 +3983,71 @@ mod tests {
     #[test]
     fn test_tray_find_nas_menu_id_constant() {
         assert_eq!(TRAY_MENU_ID_FIND_NAS, "scan");
+    }
+
+    #[test]
+    fn test_production_data_root_priority_and_fail_closed() {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .expect("time")
+            .as_nanos();
+        let root = std::env::temp_dir().join(format!("gw_qin648_rust_{nonce}"));
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).expect("create temp root");
+
+        // 1. 全新无指针无数据：默认 Gods Workbench/user data
+        assert_eq!(bootstrap_data_root_in(&root), root.join("Gods Workbench"));
+        assert_eq!(
+            production_data_root_in(&root).expect("fresh default"),
+            root.join("Gods Workbench").join("user data")
+        );
+
+        // 2. 新引导目录存在陈旧 data，同时存在损坏旧指针 -> 必须 fail-closed
+        let new_boot_data = root.join("Gods Workbench").join("data");
+        fs::create_dir_all(&new_boot_data).expect("create stale data");
+        fs::write(new_boot_data.join("stale.json"), "{}").expect("write stale");
+        let legacy_boot = root.join("GodsWorkbench");
+        fs::create_dir_all(&legacy_boot).expect("create legacy boot");
+        fs::write(legacy_boot.join("runtime-root.json"), "{corrupt").expect("write corrupt");
+        assert!(production_data_root_in(&root).is_err());
+
+        // 3. 合法旧指针优先于新引导目录陈旧 data
+        let custom_target = root.join("CustomLegacyTarget");
+        fs::create_dir_all(&custom_target).expect("create custom target");
+        let ptr_json = serde_json::json!({
+            "schema_version": 1,
+            "data_location": custom_target.to_string_lossy(),
+        });
+        fs::write(legacy_boot.join("runtime-root.json"), ptr_json.to_string())
+            .expect("write valid legacy pointer");
+        assert_eq!(
+            production_data_root_in(&root).expect("legacy pointer wins"),
+            custom_target
+        );
+
+        // 4. 新指针优先于旧指针；若新指针损坏即使旧指针合法也必 fail-closed
+        fs::write(
+            root.join("Gods Workbench").join("runtime-root.json"),
+            "{bad",
+        )
+        .expect("write corrupt new ptr");
+        assert!(production_data_root_in(&root).is_err());
+
+        let new_target = root.join("CustomNewTarget");
+        let new_ptr_json = serde_json::json!({
+            "schema_version": 1,
+            "data_location": new_target.to_string_lossy(),
+        });
+        fs::write(
+            root.join("Gods Workbench").join("runtime-root.json"),
+            new_ptr_json.to_string(),
+        )
+        .expect("write valid new ptr");
+        assert_eq!(
+            production_data_root_in(&root).expect("new pointer wins"),
+            new_target
+        );
+
+        let _ = fs::remove_dir_all(&root);
     }
 }

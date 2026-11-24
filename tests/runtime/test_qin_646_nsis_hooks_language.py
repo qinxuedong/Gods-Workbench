@@ -28,13 +28,15 @@ def _extract_embedded_powershell_commands(nsh_text: str) -> list[str]:
 def _render_nsis_to_powershell(raw_cmd: str) -> str:
     """模拟 NSIS 编译期与运行期变量展开，还原实际传给 PowerShell 的命令文本。"""
     rendered = raw_cmd.replace("$$", "$")
-    rendered = rendered.replace("${GW_BOOTSTRAP_DIR_NAME}", "GodsWorkbench")
-    rendered = rendered.replace("${GW_DATA_DIR_DEFAULT_NAME}", "Gods Workbench data")
+    rendered = rendered.replace("${GW_BOOTSTRAP_DIR_NAME}", "Gods Workbench")
+    rendered = rendered.replace("${GW_DATA_DIR_DEFAULT_NAME}", r"Gods Workbench\user data")
+    rendered = rendered.replace("${GW_LEGACY_BOOTSTRAP_DIR_NAME}", "GodsWorkbench")
+    rendered = rendered.replace("${GW_LEGACY_DATA_DIR_NAME}", "Gods Workbench data")
     for nsis_var, sample in (
         ("$INSTDIR", r"C:\Program Files\Gods Workbench"),
-        ("$GwDataDir", r"C:\Users\tester\AppData\Local\Gods Workbench data"),
+        ("$GwDataDir", r"C:\Users\tester\AppData\Local\Gods Workbench\user data"),
         ("$R6", r"C:\Users\tester\AppData\Local"),
-        ("$R7", r"C:\Users\tester\AppData\Local\GodsWorkbench"),
+        ("$R7", r"C:\Users\tester\AppData\Local\Gods Workbench"),
         ("$1", r"OK|C:\Users\tester\AppData\Local|C:\Users\tester\AppData\Roaming"),
     ):
         rendered = rendered.replace(nsis_var, sample)
@@ -104,7 +106,7 @@ def test_installer_init_data_location_reads_localappdata_from_env(
     local_app.mkdir()
     install_dir = tmp_path / "ProgramFiles" / "Gods Workbench"
     install_dir.mkdir(parents=True)
-    target_dir = local_app / "Gods Workbench data"
+    target_dir = local_app / "Gods Workbench" / "user data"
 
     monkeypatch.setenv("LOCALAPPDATA", str(local_app))
     for key in ("GW_DATA_DIR", "GW_AUTH_DB", "GW_VIDEO_DIR", "GW_RUNTIME_MODE"):
@@ -115,5 +117,5 @@ def test_installer_init_data_location_reads_localappdata_from_env(
         localappdata=None,
     )
     assert res["ok"] is True
-    pointer = local_app / "GodsWorkbench" / "runtime-root.json"
+    pointer = local_app / "Gods Workbench" / "runtime-root.json"
     assert pointer.is_file()

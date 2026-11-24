@@ -76,9 +76,10 @@ def test_prod_defaults_are_outside_repo(tmp_path: Path):
     paths = resolve_runtime_paths(
         MODE_PROD, repo_root=tmp_path / "repo", localappdata=user_root, env={}
     )
-    assert paths.data_root == user_root / "GodsWorkbench" / "data"
-    assert paths.auth_db == user_root / "GodsWorkbench" / "auth" / "auth.sqlite3"
-    assert paths.video_root == user_root / "GodsWorkbench" / "video"
+    assert paths.runtime_root == user_root / "Gods Workbench"
+    assert paths.data_root == user_root / "Gods Workbench" / "user data" / "data"
+    assert paths.auth_db == user_root / "Gods Workbench" / "user data" / "auth" / "auth.sqlite3"
+    assert paths.video_root == user_root / "Gods Workbench" / "user data" / "video"
     assert paths.repo_root not in paths.data_root.parents
 
 

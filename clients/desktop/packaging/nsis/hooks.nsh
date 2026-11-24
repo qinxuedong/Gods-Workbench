@@ -1,8 +1,10 @@
 ﻿!include "LogicLib.nsh"
 !include "nsDialogs.nsh"
 
-!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench data"
-!define GW_BOOTSTRAP_DIR_NAME "GodsWorkbench"
+!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench\user data"
+!define GW_BOOTSTRAP_DIR_NAME "Gods Workbench"
+!define GW_LEGACY_BOOTSTRAP_DIR_NAME "GodsWorkbench"
+!define GW_LEGACY_DATA_DIR_NAME "Gods Workbench data"
 !define GW_UPGRADE_ROOT "$LOCALAPPDATA\ai.godsworkbench.desktop\upgrade"
 !define GW_BACKUP_PROGRAM "${GW_UPGRADE_ROOT}\backup-last\program"
 !define GW_UPGRADE_REL_DIR "ai.godsworkbench.desktop\upgrade"
@@ -65,22 +67,20 @@ Var GwDataHintLabel
   StrCpy $R9 "$GwUserAppData\ai.godsworkbench.desktop\client.json"
 
   ${If} $GwDataDir == ""
-    ; 探测是否已存在 627 引导指针或旧默认 GodsWorkbench 生产数据
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$b=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$ptr=Join-Path $$b 'runtime-root.json'; if(Test-Path -LiteralPath $$ptr){ try{ $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ [Console]::Write('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; $$has=$false; if(Test-Path -LiteralPath (Join-Path $$b 'auth\auth.sqlite3')){ $$has=$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$b $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ $$has=$true } }; if($$has){ [Console]::Write('EXISTING|'+$$b) }else{ [Console]::Write('FRESH|'+(Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}')) }"`
+    ; 先校验新、旧两处 runtime-root.json（任一存在但损坏/非法必非零退出并中止安装）；合法指针优先于无指针目录探测
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "function ReadPtr([string]$$ptr){ if(-not (Test-Path -LiteralPath $$ptr)){ return $$null }; try{ $$item=Get-Item -LiteralPath $$ptr -Force -ErrorAction Stop; if($$item.Attributes -band [IO.FileAttributes]::ReparsePoint){ exit 5 }; $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 -ErrorAction Stop | ConvertFrom-Json -ErrorAction Stop; if($$null -eq $$j -or $$j.schema_version -ne 1 -or [string]::IsNullOrWhiteSpace([string]$$j.data_location)){ exit 5 }; $$loc=[string]$$j.data_location; if(-not [IO.Path]::IsPathRooted($$loc.Trim())){ exit 5 }; return $$loc.Trim() }catch{ exit 5 } }; function HasData([string]$$dir){ if(Test-Path -LiteralPath (Join-Path $$dir 'auth\auth.sqlite3')){ return $$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$dir $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ return $$true } }; return $$false }; $$nb=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$nd=Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}'; $$lb=Join-Path '$R6' '${GW_LEGACY_BOOTSTRAP_DIR_NAME}'; $$ld=Join-Path '$R6' '${GW_LEGACY_DATA_DIR_NAME}'; $$np=ReadPtr (Join-Path $$nb 'runtime-root.json'); $$lp=ReadPtr (Join-Path $$lb 'runtime-root.json'); if($$np){ [Console]::Write('EXISTING|'+$$np); exit 0 }; if($$lp){ [Console]::Write('EXISTING|'+$$lp); exit 0 }; if(HasData $$nd){ [Console]::Write('EXISTING|'+$$nd); exit 0 }; if(HasData $$nb){ [Console]::Write('EXISTING|'+$$nb); exit 0 }; if(HasData $$lb){ [Console]::Write('EXISTING|'+$$lb); exit 0 }; if(HasData $$ld){ [Console]::Write('EXISTING|'+$$ld); exit 0 }; [Console]::Write('FRESH|'+$$nd)"`
     Pop $0
     Pop $1
     !insertmacro GW_TRIM_CRLF $1
-    ${If} $0 == 0
-      StrCpy $R0 "$1" 8
-      ${If} $R0 == "EXISTING"
-        StrCpy $GwHasExistingData "1"
-        StrCpy $GwInstallAction "UpgradeKeep"
-        StrCpy $GwDataDir "$1" "" 9
-      ${Else}
-        StrCpy $GwHasExistingData "0"
-        StrCpy $GwInstallAction "FreshInstall"
-        StrCpy $GwDataDir "$R6\${GW_DATA_DIR_DEFAULT_NAME}"
-      ${EndIf}
+    ${If} $0 != 0
+      MessageBox MB_ICONSTOP "检测到数据位置指针（runtime-root.json）已损坏或不受支持（错误码 $0），为防止数据误写，安装已中止。" /SD IDOK
+      Abort
+    ${EndIf}
+    StrCpy $R0 "$1" 8
+    ${If} $R0 == "EXISTING"
+      StrCpy $GwHasExistingData "1"
+      StrCpy $GwInstallAction "UpgradeKeep"
+      StrCpy $GwDataDir "$1" "" 9
     ${Else}
       StrCpy $GwHasExistingData "0"
       StrCpy $GwInstallAction "FreshInstall"

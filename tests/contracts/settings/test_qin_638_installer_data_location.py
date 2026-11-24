@@ -14,6 +14,7 @@ from gw.core.runtime_paths import (
     DEFAULT_INSTALLER_DATA_DIR_NAME,
     LEGACY_PROD_DATA_DIR_NAME,
     MODE_PROD,
+    PROD_BOOTSTRAP_DIR_NAME,
     data_location_pointer_path,
     paths_non_overlapping,
     resolve_runtime_paths,
@@ -28,7 +29,7 @@ def test_fresh_install_writes_single_pointer_and_prod_cold_reads_same_location(t
     localappdata.mkdir()
     install_dir = tmp_path / "ProgramFiles" / "Gods Workbench"
     install_dir.mkdir(parents=True)
-    chosen_data = localappdata / DEFAULT_INSTALLER_DATA_DIR_NAME
+    chosen_data = localappdata / PROD_BOOTSTRAP_DIR_NAME / DEFAULT_INSTALLER_DATA_DIR_NAME
 
     inspect_before = service.inspect_existing_data_location(localappdata=localappdata)
     assert inspect_before["has_existing"] is False
@@ -41,14 +42,14 @@ def test_fresh_install_writes_single_pointer_and_prod_cold_reads_same_location(t
     )
     assert init_res["ok"] is True
     assert init_res["created"] is True
-    pointer_path = data_location_pointer_path(localappdata / LEGACY_PROD_DATA_DIR_NAME)
+    pointer_path = data_location_pointer_path(localappdata / PROD_BOOTSTRAP_DIR_NAME)
     assert pointer_path.is_file()
     payload = json.loads(pointer_path.read_text(encoding="utf-8"))
     assert payload["schema_version"] == 1
     assert Path(payload["data_location"]) == chosen_data.resolve(strict=False)
 
     cold_paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env={})
-    assert cold_paths.runtime_root == (localappdata / LEGACY_PROD_DATA_DIR_NAME).resolve(strict=False)
+    assert cold_paths.runtime_root == (localappdata / PROD_BOOTSTRAP_DIR_NAME).resolve(strict=False)
     assert cold_paths.data_location == chosen_data.resolve(strict=False)
     assert cold_paths.data_root == (chosen_data / "data").resolve(strict=False)
     assert cold_paths.auth_db == (chosen_data / "auth" / "auth.sqlite3").resolve(strict=False)

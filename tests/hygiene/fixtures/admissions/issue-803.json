@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 803,
+  "authorization_basis": "GitHub Issue #803 (QIN-648)",
+  "files": [
+    "tests/runtime/test_qin_648_unified_data_dir.py"
+  ]
+}
