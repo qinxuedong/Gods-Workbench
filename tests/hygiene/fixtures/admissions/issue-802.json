@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 802,
+  "authorization_basis": "GitHub Issue #802 (QIN-647)",
+  "files": [
+    "tests/contracts/assets/test_qin647_empty_allowed_roots_registration.py"
+  ]
+}
