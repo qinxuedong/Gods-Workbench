@@ -491,6 +491,7 @@ def write_release_config(output: Path, staging_backend: Path, version: str) -> P
                 "nsis": {
                     "installerHooks": str(HOOKS_NSH),
                     "installMode": "perMachine",
+                    "languages": ["SimpChinese", "English"],
                 }
             },
         },
