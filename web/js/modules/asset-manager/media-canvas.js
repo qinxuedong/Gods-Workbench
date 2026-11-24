@@ -1068,13 +1068,13 @@ function renderDetailMediaCanvasLibrary(){
     const collapsed = detailMediaCanvasLibraryCollapsed;
     const thumbSize = detailMediaCanvasLibraryThumbSize;
     const view=detailViewerState.mediaCanvasSidebarView==='detail' ? 'detail' : 'library';
-    const activeItem=detailActiveImageItem();
-    const title=view==='detail' ? '资产详情' : '素材库';
-    const subtitle=view==='detail' ? (activeItem?.name || '选择画布素材查看') : (assetBoardById(detailViewerState.originTab)?.name || '当前图库');
+    const toggleLabel = collapsed ? '展开右侧栏' : '折叠右侧栏';
+    // 【QIN-653 AC2】删除「资产详情 + 文件名」整行标题，两个分页按钮直接置于面板顶部；
+    // 折叠按钮并入同一行，保证折叠态仍可展开。
+    const toggleButton = `<button type="button" class="asset-detail-media-sidebar-toggle" data-detail-media-library-toggle aria-expanded="${!collapsed}" aria-label="${toggleLabel}" title="${toggleLabel}"><i data-lucide="${collapsed ? 'panel-right-open' : 'panel-right-close'}"></i></button>`;
     return `<aside class="asset-detail-media-library asset-detail-media-sidebar ${collapsed ? 'is-collapsed' : ''} ${view==='detail'?'is-detail-view':'is-library-view'}" style="--media-library-thumb-size:${thumbSize}px" aria-label="素材库和资产详情">
         ${collapsed ? '' : `<span class="asset-detail-media-library-resizer" data-detail-media-library-resizer role="separator" tabindex="0" aria-label="拖动调整图库宽度" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="720" aria-valuenow="${detailMediaCanvasLibraryWidth}"></span>`}
-        <header><button type="button" data-detail-media-library-toggle aria-expanded="${!collapsed}" aria-label="${collapsed ? '展开右侧栏' : '折叠右侧栏'}" title="${collapsed ? '展开右侧栏' : '折叠右侧栏'}"><i data-lucide="${collapsed ? 'panel-right-open' : 'panel-right-close'}"></i></button><div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>${view==='library'?`<em data-detail-media-library-count>${values.length}</em>`:'<i data-lucide="info"></i>'}</header>
-        ${collapsed ? '' : `<nav class="asset-detail-media-sidebar-tabs" role="tablist" aria-label="右侧栏内容"><button type="button" role="tab" data-detail-media-sidebar-view="detail" aria-selected="${view==='detail'}" class="${view==='detail'?'is-active':''}"><i data-lucide="info"></i><span>资产详情</span></button><button type="button" role="tab" data-detail-media-sidebar-view="library" aria-selected="${view==='library'}" class="${view==='library'?'is-active':''}"><i data-lucide="library-big"></i><span>素材库</span></button></nav>${view==='library' ? renderDetailMediaCanvasLibraryContent(values,baseItems,options,thumbSize) : renderDetailMediaCanvasSidebarDetail()}`}
+        ${collapsed ? toggleButton : `<nav class="asset-detail-media-sidebar-tabs" role="tablist" aria-label="右侧栏内容"><button type="button" role="tab" data-detail-media-sidebar-view="detail" aria-selected="${view==='detail'}" class="${view==='detail'?'is-active':''}"><i data-lucide="info"></i><span>资产详情</span></button><button type="button" role="tab" data-detail-media-sidebar-view="library" aria-selected="${view==='library'}" class="${view==='library'?'is-active':''}"><i data-lucide="library-big"></i><span>素材库</span></button>${toggleButton}</nav>${view==='library' ? renderDetailMediaCanvasLibraryContent(values,baseItems,options,thumbSize) : renderDetailMediaCanvasSidebarDetail()}`}
     </aside>`;
 }
 function mergeResolvedReferenceAsset(item={},rawAsset={}){

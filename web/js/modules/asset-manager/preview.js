@@ -1072,10 +1072,41 @@ function formatDetailVideoTime(value){
     const remain = whole % 60;
     return hours ? `${hours}:${String(minutes).padStart(2,'0')}:${String(remain).padStart(2,'0')}` : `${minutes}:${String(remain).padStart(2,'0')}`;
 }
-function detailViewerMetaRows(source, item, type){
+/** 【QIN-653】从已加载的本地素材库配置解析资产物理路径，不臆造不存在的路径。 */
+function detailStorageRootLocation(item={}, knownLibraries=[]){
+    const rootId = String(item.storage_root_id || item.assetStorageRootId || item.asset_storage_root_id || item.root_id || '').trim();
+    const rootName = String(item.storage_root_name || item.storageRootName || '').trim();
+    const libraries = knownLibraries.length ? knownLibraries : [
+        ...(Array.isArray(storageSettingsState.localLibraries) ? storageSettingsState.localLibraries : []),
+        ...(Array.isArray(storageSettingsState.extraLocalEntries) ? storageSettingsState.extraLocalEntries : []),
+    ];
+    const matched = libraries.find(library => rootId && String(library.id || '') === rootId)
+        || libraries.find(library => rootName && (String(library.name || '') === rootName || String(library.kind || '') === rootName));
+    const rootPath = String(matched?.path || '').trim();
+    return rootPath ? {rootPath, rootId:rootId || String(matched.id || '')} : null;
+}
+function detailJoinStoragePath(rootPath, relativePath){
+    const separator = String(rootPath).includes('\\') ? '\\' : '/';
+    const segments = String(relativePath).split(/[\\/]+/).filter(Boolean);
+    return [String(rootPath).replace(/[\\/]+$/, ''), ...segments].join(separator);
+}
+function detailItemStorageLocation(source, item={}, knownLibraries=[]){
+    if(item.is_remote) return {value:detailViewerUrl(source, item), absolute:'', rootId:''};
+    const direct = String(item.absolute_path || '').trim();
+    if(direct) return {value:direct, absolute:direct, rootId:String(item.storage_root_id || '').trim()};
+    const relative = String(item.canonical_relpath || item.relative_path || item.relativePath || '').trim();
+    if(!relative) return {value:'位置不可用', absolute:'', rootId:''};
+    const root = detailStorageRootLocation(item, knownLibraries);
+    if(root){
+        const absolute = detailJoinStoragePath(root.rootPath, relative);
+        return {value:absolute, absolute, rootId:root.rootId};
+    }
+    const rootName = String(item.storage_root_name || '').trim();
+    return {value:rootName ? `${rootName}/${relative}` : relative, absolute:'', rootId:''};
+}
+function detailViewerMetaRows(source, item, type, knownLibraries=[]){
     const extension = assetFileExtension(item).toUpperCase() || detailViewerTypeLabel(type);
-    const fallbackPath = item.relative_path || item.relativePath || item.file || detailViewerUrl(source, item);
-    const path = item.absolute_path || (item.is_remote ? detailViewerUrl(source, item) : (fallbackPath ? '正在读取完整路径…' : '位置不可用'));
+    const path = detailItemStorageLocation(source, item, knownLibraries).value;
     const rows = [
         ['文件格式', extension],
         ['文件大小', formatFileSize(item.size || 0)],
@@ -1226,7 +1257,7 @@ function hydrateVideoStoryboardImages(scope){
     });
 }
 function detailVideoRemainingRows(rows=[]){
-    return rows.filter(([label])=>['文件位置','所属画布'].includes(label));
+    return rows.filter(([label])=>['存储位置','所属画布'].includes(label));
 }
 function renderMediaNodeParametricSvg(item, edit, url, previewFallback=''){
     const sourceWidth = Math.max(1, Number(edit.source_width || item.natural_w || item.naturalWidth || item.metadata?.width || 1200));
@@ -1537,7 +1568,7 @@ function renderDetailModelInspector(item, tags, rows, url){
         ${renderDetailInspectorHeader()}
         <div class="asset-detail-inspector-content">
             <div class="asset-detail-title asset-detail-model-title">
-                <div><span>3D 文件</span><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div>
+                <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div>
                 <h2>${detailViewerNameHtml(item.name)}</h2>
                 <p>${escapeHtml(detailViewerSourceLabel(detailViewerState.source, item))}</p>
             </div>
@@ -1550,11 +1581,6 @@ function renderDetailModelInspector(item, tags, rows, url){
             ${info?.preview_source_detail ? `<section class="asset-detail-model-source"><strong>${escapeHtml(info.preview_source_label || '静态预览')}</strong><p>${escapeHtml(info.preview_source_detail)}</p></section>` : ''}
             <dl class="asset-detail-facts">${renderDetailViewerMetaRows(rows, item)}</dl>
             ${registryMeta}
-            <div class="asset-detail-actions">
-                ${url ? `<a class="hw-btn hw-btn-gold" href="${escapeAttr(url)}" ${item.is_remote ? 'target="_blank" rel="noopener"' : 'download'}><i data-lucide="download"></i><span>${item.is_remote ? '打开原文件' : '下载原文件'}</span></a>` : ''}
-                <button class="hw-btn" type="button" data-detail-viewer-close><i data-lucide="x"></i><span>关闭详情</span></button>
-            </div>
-            <div class="asset-detail-shortcuts"><span><kbd>←</kbd><kbd>→</kbd> 切换</span><span><kbd>滚轮</kbd> 缩放图片</span><span><kbd>~</kbd><kbd>Esc</kbd> 关闭</span></div>
         </div>
     </aside>`;
 }
@@ -1562,20 +1588,14 @@ function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraCo
     const editableName = type === 'audio' && detailViewerCanRename(source);
     const inspectorRows = type === 'video' ? detailVideoRemainingRows(rows) : rows;
     return `
-        <div class="asset-detail-title"><span>${escapeHtml(detailViewerTypeLabel(type))}</span>${editableName
+        <div class="asset-detail-title">${editableName
             ? `<label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label>`
             : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
         ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
         ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
-        ${extraContent}
-        <div class="asset-detail-actions">
-            ${url ? `<a class="hw-btn hw-btn-gold" href="${escapeAttr(url)}" ${item.is_remote ? 'target="_blank" rel="noopener"' : 'download'}><i data-lucide="download"></i><span>${item.is_remote ? '打开原文件' : '下载原文件'}</span></a>` : ''}
-            ${source === 'registry' && ['image','text'].includes(type) ? `<button class="hw-btn" type="button" data-detail-export-pdf="${escapeAttr(item.id || '')}" ${registryPdfBusy ? 'disabled' : ''}><i data-lucide="file-down"></i><span>导出 PDF</span></button>` : ''}
-            <button class="hw-btn" type="button" data-detail-viewer-close><i data-lucide="x"></i><span>关闭详情</span></button>
-        </div>
-        <div class="asset-detail-shortcuts"><span><kbd>←</kbd><kbd>→</kbd> 切换</span>${type === 'video' ? '<span><kbd>A</kbd><kbd>D</kbd> 上一帧 / 下一帧</span><span><kbd>F</kbd> 切换全屏</span><span><kbd>Enter</kbd> 全屏播放</span>' : ''}${['audio','video'].includes(type) ? '<span><kbd>Space</kbd> 播放 / 暂停</span>' : ''}<span><kbd>·</kbd><kbd>Esc</kbd> 关闭 / 返回</span></div>`;
+        ${extraContent}`;
 }
 function renderDetailInspectorHeader(){
     return `<header class="asset-detail-inspector-head">
@@ -1851,6 +1871,11 @@ function renderDetailViewer(){
         </div>
     </div>`;
     markAssetFloatingSurface(overlay, {surface:'asset-detail-viewer', content:'.asset-detail-viewer-page', close:closeDetailPreview});
+    // 【QIN-653 AC1】右侧详情栏对齐画布可视区顶部：工具栏高度按真实布局取值，避免窄屏换行后错位。
+    if(mediaCanvasMode){
+        const toolbarHeight = Math.round(overlay.querySelector('.asset-detail-media-canvas-toolbar')?.getBoundingClientRect().height || 82);
+        overlay.style.setProperty('--detail-canvas-toolbar-height', `${toolbarHeight}px`);
+    }
     restoreDetailViewerMediaNodes(overlay,previousMediaNodes);
     overlay.dataset.detailItemId = String(item.id || '');
     if(sameDetailItemRender && previousDetailScrollTops.length){
@@ -2165,34 +2190,44 @@ function adjustDetailAudioZoom(event){
     syncDetailAudioPlayhead(overlay, player);
     return true;
 }
-function updateDetailViewerPath(item, value='', error=''){
+function updateDetailViewerPath(item, value='', error='', revealable=false){
     const button = document.querySelector('.asset-detail-viewer [data-detail-file-reveal]');
     const label = button?.querySelector?.('[data-detail-path-value]');
     if(!button || !label) return;
     label.textContent = value || error || '位置不可用';
-    button.disabled = !value;
-    button.title = value ? '在文件夹中显示此文件' : (error || '位置不可用');
-    if(value) item.absolute_path = value;
+    button.disabled = !revealable;
+    button.title = revealable ? '在文件夹中显示此文件' : (error || '位置不可用');
+    if(value && revealable) item.absolute_path = value;
+}
+/** 【QIN-653】file-info 只接受 path，asset_id/url 一律会被后端以「缺少必填参数：path」拒绝。 */
+function detailFileInfoParams(source, item={}, knownLibraries=[]){
+    const location = detailItemStorageLocation(source, item, knownLibraries);
+    const params = new URLSearchParams();
+    if(location.absolute){
+        params.set('path', location.absolute);
+        if(location.rootId) params.set('root_id', location.rootId);
+    }
+    return params;
 }
 async function loadDetailViewerFileInfo(){
     if(!detailViewerState.open) return;
     let item = detailViewerFileItem();
     if(!item || item.is_remote) return;
-    let params = detailViewerFileParams(detailViewerState.source, item);
-    if(!params.toString() && detailViewerState.source !== 'registry'){
+    let location = detailItemStorageLocation(detailViewerState.source, item);
+    if(!location.absolute && detailViewerState.source !== 'registry'){
         const candidate = detailMediaCanvasItems().find(value => String(value.id || '') === String(detailViewerState.mediaCanvasActiveId || '')) || item;
         if(candidate && ['image','video'].includes(detailViewerType(detailViewerState.source, candidate))){
             try {
                 await ensureDetailReferenceAssetIds([candidate], {silent:true});
                 item = detailViewerFileItem();
-                params = detailViewerFileParams(detailViewerState.source, item);
+                location = detailItemStorageLocation(detailViewerState.source, item);
             } catch(_) {}
         }
     }
     const key = detailViewerFileKey(detailViewerState.source, item);
     const cached = detailViewerFileInfoCache.get(key);
     if(cached){
-        updateDetailViewerPath(item, cached.path || '', cached.error || '');
+        updateDetailViewerPath(item, cached.path || location.value, cached.error || '', Boolean(cached.path));
         if(detailViewerType(detailViewerState.source, item) === 'model'){
             detailViewerState.modelInfo = cached.model_preview || null;
             detailViewerState.modelInfoLoading = false;
@@ -2201,12 +2236,16 @@ async function loadDetailViewerFileInfo(){
         }
         return;
     }
-    if(!params.toString()){ updateDetailViewerPath(item, '', '位置不可用'); return; }
+    const params = detailFileInfoParams(detailViewerState.source, item);
+    if(!params.toString()){
+        updateDetailViewerPath(item, location.value === '位置不可用' ? '' : location.value, '位置不可用', false);
+        return;
+    }
     try {
         const data = await apiJsonResponse(assetManagerApi.getAssetFileInfo(params.toString()));
-        detailViewerFileInfoCache.set(key, data);
+        detailViewerFileInfoCache.set(key, {...data, path:location.absolute});
         if(detailViewerState.open && detailViewerFileKey(detailViewerState.source, detailViewerFileItem()) === key){
-            updateDetailViewerPath(item, data.path || '', '位置不可用');
+            updateDetailViewerPath(item, location.absolute, '', true);
             if(detailViewerType(detailViewerState.source, item) === 'model'){
                 detailViewerState.modelInfo = data.model_preview || null;
                 detailViewerState.modelInfoLoading = false;
@@ -2218,7 +2257,7 @@ async function loadDetailViewerFileInfo(){
         const value = {error:err.message || '完整路径读取失败'};
         detailViewerFileInfoCache.set(key, value);
         if(detailViewerState.open && detailViewerFileKey(detailViewerState.source, detailViewerFileItem()) === key){
-            updateDetailViewerPath(item, '', value.error);
+            updateDetailViewerPath(item, location.value, '位置不可用', false);
             if(detailViewerType(detailViewerState.source, item) === 'model'){
                 detailViewerState.modelInfo = null;
                 detailViewerState.modelInfoLoading = false;
@@ -4372,11 +4411,14 @@ GW_DEFERRED['preview'] = {
 
 export {
     applyDetailImageEditorZoom,
+    detailFileInfoParams,
     detailImageEditorBlob,
     detailImageEditorGroup,
     detailImageEditorSerialized,
     detailImageEditorTextBounds,
     detailImageEditorWorldPixels,
+    detailItemStorageLocation,
+    detailJoinStoragePath,
     detailTextVersionParams,
     detailViewerFileKey,
     detailViewerFontItems,
@@ -4400,6 +4442,7 @@ export {
     renderAssetDetail,
     renderDetailImageEditor,
     renderDetailMediaVideoControls,
+    renderDetailModelInspector,
     renderDetailViewer,
     renderDetailViewerInspectorContent,
     renderMediaNodeParametricSvg,

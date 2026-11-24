@@ -8,6 +8,8 @@ import {pathToFileURL} from 'node:url';
 import test from 'node:test';
 
 const MANAGER = readAssetManagerAggregate();
+// 【QIN-653 AC5】快捷键提示随底部冗余区一起移除，键盘行为仍由下面的事件绑定断言覆盖。
+const PREVIEW = readFileSync(new URL('../../web/js/modules/asset-manager/preview.js', import.meta.url), 'utf8');
 const COVERFLOW = readFileSync(new URL('../../web/js/modules/asset-manager/coverflow.js', import.meta.url), 'utf8');
 const GUIDE = readFileSync(new URL('../../docs/guides/KEYBOARD-SHORTCUTS.md', import.meta.url), 'utf8');
 
@@ -126,8 +128,8 @@ test('画布 F 使用选择集，视频 A/D 逐帧且 F 切换全屏', () => {
     assert.match(toggleFullscreen, /document\.fullscreenElement === video/);
     assert.match(MANAGER, /title="上一帧（A）" aria-label="上一帧（A）"/);
     assert.match(MANAGER, /title="下一帧（D）" aria-label="下一帧（D）"/);
-    assert.match(MANAGER, /<kbd>A<\/kbd><kbd>D<\/kbd> 上一帧 \/ 下一帧/);
-    assert.match(MANAGER, /<kbd>F<\/kbd> 切换全屏/);
+    assert.doesNotMatch(PREVIEW, /<kbd>A<\/kbd><kbd>D<\/kbd> 上一帧 \/ 下一帧/);
+    assert.doesNotMatch(PREVIEW, /<kbd>F<\/kbd> 切换全屏/);
     assert.match(MANAGER, /data-detail-video-action="rate-reset" title="恢复原始速度（Z）"/);
     assert.match(MANAGER, /title="减速 0\.1 倍（X）"/);
     assert.match(MANAGER, /title="加速 0\.1 倍（C）"/);

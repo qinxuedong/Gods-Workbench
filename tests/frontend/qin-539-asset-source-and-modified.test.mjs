@@ -69,6 +69,7 @@ const metaRows = new Function(
     'formatFileSize',
     'formatDate',
     'detailViewerState',
+    'detailItemStorageLocation',
     `${functionSource('registryModifiedTime')}
 ${functionSource('registryModifiedLabel')}
 ${functionSource('detailViewerMetaRows')}
@@ -80,7 +81,8 @@ return detailViewerMetaRows;`
     () => '统一资产',
     size => `${Number(size || 0)} B`,
     value => String(value),
-    {modelInfo: null, items: [], index: 0}
+    {modelInfo: null, items: [], index: 0},
+    () => ({value: '位置不可用', absolute: '', rootId: ''})
 );
 
 test('AC2 卡片来源行使用后端下发的真实来源库名', () => {

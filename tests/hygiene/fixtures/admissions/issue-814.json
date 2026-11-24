@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 814,
+  "authorization_basis": "GitHub Issue #814 (QIN-653)",
+  "files": [
+    "tests/frontend/qin-653-asset-detail-panel.test.mjs"
+  ]
+}
