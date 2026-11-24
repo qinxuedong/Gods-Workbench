@@ -19,7 +19,7 @@ assert.match(directoryCss, /\.directory-cards-column\s*>\s*\.asset-pref-section\
 assert.match(directoryCss, /@media\s*\(max-width:\s*700px\)[\s\S]*?\.directory-cards-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
 assert.match(assetManager, /class="directory-cards-column directory-cards-column--left"[\s\S]*renderDataLocationCard\(\)[\s\S]*class="directory-cards-column directory-cards-column--right"[\s\S]*renderProjectWorkspaceSettingsBody\(\)[\s\S]*renderAssetThumbnailCacheDirectoryBody\(\)[\s\S]*renderWorkspaceSettingsBody\(\)/);
 assert.doesNotMatch(assetManager, /data-board-directories-settings[\s\S]*<span>客户端与默认目录<\/span>/);
-assert.doesNotMatch(assetManager, /<span>上传与生成<\/span>/);
+assert.doesNotMatch(assetManager, /<span>上传与生成(目录)?<\/span>/);
 assert.doesNotMatch(assetManager, /class="directory-cards-column directory-cards-column--right"[\s\S]*?renderAllowedRootsSettings\(\)/);
 assert.doesNotMatch(assetManager, /<span>回收站目录<\/span>/);
 

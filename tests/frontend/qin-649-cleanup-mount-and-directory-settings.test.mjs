@@ -31,7 +31,7 @@ function extractFunction(source, name) {
   throw new Error(`函数 ${name} 大括号未闭合`);
 }
 
-test('AC1: assetTreeGlobalRootsList 排除内置本地素材（id=local）占位挂载，保留用户挂载根', () => {
+test('AC1: assetTreeGlobalRootsList 仅排除内置本地素材（id=local）占位挂载，保留同名自定义根与用户挂载根', () => {
   const fnSrc = extractFunction(assetManagerSrc, 'assetTreeGlobalRootsList');
   const factory = new Function(
     'assetTreeResolveRootPath',
@@ -43,7 +43,7 @@ test('AC1: assetTreeGlobalRootsList 排除内置本地素材（id=local）占位
   );
 
   const rootsFn = factory(
-    (id) => (id === 'local' ? '/srv/local' : (id === 'root-user' ? '/srv/user' : '')),
+    (id) => (id === 'local' ? '/srv/local' : (id === 'root-user' ? '/srv/user' : (id === 'custom-name-only' ? '/srv/custom-local' : ''))),
     (p) => String(p || '').toLowerCase(),
     {
       roots: [
@@ -54,7 +54,7 @@ test('AC1: assetTreeGlobalRootsList 排除内置本地素材（id=local）占位
     },
     [
       { id: 'local', name: '本地素材', path: '/srv/local' },
-      { id: 'custom-name-only', name: '本地素材', path: '/srv/local-dup' },
+      { id: 'custom-name-only', name: '本地素材', path: '/srv/custom-local' },
     ],
     {
       roots: [
@@ -65,9 +65,9 @@ test('AC1: assetTreeGlobalRootsList 排除内置本地素材（id=local）占位
   );
 
   const list = rootsFn();
-  assert.equal(list.length, 1);
-  assert.equal(list[0].id, 'root-user');
-  assert.equal(list[0].name, '拍摄素材库');
+  assert.equal(list.length, 2);
+  assert.deepEqual(list.map(r => r.id), ['root-user', 'custom-name-only']);
+  assert.equal(list[1].name, '本地素材');
 });
 
 test('AC1: 收集箱在客户端模式下支持原生上传选择器与来源目录设置', async () => {

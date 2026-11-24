@@ -1358,11 +1358,11 @@ function trapProjectDirectoryTemplateManagerFocus(event){
 async function saveStorageSettings(){
     gwCall('settings', 'syncStorageSettingsInputsToState');
     const dirs = {...(storageSettingsState.dirs || {})};
+    delete dirs.upload;
+    delete dirs.generated; delete dirs.local;
+    // 已下线 upload/generated/local 前端冗余保存字段；后端 PATCH 对未给出字段保持原值（QIN-649）。
     const payload = {
         dirs,
-        upload:dirs.upload || '',
-        generated:dirs.generated || '',
-        local:dirs.local || '',
         extra_local_entries:storageExtraLocalEntries().filter(entry => entry.path),
         local_library_names:storageLocalLibraryNames(),
         local_library_order:(localLibraries.length ? localLibraries : storageSettingsState.localLibraries || []).map(lib => lib.id).filter(Boolean)
@@ -7118,7 +7118,7 @@ function assetTreeGlobalRootsList(){
         const cleanId = String(id || '').trim();
         const cleanName = String(name || '').trim();
         const lowerId = cleanId.toLowerCase();
-        if(!cleanId || lowerId === 'video' || lowerId === 'image' || lowerId === 'local' || cleanName === '视频库素材' || cleanName === '图片库素材' || cleanName === '本地素材') return;
+        if(!cleanId || lowerId === 'video' || lowerId === 'image' || lowerId === 'local' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
 
         const resolvedPath = path || findRootPath(cleanId) || assetTreeResolveRootPath(cleanId, cleanName);
         const pathKey = resolvedPath ? pathCompareKey(resolvedPath) : '';

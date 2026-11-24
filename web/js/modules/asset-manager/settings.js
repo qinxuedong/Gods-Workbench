@@ -521,30 +521,30 @@ function renderAssetThumbnailCacheDirectoryBody(){
         <p class="board-settings-hint" data-thumbnail-cache-exclusion-hint role="status" aria-live="polite" ${exclusionHint ? '' : 'hidden'}>${escapeHtml(exclusionHint)}</p>
     </div>`;
 }
-function renderAssetDirectorySettingsBody(){
-    const dirs = storageSettingsState.dirs || {};
-    const saveRows = ['upload','generated'].map(key => `
-        <label class="storage-dir-row"><span>${STORAGE_KIND_LABELS[key]}</span><input id="storageDir_${key}" value="${escapeAttr(dirs[key] || '')}" title="${escapeAttr(dirs[key] || '')}" placeholder="${escapeAttr(storageSettingsState.defaults?.[key] || '')}"></label>
-    `).join('');
-    return `<section class="asset-pref-section board-directory-settings" data-board-directories-settings>
-        <div class="asset-pref-title"><i data-lucide="folder-cog"></i><span>目录</span></div>
-        <div class="asset-pref-title"><i data-lucide="save"></i><span>上传与生成目录</span></div>
-        <p class="board-settings-hint">上传素材与生成素材目录可按工作磁盘调整。</p>
-        <div class="storage-dir-grid">${saveRows}</div>
-        <div class="board-settings-divider" aria-hidden="true"></div>
-        ${renderProjectWorkspaceSettingsBody()}
-        <div class="board-settings-divider" aria-hidden="true"></div>
-        ${renderAssetThumbnailCacheDirectoryBody()}
-        <div class="storage-settings-actions inline"><button class="hw-btn hw-btn-gold" type="button" data-storage-save><i data-lucide="save"></i><span>保存目录</span></button></div>
-    </section>`;
-}
+// 原 renderAssetDirectorySettingsBody()（「上传与生成目录」）已下线清理（QIN-649）。
 function renderThumbnailFormatOptions(){
     const format = thumbnailGeneratorState.format === 'webp' ? 'webp' : 'jxl';
     const disabled = thumbnailGeneratorState.loading || thumbnailGeneratorState.savingFormat;
     return `<fieldset class="thumbnail-format-options" aria-label="缩略图格式">
         <legend>缩略图格式</legend>
-        <label class="thumbnail-format-option ${format === 'jxl' ? 'is-active' : ''}"><input type="radio" name="thumbnailFormat" value="jxl" data-thumbnail-format ${format === 'jxl' ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>JXL</strong><small>默认推荐 · 体积更小</small></span></label>
-        <label class="thumbnail-format-option ${format === 'webp' ? 'is-active' : ''}"><input type="radio" name="thumbnailFormat" value="webp" data-thumbnail-format ${format === 'webp' ? 'checked' : ''} ${disabled ? 'disabled' : ''}><span><strong>WebP</strong><small>兼容过渡 · 适用于旧版 WebView</small></span></label>
+        <label class="thumbnail-format-option ${format === 'jxl' ? 'is-active' : ''}">
+            <input
+                type="radio"
+                name="thumbnailFormat"
+                value="jxl"
+                data-thumbnail-format ${format === 'jxl' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+            <span>
+                <strong>JXL</strong>
+                <small>默认推荐 · 体积更小</small>
+            </span>
+        </label>
+        <label class="thumbnail-format-option ${format === 'webp' ? 'is-active' : ''}">
+            <input type="radio" name="thumbnailFormat" value="webp" data-thumbnail-format ${format === 'webp' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+            <span>
+                <strong>WebP</strong>
+                <small>兼容过渡 · 适用于旧版 WebView</small>
+            </span>
+        </label>
     </fieldset>`;
 }
 function renderAssetPreviewSettingsBody(){
@@ -1772,15 +1772,15 @@ function renderGlobalDirectorySettings(){
         const rightColumnHtml = `
         <div class="directory-cards-column directory-cards-column--right">
         ${renderProjectWorkspaceSettingsBody()}
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">
+            ${renderAssetThumbnailCacheDirectoryBody()}
+        </section>
         ${renderWorkspaceSettingsBody()}
         </div>`;
         const cardsHtml = `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
-        ${leftColumnHtml}
-        ${rightColumnHtml}
+        ${leftColumnHtml}${rightColumnHtml}
         </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}`;
-        const footerHtml = `
-        <footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`;
+        const footerHtml = `<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`;
         host.innerHTML = `${headerHtml}
         ${renderDataLocationBanner()}
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
