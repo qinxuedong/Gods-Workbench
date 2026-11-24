@@ -1772,8 +1772,9 @@ html.theme-light body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)):
    这是本票唯一一处主动改变特异性，理由与边界一并写明：
      - 匹配集合完全不变：html 是文档根、恒存在，前缀只作用于已有匹配的元素；
      - 增量恰为 +1 类型选择器，不引入新的类/属性维度，不会波及别的选择器；
-     - 唯一替代方案是把这 51 行复制进五个页面 CSS 的迁移块之后，
-       跨文件维护同一份圆角清单，漂移风险高于一处 +1 特异性。
+     - 唯一替代方案是把这条规则（68 个选择器）复制进五个页面 CSS 的迁移块之后，
+       跨文件维护同一份圆角清单，漂移风险高于一处 +1 特异性。该方案已由 PM 裁决
+       弃用（2026-11-24，保留本文件的 html 前缀写法）。
    tests/frontend/qin-645-signal-flow-retired.test.mjs 里钉住了这条规则的具体形态，
    若日后有人把 html 前缀去掉或再加一级，测试立即变红。 */
 html body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
