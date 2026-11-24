@@ -1,0 +1,79 @@
+login status = 200
+dark    724 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=724/724
+dark    724 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=724/724
+dark    724 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=724/724
+dark    724 canvas-list          nodes= 187 overflow= 0 collapsed=8 errors=0 docW=724/724
+dark    724 canvas-interactive   nodes= 194 overflow= 0 collapsed=8 errors=0 docW=724/724
+dark    724 canvas-overview      nodes= 220 overflow= 0 collapsed=5 errors=0 docW=724/724
+dark    724 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=724/724
+dark    724 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=724/724
+dark    900 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=900/900
+dark    900 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=900/900
+dark    900 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=900/900
+dark    900 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=900/900
+dark    900 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=900/900
+dark    900 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=900/900
+dark    900 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=900/900
+dark    900 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=900/900
+dark   1440 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1440/1440
+dark   1440 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=1440/1440
+dark   1440 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=1440/1440
+dark   1440 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+dark   1440 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+dark   1440 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=1440/1440
+dark   1440 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=1440/1440
+dark   1440 asset-manager        nodes= 420 overflow= 8 collapsed=8 errors=1 docW=1440/1440
+dark   1920 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1920/1920
+dark   1920 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=1920/1920
+dark   1920 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=1920/1920
+dark   1920 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+dark   1920 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+dark   1920 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=1920/1920
+dark   1920 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=1920/1920
+dark   1920 asset-manager        nodes= 420 overflow= 0 collapsed=8 errors=1 docW=1920/1920
+light   724 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=724/724
+light   724 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=724/724
+light   724 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=724/724
+light   724 canvas-list          nodes= 187 overflow= 0 collapsed=8 errors=0 docW=724/724
+light   724 canvas-interactive   nodes= 194 overflow= 0 collapsed=8 errors=0 docW=724/724
+light   724 canvas-overview      nodes= 220 overflow= 0 collapsed=5 errors=0 docW=724/724
+light   724 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=724/724
+light   724 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=724/724
+light   900 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=900/900
+light   900 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=900/900
+light   900 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=900/900
+light   900 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=900/900
+light   900 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=900/900
+light   900 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=900/900
+light   900 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=900/900
+light   900 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=900/900
+light  1440 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1440/1440
+light  1440 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=1440/1440
+light  1440 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=1440/1440
+light  1440 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+light  1440 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+light  1440 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=1440/1440
+light  1440 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=1440/1440
+light  1440 asset-manager        nodes= 420 overflow= 8 collapsed=8 errors=1 docW=1440/1440
+light  1920 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1920/1920
+light  1920 episode-pipeline     nodes=  66 overflow= 0 collapsed=3 errors=0 docW=1920/1920
+light  1920 governance           nodes= 121 overflow= 0 collapsed=5 errors=0 docW=1920/1920
+light  1920 canvas-list          nodes= 188 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+light  1920 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+light  1920 canvas-overview      nodes= 221 overflow= 0 collapsed=5 errors=0 docW=1920/1920
+light  1920 asset-share          nodes=   7 overflow= 0 collapsed=0 errors=0 docW=1920/1920
+light  1920 asset-manager        nodes= 420 overflow= 0 collapsed=8 errors=1 docW=1920/1920
+
+写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+CAPTURE_EXIT=0
+meta sha256=867db5b7807b3548 access sha256=7a3da550bc2f864b
+dark    724 nodes=  87 overflow= 1 collapsed=0 errors=1
+light   724 nodes=  87 overflow= 1 collapsed=0 errors=1
+dark    900 nodes=  87 overflow= 1 collapsed=0 errors=1
+light   900 nodes=  87 overflow= 1 collapsed=0 errors=1
+dark   1440 nodes=  87 overflow= 1 collapsed=0 errors=1
+light  1440 nodes=  87 overflow= 1 collapsed=0 errors=1
+dark   1920 nodes=  87 overflow= 1 collapsed=0 errors=1
+light  1920 nodes=  87 overflow= 1 collapsed=0 errors=1
+写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot-share-content.json（8 组）
+SHARE_EXIT=0

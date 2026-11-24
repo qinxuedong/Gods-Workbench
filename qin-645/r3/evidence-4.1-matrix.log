@@ -1,0 +1,22 @@
+=== head: e247e4c00387e35d808680eae55bf022bd920306 ===
+
+$ python diff.py --fail-on-diff
+配对组数 72 / before 72 / after 72
+
+== 各页差异汇总 ==
+asset-manager          组= 8 差异元素=   0 | 高频属性: 
+asset-share            组= 8 差异元素=   0 | 高频属性: 
+asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+canvas-list            组= 8 差异元素=   0 | 高频属性: 
+canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+governance             组= 8 差异元素=   0 | 高频属性: 
+task-center            组= 8 差异元素=   0 | 高频属性: 
+
+== 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+  无变化
+
+明细 0 条 → diff.json
+PASS: 0 差异明细、0 硬判据变化
+EXIT=0

@@ -1,0 +1,19 @@
+diff --git a/web/css/base/hardware-design-system.css b/web/css/base/hardware-design-system.css
+index 85fa9092..31686dd0 100644
+--- a/web/css/base/hardware-design-system.css
++++ b/web/css/base/hardware-design-system.css
+@@ -1774,13 +1774,13 @@ html.theme-light body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)):
+      - 增量恰为 +1 类型选择器，不引入新的类/属性维度，不会波及别的选择器；
+      - 唯一替代方案是把这条规则（68 个选择器）复制进五个页面 CSS 的迁移块之后，
+        跨文件维护同一份圆角清单，漂移风险高于一处 +1 特异性。该方案已由 PM 裁决
+        弃用（2026-11-24，保留本文件的 html 前缀写法）。
+    tests/frontend/qin-645-signal-flow-retired.test.mjs 里钉住了这条规则的具体形态，
+    若日后有人把 html 前缀去掉或再加一级，测试立即变红。 */
+-html body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
++body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
+   .btn, .action-btn, .upload-btn, .add-btn, .api-link-btn,
+   .ws-primary-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .ws-icon-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .ws-paste-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .text-button, .icon-button, .status, .status-chip,
+   .status-badge, .status-pill, .badge, .chip, .pill, .tag, .mode-badge,

@@ -1,0 +1,19 @@
+diff --git a/web/embeds/asset-manager.html b/web/embeds/asset-manager.html
+index a991ef0f..ade38db8 100644
+--- a/web/embeds/asset-manager.html
++++ b/web/embeds/asset-manager.html
+@@ -32,13 +32,13 @@
+     <link rel="stylesheet" href="/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b">
+     <link rel="stylesheet" href="/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b">
+     <link rel="stylesheet" href="/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final">
+     <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final">
+     <script>if(new URLSearchParams(location.search).get('settings')==='directories')document.documentElement.classList.add('directory-settings-page');</script>
+ </head>
+-<body class="gw-signal gw-page--asset-manager gw-type-body-md">
++<body class="gw-signal gw-legacy-signal gw-page--asset-manager gw-type-body-md">
+     <div class="asset-page">
+         <header class="asset-page-head">
+             <div class="asset-page-heading">
+                 <div class="asset-breadcrumbs">
+                     <div class="asset-heading-row">
+                     </div>

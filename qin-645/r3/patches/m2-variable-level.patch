@@ -1,0 +1,19 @@
+diff --git a/web/css/base/hardware-design-system.css b/web/css/base/hardware-design-system.css
+index 85fa9092..33c63fec 100644
+--- a/web/css/base/hardware-design-system.css
++++ b/web/css/base/hardware-design-system.css
+@@ -1426,13 +1426,13 @@ table tbody td {
+    自定义属性按「最近声明该属性的祖先」取值，与选择器特异性无关：一旦声明在 body，
+    就会盖掉页面在 <html> 上定义的 .theme-dark / .theme-light 同名变量
+    （canvas-list.css 用 .theme-dark 给出 --strong / --strong-text 等），
+    使画布页状态条在交互态显色时取到公共层的强调青而非页面原色。
+    故此处以 :root:where(:has(...)) 落回文档根，特异性 (0,1,0) 与原 :root 完全相同，
+    同权重时由源码次序决定 —— 本文件先于各页 CSS 加载，页面定义照旧胜出。 */
+-:root:where(:has(> body.gw-signal:where(.gw-legacy-signal))) {
++body.gw-signal:where(.gw-legacy-signal) {
+   --gw-type-title: var(--gw-type-headline-md);
+   --gw-type-section: var(--gw-type-headline-sm);
+   --gw-type-body: var(--gw-type-body-md);
+   --gw-type-meta: var(--gw-type-body-sm);
+ 
+   --sf-bg: #0a1016;

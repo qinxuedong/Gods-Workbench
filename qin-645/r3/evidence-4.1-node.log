@@ -1,0 +1,303 @@
+=== head: e247e4c00387e35d808680eae55bf022bd920306 ===
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs tests/frontend/ui-governance.test.mjs tests/frontend/qin-473-settings-bg.test.mjs tests/frontend/qin-580-material-lut-preview.test.mjs
+TAP version 13
+# QIN-473 settings background alignment contracts passed
+# Subtest: tests\\frontend\\qin-473-settings-bg.test.mjs
+ok 1 - tests\\frontend\\qin-473-settings-bg.test.mjs
+  ---
+  duration_ms: 49.1097
+  type: 'test'
+  ...
+# Subtest: QIN-580：素材可取样判定按加载状态给出，未就绪不硬套
+ok 2 - QIN-580：素材可取样判定按加载状态给出，未就绪不硬套
+  ---
+  duration_ms: 0.5785
+  type: 'test'
+  ...
+# Subtest: QIN-580：大尺寸素材按最长边降采样，避免逐像素查表拖慢
+ok 3 - QIN-580：大尺寸素材按最长边降采样，避免逐像素查表拖慢
+  ---
+  duration_ms: 0.859
+  type: 'test'
+  ...
+# Subtest: QIN-580：小素材不放大，视频可指定更小的取样宽度
+ok 4 - QIN-580：小素材不放大，视频可指定更小的取样宽度
+  ---
+  duration_ms: 0.4405
+  type: 'test'
+  ...
+# Subtest: QIN-580：取样失败一律带稳定错误码，不静默产出错帧
+ok 5 - QIN-580：取样失败一律带稳定错误码，不静默产出错帧
+  ---
+  duration_ms: 0.3389
+  type: 'test'
+  ...
+# Subtest: QIN-580：素材真实像素上 0% 等于原样、100% 等于完整查表
+ok 6 - QIN-580：素材真实像素上 0% 等于原样、100% 等于完整查表
+  ---
+  duration_ms: 1.8942
+  type: 'test'
+  ...
+# Subtest: QIN-580：同一帧重复合成结果一致，视频暂停重绘不会漂移
+ok 7 - QIN-580：同一帧重复合成结果一致，视频暂停重绘不会漂移
+  ---
+  duration_ms: 1.1124
+  type: 'test'
+  ...
+# Subtest: QIN-580：工具条入口 + 节点角标浮窗都接齐事件，且保持只读
+ok 8 - QIN-580：工具条入口 + 节点角标浮窗都接齐事件，且保持只读
+  ---
+  duration_ms: 3.2489
+  type: 'test'
+  ...
+# Subtest: QIN-580：打开与关闭详情都整体重置状态，字面量不得丢掉 LUT 字段
+ok 9 - QIN-580：打开与关闭详情都整体重置状态，字面量不得丢掉 LUT 字段
+  ---
+  duration_ms: 2.2484
+  type: 'test'
+  ...
+# Subtest: QIN-580：样式挂点齐备，覆盖画布、徽标、面板与失败态
+ok 10 - QIN-580：样式挂点齐备，覆盖画布、徽标、面板与失败态
+  ---
+  duration_ms: 0.6301
+  type: 'test'
+  ...
+# Subtest: QIN-580：工具条下拉菜单挂到 body，不被画布外壳的 overflow 裁掉
+ok 11 - QIN-580：工具条下拉菜单挂到 body，不被画布外壳的 overflow 裁掉
+  ---
+  duration_ms: 3.2771
+  type: 'test'
+  ...
+# Subtest: QIN-580：LUT 不计入资产总量，但保留顶栏导航卡（排在提示词之后）
+ok 12 - QIN-580：LUT 不计入资产总量，但保留顶栏导航卡（排在提示词之后）
+  ---
+  duration_ms: 584.0194
+  type: 'test'
+  ...
+# Subtest: QIN-580：点空白处自动收起 LUT 浮窗，浮窗内点击不受影响
+ok 13 - QIN-580：点空白处自动收起 LUT 浮窗，浮窗内点击不受影响
+  ---
+  duration_ms: 0.5445
+  type: 'test'
+  ...
+# Subtest: QIN-580：LUT 菜单与浮窗按项目设计语言改成圆角
+ok 14 - QIN-580：LUT 菜单与浮窗按项目设计语言改成圆角
+  ---
+  duration_ms: 0.3016
+  type: 'test'
+  ...
+# Subtest: QIN-580：浮窗里换 LUT 就地更新，不整块重建（否则列表滚动位置与浮窗高度都会跳）
+ok 15 - QIN-580：浮窗里换 LUT 就地更新，不整块重建（否则列表滚动位置与浮窗高度都会跳）
+  ---
+  duration_ms: 0.5939
+  type: 'test'
+  ...
+# Subtest: QIN-580：浮窗去掉「套用后」按钮，默认即套用后，分屏/原图再点一次回退
+ok 16 - QIN-580：浮窗去掉「套用后」按钮，默认即套用后，分屏/原图再点一次回退
+  ---
+  duration_ms: 1.0892
+  type: 'test'
+  ...
+# Subtest: QIN-580：分屏模式在素材中间给出可拖动的对比分割线
+ok 17 - QIN-580：分屏模式在素材中间给出可拖动的对比分割线
+  ---
+  duration_ms: 4.2052
+  type: 'test'
+  ...
+# Subtest: QIN-580：已选中素材时点「套用 LUT」直达预设列表，不再重复选素材
+ok 18 - QIN-580：已选中素材时点「套用 LUT」直达预设列表，不再重复选素材
+  ---
+  duration_ms: 1.2829
+  type: 'test'
+  ...
+# Subtest: QIN-580：LUT 抽屉不给内置项贴「内置」，滚轮归列表而不是缩放画布
+ok 19 - QIN-580：LUT 抽屉不给内置项贴「内置」，滚轮归列表而不是缩放画布
+  ---
+  duration_ms: 1.6513
+  type: 'test'
+  ...
+# Subtest: QIN-645：signal-flow.css 已物理下线
+ok 20 - QIN-645：signal-flow.css 已物理下线
+  ---
+  duration_ms: 0.5899
+  type: 'test'
+  ...
+# Subtest: QIN-645：全库 HTML/CSS/JS 不再引用 signal-flow
+ok 21 - QIN-645：全库 HTML/CSS/JS 不再引用 signal-flow
+  ---
+  duration_ms: 91.3125
+  type: 'test'
+  ...
+# Subtest: QIN-645：五个目标页接入四件套并携带文档标记
+ok 22 - QIN-645：五个目标页接入四件套并携带文档标记
+  ---
+  duration_ms: 0.8307
+  type: 'test'
+  ...
+# Subtest: QIN-645：文档标记只出现在五个目标页，范围外页面不得携带
+ok 23 - QIN-645：文档标记只出现在五个目标页，范围外页面不得携带
+  ---
+  duration_ms: 1.7144
+  type: 'test'
+  ...
+# Subtest: QIN-645：canvas-list 不再引用已删除的 canvasLegacySignal
+ok 24 - QIN-645：canvas-list 不再引用已删除的 canvasLegacySignal
+  ---
+  duration_ms: 0.2277
+  type: 'test'
+  ...
+# Subtest: QIN-645：公共层每条选择器都被 .gw-legacy-signal 门控
+ok 25 - QIN-645：公共层每条选择器都被 .gw-legacy-signal 门控
+  ---
+  duration_ms: 1.3031
+  type: 'test'
+  ...
+# Subtest: QIN-645：范围外页面结构上不可能命中公共层（污染反证）
+ok 26 - QIN-645：范围外页面结构上不可能命中公共层（污染反证）
+  ---
+  duration_ms: 6.5958
+  type: 'test'
+  ...
+# Subtest: QIN-645：旧名别名不得在 body 级以普通声明出现
+ok 27 - QIN-645：旧名别名不得在 body 级以普通声明出现
+  ---
+  duration_ms: 1.8323
+  type: 'test'
+  ...
+# Subtest: QIN-645：窄屏控件高度白名单只含目标页页类
+ok 28 - QIN-645：窄屏控件高度白名单只含目标页页类
+  ---
+  duration_ms: 0.6756
+  type: 'test'
+  ...
+# Subtest: QIN-645：组件圆角层的 html 前缀不得被去掉或叠加
+ok 29 - QIN-645：组件圆角层的 html 前缀不得被去掉或叠加
+  ---
+  duration_ms: 0.7382
+  type: 'test'
+  ...
+# Subtest: QIN-645：公共层承接暗色与明色两套语义变量
+ok 30 - QIN-645：公共层承接暗色与明色两套语义变量
+  ---
+  duration_ms: 0.4945
+  type: 'test'
+  ...
+# Subtest: QIN-645：公共层承接控件基础层
+ok 31 - QIN-645：公共层承接控件基础层
+  ---
+  duration_ms: 0.3299
+  type: 'test'
+  ...
+# Subtest: 顶栏9导航钮采用新规LG40，保持链接与各页原业务入口
+ok 32 - 顶栏9导航钮采用新规LG40，保持链接与各页原业务入口
+  ---
+  duration_ms: 7.1025
+  type: 'test'
+  ...
+# Subtest: 发光胶囊仅顶栏导航使用，模板与动态切换不得重新引入
+ok 33 - 发光胶囊仅顶栏导航使用，模板与动态切换不得重新引入
+  ---
+  duration_ms: 54.3564
+  type: 'test'
+  ...
+# Subtest: 微球恢复原稿棱彩环与内核，保留用户裁决32px及既有业务入口
+ok 34 - 微球恢复原稿棱彩环与内核，保留用户裁决32px及既有业务入口
+  ---
+  duration_ms: 2.2648
+  type: 'test'
+  ...
+# Subtest: 左侧总线结构统一：五页共享首页基准（金色头卡+主干线+overflow-hidden）
+ok 35 - 左侧总线结构统一：五页共享首页基准（金色头卡+主干线+overflow-hidden）
+  ---
+  duration_ms: 1.5715
+  type: 'test'
+  ...
+# Subtest: 首页总线版块化：节点枚举右侧版块，保留真实数据绑定
+ok 36 - 首页总线版块化：节点枚举右侧版块，保留真实数据绑定
+  ---
+  duration_ms: 0.7327
+  type: 'test'
+  ...
+# Subtest: 新按钮族唯一真源，旧兼容类不得在设计系统或资产页重复定义
+ok 37 - 新按钮族唯一真源，旧兼容类不得在设计系统或资产页重复定义
+  ---
+  duration_ms: 2.4732
+  type: 'test'
+  ...
+# Subtest: 按钮标准尺寸、危险材质、禁用与动效门禁
+ok 38 - 按钮标准尺寸、危险材质、禁用与动效门禁
+  ---
+  duration_ms: 0.9352
+  type: 'test'
+  ...
+# Subtest: 键帽金属色与主题强调色分离，点火键与通电内胆刻字对比度达标
+ok 39 - 键帽金属色与主题强调色分离，点火键与通电内胆刻字对比度达标
+  ---
+  duration_ms: 0.8102
+  type: 'test'
+  ...
+# Subtest: 金色主键hover与active显式保留金色材质，按压只产生内凹反馈
+ok 40 - 金色主键hover与active显式保留金色材质，按压只产生内凹反馈
+  ---
+  duration_ms: 0.3869
+  type: 'test'
+  ...
+# Subtest: 减少动效覆盖每个公开别名及其按压位移
+ok 41 - 减少动效覆盖每个公开别名及其按压位移
+  ---
+  duration_ms: 0.4205
+  type: 'test'
+  ...
+# Subtest: 八个按钮族系按原稿拆分，整理规范引用本地真源且Dial明确未接入
+ok 42 - 八个按钮族系按原稿拆分，整理规范引用本地真源且Dial明确未接入
+  ---
+  duration_ms: 1.9116
+  type: 'test'
+  ...
+# Subtest: 资产内嵌文档只加载硬件主题，所有弹层继承根级语义色
+ok 43 - 资产内嵌文档只加载硬件主题，所有弹层继承根级语义色
+  ---
+  duration_ms: 0.3971
+  type: 'test'
+  ...
+# Subtest: QIN-412 目录设置移除空框并由页内服务器目录树即选即存
+ok 44 - QIN-412 目录设置移除空框并由页内服务器目录树即选即存
+  ---
+  duration_ms: 6.9654
+  type: 'test'
+  ...
+# Subtest: 表面 token 共享层：hardware-tokens 登记 surface 与控件 token
+ok 45 - 表面 token 共享层：hardware-tokens 登记 surface 与控件 token
+  ---
+  duration_ms: 0.2824
+  type: 'test'
+  ...
+# Subtest: 首批复核修补覆盖顶栏微球、禁用材质、资产主题与审阅ARIA
+ok 46 - 首批复核修补覆盖顶栏微球、禁用材质、资产主题与审阅ARIA
+  ---
+  duration_ms: 3.4678
+  type: 'test'
+  ...
+# Subtest: 非vendor CSS硬编码hex棘轮门禁（基线2026-10-10 UI治理后快照）
+ok 47 - 非vendor CSS硬编码hex棘轮门禁（基线2026-10-10 UI治理后快照）
+  ---
+  duration_ms: 25.9435
+  type: 'test'
+  ...
+# Subtest: SIGNAL-FLOW旧兼容不得覆盖已迁移硬件按钮的材质和字阶
+ok 48 - SIGNAL-FLOW旧兼容不得覆盖已迁移硬件按钮的材质和字阶
+  ---
+  duration_ms: 0.7745
+  type: 'test'
+  ...
+1..48
+# tests 48
+# suites 0
+# pass 48
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 15354.9095
+EXIT=0

@@ -99,6 +99,14 @@ def main() -> int:
 
     (QA / "diff.json").write_text(json.dumps(details, ensure_ascii=False, indent=1), encoding="utf-8")
     print(f"\n明细 {len(details)} 条 → diff.json")
+
+    # 反证（GW-DoD-v1 §4.3）需要一个可判的退出码：
+    # 只要存在任何计算样式差异或硬判据变化，--fail-on-diff 就以 1 退出。
+    if "--fail-on-diff" in sys.argv:
+        if details or changed:
+            print(f"FAIL: 差异明细 {len(details)} 条、硬判据变化 {len(changed)} 项")
+            return 1
+        print("PASS: 0 差异明细、0 硬判据变化")
     return 0
 
 

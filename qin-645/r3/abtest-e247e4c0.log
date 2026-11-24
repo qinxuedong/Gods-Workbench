@@ -1,0 +1,337 @@
+
+==============================================================================
+反证 m1-marker-gate：改坏 asset-manager 的关键接线
+==============================================================================
+diff --git a/web/embeds/asset-manager.html b/web/embeds/asset-manager.html
+index a991ef0f..ade38db8 100644
+--- a/web/embeds/asset-manager.html
++++ b/web/embeds/asset-manager.html
+@@ -32,13 +32,13 @@
+     <link rel="stylesheet" href="/static/css/pages/context-tree-animations.css?v=v0.0.1-alpha-2026&pb=phase-b">
+     <link rel="stylesheet" href="/static/css/pages/context-hotkey-feedback.css?v=v0.0.1-alpha-2026&pb=phase-b">
+     <link rel="stylesheet" href="/static/css/pages/asset-vault.css?v=20260916&ui=20261011-final">
+     <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final">
+     <script>if(new URLSearchParams(location.search).get('settings')==='directories')document.documentElement.classList.add('directory-settings-page');</script>
+ </head>
+-<body class="gw-signal gw-page--asset-manager gw-type-body-md">
++<body class="gw-signal gw-legacy-signal gw-page--asset-manager gw-type-body-md">
+     <div class="asset-page">
+         <header class="asset-page-head">
+             <div class="asset-page-heading">
+                 <div class="asset-breadcrumbs">
+                     <div class="asset-heading-row">
+                     </div>
+
+
+$ git apply --check D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m1-marker-gate.patch
+  [apply --check] exit=0
+
+$ git apply D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m1-marker-gate.patch
+  [apply] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 10
+  # fail 2
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 176.7189
+  [contract 改坏后] exit=1
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=asset-manager
+  light   900 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=900/900
+  light  1440 asset-manager        nodes= 420 overflow= 8 collapsed=8 errors=1 docW=1440/1440
+  light  1920 asset-manager        nodes= 420 overflow= 0 collapsed=8 errors=1 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 改坏后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=3034 | 高频属性: font-family×1888, __rect__×1824, color×1370, outline-color×1370, border-right-color×1182, border-left-color×1178
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=   0 | 高频属性: 
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 3034 条 → diff.json
+  FAIL: 差异明细 3034 条、硬判据变化 0 项
+  [matrix 改坏后] exit=1
+  [red 明细] m1-marker-gate-diff.json.gz（2374631 字节）
+
+$ git checkout -- web/embeds/asset-manager.html
+  [revert] exit=0
+
+$ git diff --quiet
+  [工作树干净校验] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 12
+  # fail 0
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 181.7829
+  [contract 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=asset-manager
+  light   900 asset-manager        nodes= 419 overflow= 9 collapsed=8 errors=1 docW=900/900
+  light  1440 asset-manager        nodes= 420 overflow= 8 collapsed=8 errors=1 docW=1440/1440
+  light  1920 asset-manager        nodes= 420 overflow= 0 collapsed=8 errors=1 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=   0 | 高频属性: 
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=   0 | 高频属性: 
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 0 条 → diff.json
+  PASS: 0 差异明细、0 硬判据变化
+  [matrix 恢复后] exit=0
+
+==============================================================================
+反证 m2-variable-level：改坏 canvas-interactive 的关键接线
+==============================================================================
+diff --git a/web/css/base/hardware-design-system.css b/web/css/base/hardware-design-system.css
+index 85fa9092..33c63fec 100644
+--- a/web/css/base/hardware-design-system.css
++++ b/web/css/base/hardware-design-system.css
+@@ -1426,13 +1426,13 @@ table tbody td {
+    自定义属性按「最近声明该属性的祖先」取值，与选择器特异性无关：一旦声明在 body，
+    就会盖掉页面在 <html> 上定义的 .theme-dark / .theme-light 同名变量
+    （canvas-list.css 用 .theme-dark 给出 --strong / --strong-text 等），
+    使画布页状态条在交互态显色时取到公共层的强调青而非页面原色。
+    故此处以 :root:where(:has(...)) 落回文档根，特异性 (0,1,0) 与原 :root 完全相同，
+    同权重时由源码次序决定 —— 本文件先于各页 CSS 加载，页面定义照旧胜出。 */
+-:root:where(:has(> body.gw-signal:where(.gw-legacy-signal))) {
++body.gw-signal:where(.gw-legacy-signal) {
+   --gw-type-title: var(--gw-type-headline-md);
+   --gw-type-section: var(--gw-type-headline-sm);
+   --gw-type-body: var(--gw-type-body-md);
+   --gw-type-meta: var(--gw-type-body-sm);
+ 
+   --sf-bg: #0a1016;
+
+
+$ git apply --check D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m2-variable-level.patch
+  [apply --check] exit=0
+
+$ git apply D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m2-variable-level.patch
+  [apply] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 10
+  # fail 2
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 188.3231
+  [contract 改坏后] exit=1
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=canvas-interactive
+  light   900 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=900/900
+  light  1440 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+  light  1920 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 改坏后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=   0 | 高频属性: 
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   4 | 高频属性: color×4, background-color×4, outline-color×4
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=   0 | 高频属性: 
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 4 条 → diff.json
+  FAIL: 差异明细 4 条、硬判据变化 0 项
+  [matrix 改坏后] exit=1
+  [red 明细] m2-variable-level-diff.json.gz（2369 字节）
+
+$ git checkout -- web/css/base/hardware-design-system.css
+  [revert] exit=0
+
+$ git diff --quiet
+  [工作树干净校验] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 12
+  # fail 0
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 182.7907
+  [contract 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=canvas-interactive
+  light   900 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=900/900
+  light  1440 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1440/1440
+  light  1920 canvas-interactive   nodes= 195 overflow= 0 collapsed=8 errors=0 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=   0 | 高频属性: 
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=   0 | 高频属性: 
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 0 条 → diff.json
+  PASS: 0 差异明细、0 硬判据变化
+  [matrix 恢复后] exit=0
+
+==============================================================================
+反证 m3-radius-prefix：改坏 task-center 的关键接线
+==============================================================================
+diff --git a/web/css/base/hardware-design-system.css b/web/css/base/hardware-design-system.css
+index 85fa9092..31686dd0 100644
+--- a/web/css/base/hardware-design-system.css
++++ b/web/css/base/hardware-design-system.css
+@@ -1774,13 +1774,13 @@ html.theme-light body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)):
+      - 增量恰为 +1 类型选择器，不引入新的类/属性维度，不会波及别的选择器；
+      - 唯一替代方案是把这条规则（68 个选择器）复制进五个页面 CSS 的迁移块之后，
+        跨文件维护同一份圆角清单，漂移风险高于一处 +1 特异性。该方案已由 PM 裁决
+        弃用（2026-11-24，保留本文件的 html 前缀写法）。
+    tests/frontend/qin-645-signal-flow-retired.test.mjs 里钉住了这条规则的具体形态，
+    若日后有人把 html 前缀去掉或再加一级，测试立即变红。 */
+-html body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
++body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
+   .btn, .action-btn, .upload-btn, .add-btn, .api-link-btn,
+   .ws-primary-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .ws-icon-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .ws-paste-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+   .text-button, .icon-button, .status, .status-chip,
+   .status-badge, .status-pill, .badge, .chip, .pill, .tag, .mode-badge,
+
+
+$ git apply --check D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m3-radius-prefix.patch
+  [apply --check] exit=0
+
+$ git apply D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\r3\patches\m3-radius-prefix.patch
+  [apply] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 11
+  # fail 1
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 176.5055
+  [contract 改坏后] exit=1
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=task-center
+  light   900 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=900/900
+  light  1440 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1440/1440
+  light  1920 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 改坏后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=   0 | 高频属性: 
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=  32 | 高频属性: border-radius×32
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 32 条 → diff.json
+  FAIL: 差异明细 32 条、硬判据变化 0 项
+  [matrix 改坏后] exit=1
+  [red 明细] m3-radius-prefix-diff.json.gz（12723 字节）
+
+$ git checkout -- web/css/base/hardware-design-system.css
+  [revert] exit=0
+
+$ git diff --quiet
+  [工作树干净校验] exit=0
+
+$ node --test tests/frontend/qin-645-signal-flow-retired.test.mjs
+  # tests 12
+  # suites 0
+  # pass 12
+  # fail 0
+  # cancelled 0
+  # skipped 0
+  # todo 0
+  # duration_ms 180.7545
+  [contract 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\capture.py after
+  env: CAPTURE_BASE=http://127.0.0.1:2090 CAPTURE_ONLY=task-center
+  light   900 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=900/900
+  light  1440 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1440/1440
+  light  1920 task-center          nodes= 113 overflow= 1 collapsed=3 errors=1 docW=1920/1920
+  写入 D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\after\snapshot.json（64 组）
+  [capture 恢复后] exit=0
+
+$ C:/Users/qinxuedong/AppData/Local/Programs/Python/Python311/python.exe D:\Working\Code Pro\Gods-Workbench\.local\qa\QIN-645\diff.py --fail-on-diff
+  配对组数 72 / before 72 / after 72
+  == 各页差异汇总 ==
+  asset-manager          组= 8 差异元素=   0 | 高频属性: 
+  asset-share            组= 8 差异元素=   0 | 高频属性: 
+  asset-share-content    组= 8 差异元素=   0 | 高频属性: 
+  canvas-interactive     组= 8 差异元素=   0 | 高频属性: 
+  canvas-list            组= 8 差异元素=   0 | 高频属性: 
+  canvas-overview        组= 8 差异元素=   0 | 高频属性: 
+  episode-pipeline       组= 8 差异元素=   0 | 高频属性: 
+  governance             组= 8 差异元素=   0 | 高频属性: 
+  task-center            组= 8 差异元素=   0 | 高频属性: 
+  == 硬判据变化（overflow / collapsed / errors / 文档宽 / 元素数）==
+    无变化
+  明细 0 条 → diff.json
+  PASS: 0 差异明细、0 硬判据变化
+  [matrix 恢复后] exit=0
+
+==============================================================================
+结论：3 个反证均「改坏必红、恢复必绿」
+ABTEST_EXIT=0
