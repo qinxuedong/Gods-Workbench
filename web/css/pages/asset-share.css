@@ -131,9 +131,17 @@ to {transform:rotate(360deg)}}
    <head> 的 link 次序），其 :root 变量块因此压过本页自己的调色板：
    分享页实际呈现的一直是 signal-flow 的青色系，而不是本文件的橙/金配色。
    合规做法是把公共层留在基础样式位置（不能整体后移，会改动基础排版），
-   只在本文件末尾以等值方式复现同一优先级结果。取值全部来自公共层变量，
-   不写死色值。 */
-:root {
+   只在本文件末尾以等值方式复现同一优先级结果。
+
+   选择器收窄到本页：`:root:where(:has(> body.gw-page--asset-share))`。
+   :where() 内特异性为 0，整体仍是 (0,1,0)，与裸 :root 完全相同 —— 同权重由
+   源码次序决定，本块依旧压过公共层的同名旧名；而块只在分享页生效，
+   即使本文件被别的页面误引也不会外溢。
+
+   取值一律 `var(--sf-*)`。唯一例外 `--soft-2: #20313d`：该旧名在 signal-flow
+   的 :root 里本就是字面量、公共层没有对应令牌，按等值如实复现（实测迁移前
+   计算值同为 #20313d），不另造令牌。 */
+:root:where(:has(> body.gw-page--asset-share)) {
   --gw-bg: var(--sf-bg);
   --gw-surface: var(--sf-surface);
   --gw-surface-2: var(--sf-content);

@@ -29,7 +29,7 @@ assert.match(
 assert.match(
   directoryCss,
   /html\.directory-settings-page\.workspace-embedded\s+body\.gw-signal\.gw-page--asset-manager\s*\{[^}]*background:\s*var\(--gw-settings-container-background\)\s*!important/s,
-  '嵌入态目录设置 body 应使用共享容器底色并压过 signal-flow 锁底'
+  '嵌入态目录设置 body 应使用共享容器底色并压过资产主题锁底'
 );
 
 // 3. API与密钥配置：嵌入态与目录页同口径。
