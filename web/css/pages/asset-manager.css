@@ -331,8 +331,8 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .detail-media-frame .asset-file-icon { min-height:240px; }
 .detail-media-frame .workflow-file-icon { min-height:240px; }
 .asset-lightbox-open { overflow:hidden; }
-.asset-lightbox { position:fixed; inset:0; z-index:140; background:var(--page); color:var(--text); overflow:hidden; font-family: var(--gw-font-body); }
-.asset-detail-viewer-page { width:100%; height:100%; display:grid; grid-template-rows:62px minmax(0,1fr); }
+.asset-lightbox { position:fixed; inset:0; width:100%; max-width:100%; z-index:140; background:var(--page); color:var(--text); overflow:hidden; font-family: var(--gw-font-body); }
+.asset-detail-viewer-page { width:100%; max-width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; display:grid; grid-template-rows:62px minmax(0,1fr); }
 .asset-detail-viewer-head { min-width:0; padding:0 18px 0 24px; border-bottom:1px solid var(--text); background:var(--panel); display:flex; align-items:center; justify-content:space-between; gap:18px; }
 .asset-detail-breadcrumb { min-width:0; display:flex; align-items:center; gap:8px; color:var(--muted); font-size: var(--gw-type-body-sm); font-weight:800; }
 .asset-detail-breadcrumb button { flex:0 0 auto; max-width:180px; padding:3px 2px; border:0; border-radius:3px; background:transparent; color:inherit; font-size:inherit; font-weight:inherit; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
@@ -345,27 +345,27 @@ body.theme-dark .asset-card.active { border-color:rgba(248,250,252,.86); box-sha
 .asset-detail-head-actions a,.asset-detail-head-actions button { width:34px; height:34px; border:1px solid var(--line-2); border-radius:8px; background:transparent; color:var(--text); display:grid; place-items:center; }
 .asset-detail-head-actions a:hover,.asset-detail-head-actions button:hover { background:var(--strong); color:var(--strong-text); border-color:var(--strong); }
 .asset-detail-head-actions svg { width:16px; height:16px; }
-.asset-detail-viewer-body { min-height:0; display:grid; grid-template-columns:minmax(0,1.65fr) minmax(330px,.68fr); }
+.asset-detail-viewer-body { width:100%; max-width:100%; min-width:0; min-height:0; overflow:hidden; display:grid; grid-template-columns:minmax(0,1.65fr) minmax(330px,.68fr); }
 .asset-detail-viewer-body.asset-detail-media-library-layout { grid-template-columns:minmax(0,1fr) var(--media-library-width,420px); }
 .asset-detail-viewer-body.asset-detail-media-library-collapsed { grid-template-columns:minmax(0,1fr) 44px; }
 .asset-detail-viewer-body.asset-detail-inspector-collapsed { grid-template-columns:minmax(0,1fr) 44px; }
 .asset-detail-stage { position:relative; min-width:0; min-height:0; overflow:hidden; background:#171a18; display:grid; place-items:center; }
 .asset-detail-stage::before { content:""; position:absolute; inset:0; pointer-events:none; background-image:linear-gradient(rgba(255,255,255,.035) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.035) 1px,transparent 1px); background-size:28px 28px; }
 .asset-detail-stage-content { position:relative; z-index:1; width:100%; height:100%; min-width:0; min-height:0; padding:24px 64px; display:flex; align-items:center; justify-content:center; overflow:hidden; }
-.asset-detail-media-canvas-stage { display:block; background:#171a18; }
+.asset-detail-media-canvas-stage { display:block; width:100%; max-width:100%; min-width:0; overflow:hidden; background:#171a18; }
 .asset-detail-media-canvas-stage::before { display:none; }
-.asset-detail-media-canvas-shell { position:relative; z-index:1; width:100%; height:100%; min-width:0; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden; }
+.asset-detail-media-canvas-shell { position:relative; z-index:1; width:100%; max-width:100%; height:100%; min-width:0; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); overflow:hidden; }
 .asset-detail-media-canvas-shell.gw-coverflow-embedded-host { grid-template-rows:auto minmax(0,1fr) 300px; }
 .asset-detail-media-canvas-shell.gw-coverflow-embedded-host > .gw-coverflow--embedded { grid-row:3; }
-.asset-detail-media-canvas-toolbar { min-width:0; padding:6px 8px; border-bottom:1px solid rgba(223, 195, 132, 0.2); background:#0d1016; color:#edf1eb; display:flex; flex-direction:column; align-items:stretch; gap:5px; }
-.asset-detail-media-toolbar-primary { min-width:0; display:flex; align-items:center; gap:8px; }
-.asset-detail-media-toolbar-primary > label { min-width:180px; max-width:310px; flex:1 1 240px; height:32px; border:1px solid rgba(223, 195, 132, 0.25); background:#11141c; display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; }
+.asset-detail-media-canvas-toolbar { min-width:0; max-width:100%; overflow:hidden; padding:6px 8px; border-bottom:1px solid rgba(223, 195, 132, 0.2); background:#0d1016; color:#edf1eb; display:flex; flex-direction:column; align-items:stretch; gap:5px; }
+.asset-detail-media-toolbar-primary { min-width:0; max-width:100%; display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.asset-detail-media-toolbar-primary > label { min-width:110px; max-width:240px; flex:1 1 140px; height:32px; border:1px solid rgba(223, 195, 132, 0.25); background:#11141c; display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; }
 .asset-detail-media-toolbar-primary > label:focus-within { border-color:#dfc384; box-shadow:0 0 6px rgba(223, 195, 132, 0.35); }
 .asset-detail-media-toolbar-primary > label > input:focus,.asset-detail-media-toolbar-primary > label > input:focus-visible { border:0 !important; outline:0 !important; box-shadow:none !important; }
 .asset-detail-media-toolbar-primary > label svg { width:14px; height:14px; justify-self:center; color:#dfc384; }
 .asset-detail-media-toolbar-primary > span { flex:0 0 auto; color:#aeb8b0; font-size: var(--gw-type-label-md); font-weight:800; }
 .asset-detail-media-toolbar-primary > span b { color:#fff; font-weight:950; }
-.asset-detail-media-toolbar-primary > div { min-width:0; margin-left:auto; display:flex; align-items:center; gap:5px; }
+.asset-detail-media-toolbar-primary > div { min-width:0; max-width:100%; margin-left:auto; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:5px; }
 .asset-detail-media-toolbar-tools { min-width:0; min-height:32px; display:flex; align-items:center; gap:5px; overflow-x:auto; scrollbar-width:thin; }
 .asset-detail-media-tool-group { flex:0 0 auto; display:flex; align-items:center; gap:3px; padding-right:5px; border-right:1px solid rgba(223, 195, 132, 0.15); }
 .asset-detail-media-tool-group:last-child { border-right:0; padding-right:0; }
@@ -2998,12 +2998,13 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .registry-detail-resizer::after { content:""; position:absolute; left:13px; top:0; bottom:0; width:2px; background:transparent; }
 .registry-detail-resizer:hover::after,.registry-detail-resizer.is-resizing::after { background:var(--sf-cyan); }
 .asset-manager-root.registry-detail-resizing .registry-detail-resizer::after { width:3px; background:var(--sf-cyan); }
-.registry-detail-panel.is-collapsed { position:absolute; z-index:9; top:0; right:0; bottom:0; width:44px; min-width:44px; overflow:hidden; display:flex; }
-.registry-detail-expand { width:44px; min-height:100%; padding:10px 0; background:var(--soft); color:var(--text); display:flex; flex-direction:column; align-items:center; gap:10px; cursor:pointer; }
-.registry-detail-expand:hover { background:var(--strong); color:var(--strong-text); }
-.registry-detail-expand:focus-visible,.registry-detail-toggle:focus-visible { outline:2px solid var(--sf-cyan); outline-offset:-3px; }
+/* 【QIN-661】折叠态保持在 Grid 内容区列内，起止高度与样式均与展开态一致。 */
+.registry-detail-panel.is-collapsed { position:relative; width:100%; height:100%; min-width:0; min-height:0; overflow:hidden; display:flex; flex-direction:column; align-items:stretch; }
+.registry-detail-expand { width:100%; height:100%; min-height:0; padding:0; border:0; background:transparent; color:var(--vault-gold-light,var(--text)); display:flex; flex-direction:column; align-items:center; gap:10px; cursor:pointer; }
+.registry-detail-expand:hover { background:rgba(223,195,132,.08); color:var(--vault-gold-light,#eddab3); }
+.registry-detail-expand:focus-visible,.registry-detail-toggle:focus-visible { outline:2px solid rgba(223,195,132,.6); outline-offset:-2px; }
 .registry-detail-expand svg { width:16px; height:16px; }
-.registry-detail-expand span { writing-mode:vertical-rl; color:inherit; font-size: var(--gw-type-label-md); font-weight:900; letter-spacing:.08em; }
+.registry-detail-expand span { writing-mode:vertical-rl; color:inherit; font-size: var(--gw-type-label-md); font-weight:800; letter-spacing:.08em; }
 .registry-list { min-width:920px; border:1px solid var(--line-2); background:var(--card); }
 .registry-list-head,.registry-list-row { min-width:0; display:grid; grid-template-columns:34px minmax(210px,1.45fr) minmax(92px,.55fr) minmax(84px,.45fr) minmax(132px,.72fr) minmax(150px,.85fr) minmax(220px,1.25fr); align-items:center; }
 .registry-list-head { min-height:34px; border-bottom:1px solid var(--line-2); background:var(--strong); color:var(--strong-text); font-size: var(--gw-type-label-md); font-weight:950; letter-spacing:.04em; }
@@ -4155,3 +4156,110 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .gw-asset-fsviewer-status { position:absolute; left:0; right:0; bottom:0; z-index:2; display:flex; align-items:center; justify-content:space-between; gap:16px; padding:10px 16px; background:rgba(6,6,6,0.92); border-top:1px solid rgba(223,195,132,0.18); color:#e8dcc0; font-size:var(--gw-type-label-md,12px); }
 .gw-asset-fsviewer-name { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .gw-asset-fsviewer-count { flex:0 0 auto; color:var(--gold-primary,#dfc384); font-variant-numeric:tabular-nums; }
+
+/* 【QIN-661】多素材画布右侧详情面板 & LUT 详情栏展开/折叠态黑金一致化 */
+.asset-manager-root.asset-tree-layout.asset-manager-root-page-lut.registry-detail-collapsed {
+    grid-template-columns:240px minmax(0,1fr) 44px;
+}
+.registry-detail-panel.is-collapsed .registry-detail-expand {
+    justify-content:flex-start;
+    padding:0 0 12px;
+    gap:12px;
+}
+.registry-detail-panel.is-collapsed .registry-detail-expand::before {
+    content:"";
+    display:block;
+    width:100%;
+    height:1px;
+    background:rgba(223,195,132,.18);
+    flex:0 0 auto;
+}
+.registry-detail-panel.is-collapsed .registry-detail-expand > svg {
+    width:28px;
+    height:28px;
+    padding:6px;
+    margin-top:8px;
+    border:1px solid rgba(223,195,132,.34);
+    border-radius:6px;
+    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
+    color:var(--vault-gold-light,#eddab3);
+    box-sizing:border-box;
+    flex:0 0 auto;
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar {
+    min-width:0;
+    border-left:1px solid var(--vault-line-soft,rgba(223,195,132,.22));
+    border-top:1px solid rgba(223,195,132,.18);
+    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
+    color:var(--vault-text,#e8ecf4);
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-tabs {
+    border-bottom:1px solid rgba(223,195,132,.22);
+    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
+    box-shadow:inset 0 1px rgba(255,255,255,.06),0 3px 12px rgba(0,0,0,.28);
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle {
+    border:1px solid rgba(223,195,132,.34);
+    border-radius:6px;
+    background:rgba(255,255,255,.03);
+    color:var(--vault-gold-light,#eddab3);
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle:hover,
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle:focus-visible {
+    border-color:rgba(223,195,132,.65);
+    background:rgba(223,195,132,.14);
+    color:#fff;
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar.is-collapsed {
+    padding:0;
+    display:flex;
+    flex-direction:column;
+    align-items:stretch;
+    justify-content:flex-start;
+    overflow:hidden;
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar.is-collapsed > .asset-detail-media-sidebar-expand {
+    width:100%;
+    height:100%;
+    min-height:0;
+    padding:0 0 12px;
+    border:0;
+    border-radius:0;
+    background:transparent;
+    color:var(--vault-gold-light,#eddab3);
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:12px;
+    cursor:pointer;
+}
+.asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar.is-collapsed > .asset-detail-media-sidebar-expand:hover {
+    background:rgba(223,195,132,.08);
+    color:#fff;
+}
+.asset-detail-media-sidebar-expand-icon {
+    width:100%;
+    height:38px;
+    border-bottom:1px solid rgba(223,195,132,.22);
+    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
+    display:grid;
+    place-items:center;
+    flex:0 0 auto;
+}
+.asset-detail-media-sidebar-expand-icon svg {
+    width:15px;
+    height:15px;
+    padding:5px;
+    box-sizing:content-box;
+    border:1px solid rgba(223,195,132,.34);
+    border-radius:6px;
+    color:var(--vault-gold-light,#eddab3);
+}
+.asset-detail-media-sidebar-expand-label {
+    writing-mode:vertical-rl;
+    color:inherit;
+    font-size:var(--gw-type-label-md);
+    font-weight:800;
+    letter-spacing:.08em;
+}
