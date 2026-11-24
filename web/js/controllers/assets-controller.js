@@ -288,6 +288,37 @@ window.WorkbenchAssets = (() => {
   let sidebarSnapshot = '';
   // 【QIN-603 AC3】结构签名（不含选中态与计数）：用来区分「只换选中项 / 只变计数 / 真的换树」。
   let sidebarStructure = '';
+  // 【QIN-659 AC2】挂载目录树隐藏空文件夹偏好与最近一次快照缓存。
+  const HIDE_EMPTY_FOLDERS_KEY = 'gw.asset.tree.hideEmptyFolders';
+  let lastTreeSnapshot = null;
+
+  function isHideEmptyFoldersEnabled() {
+    try {
+      return window?.localStorage?.getItem?.(HIDE_EMPTY_FOLDERS_KEY) === '1';
+    } catch (_) {
+      return false;
+    }
+  }
+
+  function filterEmptyTreeNodes(nodes, hideEmpty) {
+    if (!Array.isArray(nodes)) return [];
+    if (!hideEmpty) return nodes;
+    const result = [];
+    for (const node of nodes) {
+      if (!node || typeof node !== 'object') continue;
+      const filteredChildren = filterEmptyTreeNodes(node.children, true);
+      const isLoading = Boolean(node.loading);
+      const hasSelfCount = node.count !== '' && node.count !== undefined && node.count !== null && Number(node.count) > 0;
+      if (isLoading || hasSelfCount || filteredChildren.length > 0) {
+        result.push({
+          ...node,
+          children: filteredChildren,
+          hasChildren: filteredChildren.length > 0,
+        });
+      }
+    }
+    return result;
+  }
 
   function manager() {
     try { return frame.contentDocument; } catch (_) { return null; }
@@ -442,12 +473,23 @@ window.WorkbenchAssets = (() => {
 
     const isRoot = Boolean(target.isRoot);
     const canManageResourceFolders = Boolean(organizeBridge()?.canManageResourceFolders?.());
+    let hideEmptyFolders = false;
+    try {
+      hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
+    } catch (_) {}
     const items = [
       { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: false },
       { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
       { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: false },
       { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
       ...(isRoot ? [
+        {
+          id: 'toggle-empty',
+          attr: 'data-asset-organize-toggle-empty',
+          label: hideEmptyFolders ? '显示空文件夹' : '隐藏空文件夹',
+          icon: hideEmptyFolders ? 'eye' : 'eye-off',
+          disabled: false,
+        },
         { id: 'remove-root', attr: 'data-asset-organize-remove-root', label: '移出资源库', icon: 'folder-minus', disabled: !canManageResourceFolders },
         { id: 'purge-root', attr: 'data-asset-organize-purge-root', label: '清除索引', icon: 'trash-2', disabled: !canManageResourceFolders, danger: true },
       ] : []),
@@ -465,6 +507,19 @@ window.WorkbenchAssets = (() => {
         e.stopPropagation();
         closeShellOrganizeMenu();
         const bridge = organizeBridge();
+        if (item.id === 'toggle-empty') {
+          const nextHide = !hideEmptyFolders;
+          try {
+            window?.localStorage?.setItem?.('gw.asset.tree.hideEmptyFolders', nextHide ? '1' : '0');
+          } catch (_) {}
+          try {
+            if (typeof CustomEvent === 'function') {
+              window?.dispatchEvent?.(new CustomEvent('gw:asset-tree-toggle-empty', { detail: { hideEmpty: nextHide } }));
+            }
+          } catch (_) {}
+          bridge?.setHideEmptyFolders?.(nextHide);
+          return;
+        }
         if (!bridge) return;
         if (item.id === 'new') openShellCreateDialog(target.key);
         else if (item.id === 'rename') beginShellRename(target.key);
@@ -910,6 +965,8 @@ window.WorkbenchAssets = (() => {
   // 应用内嵌页推送的树快照：渲染收集箱 + 挂载资源（统一资源库总文件夹与物理子目录树）。
   function applyTreeSnapshot(snapshot) {
     if (!categories || !snapshot || typeof snapshot !== 'object') return;
+    lastTreeSnapshot = snapshot;
+    const hideEmpty = isHideEmptyFoldersEnabled();
     const selected = String(snapshot.selected_key || '');
     const badge = Math.max(0, Number(snapshot.inbox_badge || 0));
     const rawRoots = Array.isArray(snapshot.roots) ? snapshot.roots : [];
@@ -940,6 +997,14 @@ window.WorkbenchAssets = (() => {
       dedupedRoots.push(root);
     });
     const knownRootIds = new Set(dedupedRoots.map(r => String(r.id || '')));
+    const displayRoots = dedupedRoots.map(root => {
+      const filteredChildren = filterEmptyTreeNodes(root.children, hideEmpty);
+      return {
+        ...root,
+        children: filteredChildren,
+        hasChildren: Array.isArray(root.children) ? filteredChildren.length > 0 : Boolean(root.hasChildren),
+      };
+    });
     const rawBoards = Array.isArray(snapshot.boards) ? snapshot.boards : [];
     const independentBoards = rawBoards.filter(board => {
       const boardRootId = String(board?.rootId || board?.sources?.[0]?.id || '');
@@ -948,7 +1013,7 @@ window.WorkbenchAssets = (() => {
 
     const rows = [
       {key:'mine:inbox', name:'收集箱', icon:'inbox', badge, count:'', hasChildren:false},
-      ...dedupedRoots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
+      ...displayRoots.map(root => ({...root, key:`mine:root:${root.id}`, name:String(root.name || '未命名来源'), icon:root.icon || 'hard-drive', count:root.count, isRoot:true})),
       ...independentBoards.map(board => ({key:`mine:board:${board.id}`, name:String(board.name || '未命名资源库'), icon:String(board.icon || 'library'), count:'', hasChildren:false})),
     ];
     // 【QIN-603 AC3】selected 不再掺进快照字符串：只改选中项时结构完全没变，
@@ -962,8 +1027,8 @@ window.WorkbenchAssets = (() => {
       hasChildren: Boolean(row.hasChildren),
       childKeys: (Array.isArray(row.children) ? row.children : []).map(child => child?.key || ''),
     });
-    const structureKey = JSON.stringify(rows.map(rowShape));
-    const serialized = JSON.stringify(rows);
+    const structureKey = JSON.stringify({ hideEmpty, rows: rows.map(rowShape) });
+    const serialized = JSON.stringify({ hideEmpty, rows });
     updateSidebarSelection(selected);
     syncOverviewSelection(selected);
     if (serialized === sidebarSnapshot) return;
@@ -1014,13 +1079,13 @@ window.WorkbenchAssets = (() => {
     });
     mountSection.append(mountLabel);
 
-    if (!roots.length && !independentBoards.length) {
+    if (!displayRoots.length && !independentBoards.length) {
       const empty = document.createElement('span');
       empty.className = 'asset-shell-nav-empty';
       empty.textContent = '尚未挂载文件夹';
       mountSection.append(empty);
     } else {
-      roots.forEach(root => {
+      displayRoots.forEach(root => {
         mountSection.append(shellNavButton({
           ...root,
           key: `mine:root:${root.id}`,
@@ -1380,6 +1445,11 @@ window.WorkbenchAssets = (() => {
   }
 
   // 【QIN-566 / QIN-590】内嵌页每次树状态与 Coverflow 变化调用宿主回调，外壳侧栏据此渲染与联动。
+  if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') {
+    window.addEventListener('gw:asset-tree-toggle-empty', () => {
+      if (lastTreeSnapshot) applyTreeSnapshot(lastTreeSnapshot);
+    });
+  }
   window.GWAssetTreeHost = Object.freeze({
     onTreeSnapshot: applyTreeSnapshot,
     onCoverflowOpen: handleCoverflowOpen,
