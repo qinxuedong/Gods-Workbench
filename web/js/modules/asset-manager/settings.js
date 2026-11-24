@@ -1772,13 +1772,13 @@ function renderGlobalDirectorySettings(){
         const rightColumnHtml = `
         <div class="directory-cards-column directory-cards-column--right">
         ${renderProjectWorkspaceSettingsBody()}
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">
-            ${renderAssetThumbnailCacheDirectoryBody()}
-        </section>
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         ${renderWorkspaceSettingsBody()}
         </div>`;
-        const cardsHtml = `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
-        ${leftColumnHtml}${rightColumnHtml}
+        const cardsHtml = `
+        <fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        ${leftColumnHtml}
+        ${rightColumnHtml}
         </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}`;
         const footerHtml = `<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`;
         host.innerHTML = `${headerHtml}
