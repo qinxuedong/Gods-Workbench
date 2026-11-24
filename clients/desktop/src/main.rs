@@ -4018,19 +4018,19 @@ mod tests {
             "schema_version": 1,
             "data_location": custom_target.to_string_lossy(),
         });
-        fs::write(
-            legacy_boot.join("runtime-root.json"),
-            ptr_json.to_string(),
-        )
-        .expect("write valid legacy pointer");
+        fs::write(legacy_boot.join("runtime-root.json"), ptr_json.to_string())
+            .expect("write valid legacy pointer");
         assert_eq!(
             production_data_root_in(&root).expect("legacy pointer wins"),
             custom_target
         );
 
         // 4. 新指针优先于旧指针；若新指针损坏即使旧指针合法也必 fail-closed
-        fs::write(root.join("Gods Workbench").join("runtime-root.json"), "{bad")
-            .expect("write corrupt new ptr");
+        fs::write(
+            root.join("Gods Workbench").join("runtime-root.json"),
+            "{bad",
+        )
+        .expect("write corrupt new ptr");
         assert!(production_data_root_in(&root).is_err());
 
         let new_target = root.join("CustomNewTarget");
