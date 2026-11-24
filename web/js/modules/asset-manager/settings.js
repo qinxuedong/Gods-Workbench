@@ -1504,10 +1504,8 @@ function closeStorageSettings(){
 }
 function syncStorageSettingsInputsToState(){
     storageSettingsState.dirs = storageSettingsState.dirs || {};
-    ['upload','generated','local','trash'].forEach(kind => {
-        const el = document.getElementById(`storageDir_${kind}`);
-        if(el) storageSettingsState.dirs[kind] = el.value.trim();
-    });
+    const trashEl = document.getElementById('storageDir_trash');
+    if(trashEl) storageSettingsState.dirs.trash = trashEl.value.trim();
     if(canManageProjectWorkspaceSettings()){
         const projectsRoot = document.getElementById('storageDir_projects');
         if(projectsRoot) storageSettingsState.dirs.projects = projectsRoot.value.trim();
@@ -1757,34 +1755,36 @@ function renderGlobalDirectorySettings(){
     let host = document.getElementById('storageSettingsOverlay');
     if(!host){ host = document.createElement('main'); host.id = 'storageSettingsOverlay'; host.className = 'directory-page'; document.body.appendChild(host); }
     const focusId = host.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';
-    const input = (key, label, value, readonly=false) => {
-        const picker = !readonly && canBrowseServerDirectories()
-            ? '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-directory-picker="' + escapeAttr(key) + '" title="浏览服务器目录" aria-label="浏览服务器' + escapeAttr(label) + '目录"><i data-lucide="folder-open"></i></button>'
-            : '';
-        return '<label class="storage-dir-row"><span>' + escapeHtml(label) + '</span><div class="directory-input-row"><input id="storageDir_' + escapeAttr(key) + '" value="' + escapeAttr(value || '') + '" ' + (readonly ? 'readonly' : '') + ' autocomplete="off" title="' + escapeAttr(value || (readonly ? '' : '输入完整物理路径')) + '">' + picker + '</div></label>';
-    };
-    const dirs = storageSettingsState.dirs || {};
-    const clientSourceInput = () => '<label class="storage-dir-row"><span>客户端上传来源目录</span><div class="directory-input-row"><input id="clientUploadSourceDir" value="' + escapeAttr(clientUploadSourceDir) + '" autocomplete="off" title="保存在客户端本机，仅客户端上传素材时作为默认来源">' + '<button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-client-directory-picker="upload_source" title="选择客户端目录" aria-label="选择客户端上传来源目录"><i data-lucide="folder-open"></i></button></div></label>';
     if(permissionsSettingsPage){
         host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="shield-check"></i>允许根权限管理</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取允许根配置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
         ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
         ${!directorySettingsReady ? `<div class="directory-status" role="status">${directorySettingsError ? '<span>请检查权限或连接后重新读取。</span> <button type="button" class="hw-btn" data-directory-reload data-directory-retry><i data-lucide="refresh-cw"></i>重试读取</button>' : '正在读取允许根权限…'}</div>` : `<fieldset class="permissions-roots-fieldset" ${directorySettingsSaving ? 'disabled' : ''}>${renderAllowedRootsSettings()}</fieldset>${renderWorkspaceSettingsBody()}${renderServerDirectoryBrowser()}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
     } else {
-        host.innerHTML = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>
-        ${renderDataLocationBanner()}
-        ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
-        ${!directorySettingsReady ? `<div class="directory-status" role="status">${directorySettingsError ? '<span>请检查权限或连接后重新读取。</span> <button type="button" class="hw-btn" data-directory-reload data-directory-retry><i data-lucide="refresh-cw"></i>重试读取</button>' : '正在读取目录设置…'}</div>` : `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        // 目录设置页保留两列布局：左列仅保留数据位置；右列依次为项目工作区、缓存目录、工作区（QIN-649）。
+        const headerHtml = `<header class="directory-page-header gw-settings-panel-head"><h1><i data-lucide="folder-cog"></i>目录设置</h1><button type="button" class="hw-btn" data-directory-reload title="重新读取目录设置" ${directorySettingsSaving ? 'disabled' : ''}><i data-lucide="refresh-cw"></i>重新读取</button></header>`;
+        const loadingHtml = directorySettingsError
+            ? '<span>请检查权限或连接后重新读取。</span> <button type="button" class="hw-btn" data-directory-reload data-directory-retry><i data-lucide="refresh-cw"></i>重试读取</button>'
+            : '正在读取目录设置…';
+        const leftColumnHtml = `
         <div class="directory-cards-column directory-cards-column--left">
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card" data-board-directories-settings><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>客户端与默认目录</span></div><div class="storage-dir-grid">${input('local','本地素材目录',dirs.local)}${isTauriClientMode() ? clientSourceInput() : ''}</div></section>
         ${renderDataLocationCard()}
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card"><div class="asset-pref-title"><i data-lucide="hard-drive"></i><span>上传与生成</span></div><div class="storage-dir-grid">${input('upload','上传素材',dirs.upload)}${input('generated','生成素材',dirs.generated)}</div></section>
-        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
-        </div>
+        </div>`;
+        const rightColumnHtml = `
         <div class="directory-cards-column directory-cards-column--right">
         ${renderProjectWorkspaceSettingsBody()}
+        <section class="asset-pref-section bay-inset p-4 rounded-xl gw-settings-card">${renderAssetThumbnailCacheDirectoryBody()}</section>
         ${renderWorkspaceSettingsBody()}
-        </div>
-        </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}<footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`}`;
+        </div>`;
+        const cardsHtml = `<fieldset class="directory-cards-grid" ${directorySettingsSaving ? 'disabled' : ''}>
+        ${leftColumnHtml}
+        ${rightColumnHtml}
+        </fieldset>${directorySettingsPage ? renderServerDirectoryBrowser() : ''}`;
+        const footerHtml = `
+        <footer class="directory-footer"><div id="assetStatus" class="directory-status" role="status" aria-live="polite">${escapeHtml(currentStatusText)}</div></footer>`;
+        host.innerHTML = `${headerHtml}
+        ${renderDataLocationBanner()}
+        ${directorySettingsError ? `<div class="directory-error" role="alert">${escapeHtml(directorySettingsError)}</div>` : ''}
+        ${!directorySettingsReady ? `<div class="directory-status" role="status">${loadingHtml}</div>` : `${cardsHtml}${footerHtml}`}`;
         host.querySelector('.project-workspace-settings [data-storage-save]')?.remove();
     }
     refreshIcons();

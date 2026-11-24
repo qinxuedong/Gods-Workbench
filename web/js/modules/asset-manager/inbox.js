@@ -23,6 +23,7 @@ import {
     activeTab,
     apiJsonResponse,
     assetInboxUnreadCount,
+    clientUploadSourceDir,
     escapeAttr,
     escapeHtml,
     inboxItems,
@@ -31,6 +32,7 @@ import {
     inboxSettings,
     inboxSettingsOpen,
     inboxSourceFilter,
+    isTauriClientMode,
     refreshIcons,
     render,
     renderAssetTreePanel,
@@ -110,8 +112,12 @@ function renderInboxSourceChips(){
 }
 function renderInboxSettingsPanel(){
     const path = String(inboxSettings?.path || '');
+    const clientSourceField = isTauriClientMode()
+        ? `<label class="asset-search-wrap" title="保存在客户端本机，仅客户端上传素材时作为默认来源"><i data-lucide="folder-open"></i><input id="clientUploadSourceDir" class="asset-search" type="text" value="${escapeAttr(clientUploadSourceDir || '')}" placeholder="客户端上传来源目录（可选，本机保存）" aria-label="客户端上传来源目录"><button type="button" class="hw-btn hw-btn-icon directory-picker-btn" data-client-directory-picker="upload_source" title="选择客户端目录" aria-label="选择客户端上传来源目录"><i data-lucide="folder-open"></i></button></label>`
+        : '';
     return `<section class="inbox-settings" data-inbox-settings-panel aria-label="收集箱设置">
         <label class="asset-search-wrap"><i data-lucide="folder-cog"></i><input class="asset-search" type="text" data-inbox-path value="${escapeAttr(path)}" placeholder="收集箱绝对路径" aria-label="收集箱位置"></label>
+        ${clientSourceField}
         <label class="inbox-settings-migrate"><input type="checkbox" data-inbox-migrate checked><span>把已有文件迁移到新位置（不勾选则旧文件留在原处）</span></label>
         <div class="asset-tools">
             <button class="hw-btn hw-btn-gold" type="button" data-inbox-settings-save><i data-lucide="save"></i><span>保存位置</span></button>

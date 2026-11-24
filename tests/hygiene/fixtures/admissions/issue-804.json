@@ -1,0 +1,26 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 804,
+  "authorization_basis": "GitHub Issue #804 QIN-649, 2026-11-24",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-412-directory-settings.test.mjs",
+    "tests/frontend/qin-475-settings-ui-polish.test.mjs",
+    "tests/frontend/qin-649-cleanup-mount-and-directory-settings.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-804.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/inbox.js",
+    "web/js/modules/asset-manager/settings.js",
+    "web/js/modules/asset-manager/upload.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-649-cleanup-mount-and-directory-settings.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #804 QIN-649, 2026-11-24",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-649: 清理左侧默认本地素材占位挂载、收口客户端上传与来源目录至收集箱、下线目录设置冗余卡片并将缓存目录移至项目工作区正下方；只写本票分片，基础卫生账本与硬计数保持不变。"
+}

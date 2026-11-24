@@ -116,6 +116,7 @@ test("QIN-432 客户端模式检测与客户端来源目录只存本机", () => 
     assetManager,
     /data-asset-upload\][\s\S]*?isTauriClientMode\(\)[\s\S]*?uploadViaClientPicker/,
   );
-  // 客户端字段仅在客户端模式渲染。
-  assert.match(assetManager, /\$\{isTauriClientMode\(\) \? clientSourceInput\(\) : ''\}/);
+  // 客户端字段收口至收集箱设置面板，仅在客户端模式渲染（QIN-649）。
+  const assetManagerInbox = read('web/js/modules/asset-manager/inbox.js');
+  assert.match(assetManagerInbox, /isTauriClientMode\(\)[\s\S]*?id="clientUploadSourceDir"/);
 });

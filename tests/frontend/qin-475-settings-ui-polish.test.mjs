@@ -12,12 +12,14 @@ const apiCss = read('web/css/pages/api-settings.css');
 const apiModule = read('web/js/modules/api-settings.js');
 const assetManager = readAssetManagerAggregate();
 
-// 1. 目录设置五卡分两列独立堆叠；每列卡间固定 12px，窄屏折为一列。
+// 1. 目录设置保留两列独立堆叠；每列卡间固定 12px，窄屏折为一列；左列数据位置，右列项目工作区→缓存目录→工作区（QIN-649）。
 assert.match(directoryCss, /\.directory-cards-grid\s*\{[\s\S]*?display:\s*grid[\s\S]*?grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
 assert.match(directoryCss, /\.directory-cards-column\s*\{[^}]*display:\s*flex[^}]*flex-direction:\s*column[^}]*gap:\s*12px/s);
 assert.match(directoryCss, /\.directory-cards-column\s*>\s*\.asset-pref-section\s*\{[^}]*margin:\s*0[^}]*min-width:\s*0/s);
 assert.match(directoryCss, /@media\s*\(max-width:\s*700px\)[\s\S]*?\.directory-cards-grid\s*\{[^}]*grid-template-columns:\s*minmax\(0,\s*1fr\)/);
-assert.match(assetManager, /class="directory-cards-column directory-cards-column--left"[\s\S]*data-board-directories-settings[\s\S]*<span>上传与生成<\/span>[\s\S]*renderAssetThumbnailCacheDirectoryBody\(\)[\s\S]*class="directory-cards-column directory-cards-column--right"[\s\S]*renderProjectWorkspaceSettingsBody\(\)/);
+assert.match(assetManager, /class="directory-cards-column directory-cards-column--left"[\s\S]*renderDataLocationCard\(\)[\s\S]*class="directory-cards-column directory-cards-column--right"[\s\S]*renderProjectWorkspaceSettingsBody\(\)[\s\S]*renderAssetThumbnailCacheDirectoryBody\(\)[\s\S]*renderWorkspaceSettingsBody\(\)/);
+assert.doesNotMatch(assetManager, /data-board-directories-settings[\s\S]*<span>客户端与默认目录<\/span>/);
+assert.doesNotMatch(assetManager, /<span>上传与生成<\/span>/);
 assert.doesNotMatch(assetManager, /class="directory-cards-column directory-cards-column--right"[\s\S]*?renderAllowedRootsSettings\(\)/);
 assert.doesNotMatch(assetManager, /<span>回收站目录<\/span>/);
 
