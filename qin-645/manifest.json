@@ -1,5 +1,7 @@
 {
  "before": {
+  "head": "011f4d49b819874bdf6bf31a78fa384fef7e016b",
+  "generated_at": "2026-11-24T03:29:22+00:00",
   "pages": [
    "asset-manager",
    "asset-share",
@@ -1227,6 +1229,8 @@
   ]
  },
  "after": {
+  "head": "19497942b16155f5e95770f4edec17f58d40ed8f",
+  "generated_at": "2026-11-24T03:29:22+00:00",
   "pages": [
    "asset-manager",
    "asset-share",
@@ -1308,6 +1312,29 @@
     "cell_sha256": "1bf103e03235f388b1367bdda74ad9e9dd499617bd8b6e206cab960fa15497f5"
    },
    {
+    "page": "canvas-interactive",
+    "width": 724,
+    "theme": "dark",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 194,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "724/724",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
+    "shot": "canvas-interactive__724__dark.png",
+    "shot_sha256": "003e6f2638c17a43baef5a56c49386daa847617f2e9d31fff2fbaaa18cf3feaf",
+    "cell_sha256": "fb3e47d739b9b5f7eeef83a52c2d452b7c28e1fd509354ef9e36c392fd503e54"
+   },
+   {
     "page": "canvas-overview",
     "width": 724,
     "theme": "dark",
@@ -1324,6 +1351,22 @@
     "cell_sha256": "8730a291bd4976c617485f6ddb9be62ef61bb5d1472fc6b356bd4e8e903d0edf"
    },
    {
+    "page": "asset-share",
+    "width": 724,
+    "theme": "dark",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "724/724",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__724__dark.png",
+    "shot_sha256": "a27afb50b3090647c3d8378dcae873a61854d81893fbd0f9b042791c6a7a6992",
+    "cell_sha256": "4030830e69e7411972c08ea179fe99fcf613d3fefc3c6c7ea7bd4dc3942254eb"
+   },
+   {
     "page": "asset-manager",
     "width": 724,
     "theme": "dark",
@@ -1336,7 +1379,7 @@
     "doc_width": "724/724",
     "body_class": "gw-signal gw-page--asset-manager gw-type-body-md studio-theme-dark theme-dark",
     "shot": "asset-manager__724__dark.png",
-    "shot_sha256": "4080fb1f7144c0501a6939dd1329ff4f6e9b5fd269c303d4829fe5598f276e1a",
+    "shot_sha256": "122c86c625d48950bb07e76bf8efa1b8ce968facf482e5799922cb74709c8abc",
     "cell_sha256": "2577c8579b9194f1abef8765a132ecb7e397cc751941a6c4f5b78abb88144fc8"
    },
    {
@@ -1352,7 +1395,7 @@
     "doc_width": "900/900",
     "body_class": "gw-signal gw-legacy-signal gw-page--task-center gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
     "shot": "task-center__900__dark.png",
-    "shot_sha256": "a47c06bf0d775a9e280c08719c6d8eaf0e5b1c9f9720a14aa760c5d2a38f2bf0",
+    "shot_sha256": "314f0a56137da613fb15a71d24a0d8dbf41a3bb6b7f6241fe2a527c00ac4a78e",
     "cell_sha256": "62ff20d7072c61b7243db70533f29526406a498a3eed385dea9adeafef138ac4"
    },
    {
@@ -1404,6 +1447,29 @@
     "cell_sha256": "7251eb2e926236b49745843ec5f02b84e98e31364dcf533e5bd192f3afa48af0"
    },
    {
+    "page": "canvas-interactive",
+    "width": 900,
+    "theme": "dark",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 195,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "900/900",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
+    "shot": "canvas-interactive__900__dark.png",
+    "shot_sha256": "0e7d4b13d18cfbbde9abf72d1ae54e82ce1adb0b770b516bcad7aae150edabc9",
+    "cell_sha256": "6115fcec221bdf72be958c4d6b981aedbba26d9b951ab456210cab92574c6463"
+   },
+   {
     "page": "canvas-overview",
     "width": 900,
     "theme": "dark",
@@ -1418,6 +1484,22 @@
     "shot": "canvas-overview__900__dark.png",
     "shot_sha256": "9ab663321f0e6bc025f00043c34c91544b24c797b8cecee3d751b61c19e1486f",
     "cell_sha256": "e6ce623b47ef38e14ed252aa61ae30aa6b811665c027d9f3b59fd6fd7a6b5ffe"
+   },
+   {
+    "page": "asset-share",
+    "width": 900,
+    "theme": "dark",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "900/900",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__900__dark.png",
+    "shot_sha256": "0ebe7de10d1804f568958e10c25efaeb0b0902a4afabdb166ac885f4eb426577",
+    "cell_sha256": "a0503860a9179f573c3b63f4799013f9d308ba0212ce8601d5f998264d1a03b0"
    },
    {
     "page": "asset-manager",
@@ -1500,6 +1582,29 @@
     "cell_sha256": "bf76111dc147316e72b10292ae04585658ec5f67dafdc98f3609dc5b3262c40a"
    },
    {
+    "page": "canvas-interactive",
+    "width": 1440,
+    "theme": "dark",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 195,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "1440/1440",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
+    "shot": "canvas-interactive__1440__dark.png",
+    "shot_sha256": "b0a6c27561452e2f366540fda1a6c672052c37669d13a9a74cde1302c27e411c",
+    "cell_sha256": "3ff0f338b18ffdad83eb5eaee2ee203485ec5d09bb01f39bcd229aba830bc0d9"
+   },
+   {
     "page": "canvas-overview",
     "width": 1440,
     "theme": "dark",
@@ -1514,6 +1619,22 @@
     "shot": "canvas-overview__1440__dark.png",
     "shot_sha256": "00d9f761d77c0ba2100a6c3edc1b0db12404d587ccf14678293412f6274db754",
     "cell_sha256": "dbc301ebb3d9d679f05afb91f95f1f422bb825471bc2e8fda674276d7b3c4e1d"
+   },
+   {
+    "page": "asset-share",
+    "width": 1440,
+    "theme": "dark",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "1440/1440",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__1440__dark.png",
+    "shot_sha256": "2f9537d45ade6126723f8b887207105a5bea8648fab68e2b18fef2702b799bf3",
+    "cell_sha256": "cecbecf488690d2d8f2035907e233dc72027efa4e06e117815977f9465b09f7a"
    },
    {
     "page": "asset-manager",
@@ -1544,7 +1665,7 @@
     "doc_width": "1920/1920",
     "body_class": "gw-signal gw-legacy-signal gw-page--task-center gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
     "shot": "task-center__1920__dark.png",
-    "shot_sha256": "be75fa2b088d4a6f589ef18b120e3c5d4a60cd2a7336b5b996208d30ff20cdb9",
+    "shot_sha256": "33a77de2dee03a63ff2d418759d61fbbff31543e03768d8e91fdb2a8d61d019f",
     "cell_sha256": "06e2a1b912aec8626c2a61e4e1c5fccd65cb0bc067424dfe8d0b2c89c8b33500"
    },
    {
@@ -1596,6 +1717,29 @@
     "cell_sha256": "68df21c9b24fd8fa41815eeccc7e1eb0156ede17716b982230cc8a6b7fe8bc82"
    },
    {
+    "page": "canvas-interactive",
+    "width": 1920,
+    "theme": "dark",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 195,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "1920/1920",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
+    "shot": "canvas-interactive__1920__dark.png",
+    "shot_sha256": "eb80ab38b48435b273df9e527048fb645b486e1600e9fb765fa1f53aa7770ebe",
+    "cell_sha256": "9669e5abf914740b8dffa68c26a0269e5f85ca059c3d8475ed8efb306aa2ee0c"
+   },
+   {
     "page": "canvas-overview",
     "width": 1920,
     "theme": "dark",
@@ -1612,6 +1756,22 @@
     "cell_sha256": "ce5aff8e8c31dcaab00f65d502072c2181f785540f733f2e2ff11c0ffa8e2405"
    },
    {
+    "page": "asset-share",
+    "width": 1920,
+    "theme": "dark",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "1920/1920",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__1920__dark.png",
+    "shot_sha256": "84bd602e5d0cd0b0dd00bbb632e56b43fbec691f2a9006f18b6258fdef7a57ae",
+    "cell_sha256": "27b2d4c6f0324f30aa4440d4ebf4623c6bc21429f9985bf66dce707cc98a054b"
+   },
+   {
     "page": "asset-manager",
     "width": 1920,
     "theme": "dark",
@@ -1624,7 +1784,7 @@
     "doc_width": "1920/1920",
     "body_class": "gw-signal gw-page--asset-manager gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
     "shot": "asset-manager__1920__dark.png",
-    "shot_sha256": "fac9cd641947e60f1983e7203acc907bc2345496b331fd17a059e7077598ffdf",
+    "shot_sha256": "f001eaec8e655b638dc0ffec65dc402e5103ec4f81cefc954208b54d85b3348a",
     "cell_sha256": "c815168cf4c53b5b8555c4d43a075c76187304cd7c6023ddcd9394eab2fd7cbf"
    },
    {
@@ -1640,7 +1800,7 @@
     "doc_width": "724/724",
     "body_class": "gw-signal gw-legacy-signal gw-page--task-center gw-type-body-md theme-light studio-scale-viewport",
     "shot": "task-center__724__light.png",
-    "shot_sha256": "623cdd0515c6ac642ecb18c29b11d59cf88491bcf5d9daec1126400f315b1424",
+    "shot_sha256": "af481ba6ef6aa57c97d69f2c3a04241033396ef1e3bc3c1dc229c260fca22d37",
     "cell_sha256": "ea8629aa5ec4240e70d9f450170eead97d663d1c81cf1eff9a02748fe060a7f3"
    },
    {
@@ -1692,6 +1852,29 @@
     "cell_sha256": "140e144c8c63bf19d74dd2f903f062e79ccae96c5b6cef5fd195b100ad19c3f3"
    },
    {
+    "page": "canvas-interactive",
+    "width": 724,
+    "theme": "light",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 194,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "724/724",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
+    "shot": "canvas-interactive__724__light.png",
+    "shot_sha256": "97eba886d8d3bebb0ce8533bb661b71b9fc5b02fbfbe071ad485165caeedda90",
+    "cell_sha256": "b7f19bafb33ea2f8605fb6ef0ae5310f003724d01cb3fb9cae823fbfddf4f52f"
+   },
+   {
     "page": "canvas-overview",
     "width": 724,
     "theme": "light",
@@ -1706,6 +1889,22 @@
     "shot": "canvas-overview__724__light.png",
     "shot_sha256": "7814893116236e5e552aad138c2d89ec6dc30142bdf198226b9dae17908916aa",
     "cell_sha256": "0330c94731a5a63a5c403e48a7780a9d3c073c703565fc85b4ccd4d413d347c8"
+   },
+   {
+    "page": "asset-share",
+    "width": 724,
+    "theme": "light",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "724/724",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__724__light.png",
+    "shot_sha256": "a27afb50b3090647c3d8378dcae873a61854d81893fbd0f9b042791c6a7a6992",
+    "cell_sha256": "4030830e69e7411972c08ea179fe99fcf613d3fefc3c6c7ea7bd4dc3942254eb"
    },
    {
     "page": "asset-manager",
@@ -1788,6 +1987,29 @@
     "cell_sha256": "47641b4df458e19e4a023a960566bdb72cbc537e82f7e32b4ed21dad136e9772"
    },
    {
+    "page": "canvas-interactive",
+    "width": 900,
+    "theme": "light",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 195,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "900/900",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
+    "shot": "canvas-interactive__900__light.png",
+    "shot_sha256": "25a043aa6f9d4b2bc7d39daad159bc33d546979f5c27665dcfabe4e2a398083d",
+    "cell_sha256": "419374e22d9384de37961eef55c3cbf1c400d456a02db37b034c91e734aa17b3"
+   },
+   {
     "page": "canvas-overview",
     "width": 900,
     "theme": "light",
@@ -1802,6 +2024,22 @@
     "shot": "canvas-overview__900__light.png",
     "shot_sha256": "0d5b99144398e5324444ceebfb251a861be26c951b32a7dbde1b64e863ce66ae",
     "cell_sha256": "1f1f7ea936a1727c365795fb4d88b384b636cc966754a5842084bdcc1f26ba68"
+   },
+   {
+    "page": "asset-share",
+    "width": 900,
+    "theme": "light",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "900/900",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__900__light.png",
+    "shot_sha256": "0ebe7de10d1804f568958e10c25efaeb0b0902a4afabdb166ac885f4eb426577",
+    "cell_sha256": "a0503860a9179f573c3b63f4799013f9d308ba0212ce8601d5f998264d1a03b0"
    },
    {
     "page": "asset-manager",
@@ -1884,6 +2122,29 @@
     "cell_sha256": "7f00510fa5fc5c9f4b49f125ab46b6fa79d60e776403eb081b3aa4fe07263393"
    },
    {
+    "page": "canvas-interactive",
+    "width": 1440,
+    "theme": "light",
+    "url": "/static/embeds/canvas-list.html?embedded=1",
+    "interact": {
+     "syntheticRow": true,
+     "row": true,
+     "syntheticCard": true,
+     "card": true,
+     "status": true,
+     "trash": true
+    },
+    "nodes": 195,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 0,
+    "doc_width": "1440/1440",
+    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
+    "shot": "canvas-interactive__1440__light.png",
+    "shot_sha256": "a309af21209a4fc70cb6af2ee77ab95afb390d8879285899ad35ad31a463b26f",
+    "cell_sha256": "cd7dcce32d0874ab5e0a1957d1f5a1e8571fadf94bd25576eb6dbdc036209100"
+   },
+   {
     "page": "canvas-overview",
     "width": 1440,
     "theme": "light",
@@ -1900,6 +2161,22 @@
     "cell_sha256": "5e13a326e5a76e1212178d691a602ae9b85221e6c5dafc64f41a5865f1b24658"
    },
    {
+    "page": "asset-share",
+    "width": 1440,
+    "theme": "light",
+    "url": "/static/asset-share.html",
+    "interact": null,
+    "nodes": 7,
+    "overflow": 0,
+    "collapsed": 0,
+    "errors": 0,
+    "doc_width": "1440/1440",
+    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
+    "shot": "asset-share__1440__light.png",
+    "shot_sha256": "2f9537d45ade6126723f8b887207105a5bea8648fab68e2b18fef2702b799bf3",
+    "cell_sha256": "cecbecf488690d2d8f2035907e233dc72027efa4e06e117815977f9465b09f7a"
+   },
+   {
     "page": "asset-manager",
     "width": 1440,
     "theme": "light",
@@ -1912,7 +2189,7 @@
     "doc_width": "1440/1440",
     "body_class": "gw-signal gw-page--asset-manager gw-type-body-md theme-light studio-scale-viewport",
     "shot": "asset-manager__1440__light.png",
-    "shot_sha256": "062410510411780b5750a10d315e9e1cd26933ac4b78d820f8274f01b014ed59",
+    "shot_sha256": "a7696e5b74f52c754c4d393ea2a4c5f44be6e5b564aa757714ad9dc2a09d8dd0",
     "cell_sha256": "7853a04ecbe19b882294271a63c633a8312446300a0d8f4165e9cd0ff5be0f5b"
    },
    {
@@ -1928,7 +2205,7 @@
     "doc_width": "1920/1920",
     "body_class": "gw-signal gw-legacy-signal gw-page--task-center gw-type-body-md theme-light studio-scale-viewport",
     "shot": "task-center__1920__light.png",
-    "shot_sha256": "39ef35e0d221e2df858afcb4ae4cac2123eab80cc0ebfcb71b733b9212b4b519",
+    "shot_sha256": "0e5f0193b0cfa22eff88c38b624e4c44009c1f433bd32bae19faa82a6f86049c",
     "cell_sha256": "56d6a5a0c66d7c864724eb2b3f520b0970c5ba845e683d032b9447f05e76f797"
    },
    {
@@ -1980,311 +2257,6 @@
     "cell_sha256": "7123b10b0579f6e78df3c8cc75c6bcd68bd1cb993bfcca04ef2204848622e1fd"
    },
    {
-    "page": "canvas-overview",
-    "width": 1920,
-    "theme": "light",
-    "url": "/static/embeds/canvas-list.html?embedded=1&layout=overview",
-    "interact": null,
-    "nodes": 221,
-    "overflow": 0,
-    "collapsed": 5,
-    "errors": 0,
-    "doc_width": "1920/1920",
-    "body_class": "canvas-overview-page gw-type-body-md theme-light studio-scale-viewport",
-    "shot": "canvas-overview__1920__light.png",
-    "shot_sha256": "89b73fd5a22d3ac759e12d452273f005f42a21938072a68e8da186b95479b6cc",
-    "cell_sha256": "a697d3811fc55f5e1b65d57bceedc714f0a1a72e78b90b21c462b59d0f91a57e"
-   },
-   {
-    "page": "asset-manager",
-    "width": 1920,
-    "theme": "light",
-    "url": "/static/embeds/asset-manager.html?embedded=1",
-    "interact": null,
-    "nodes": 420,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 1,
-    "doc_width": "1920/1920",
-    "body_class": "gw-signal gw-page--asset-manager gw-type-body-md theme-light studio-scale-viewport",
-    "shot": "asset-manager__1920__light.png",
-    "shot_sha256": "e5bc1a6f18e182c33d3afb63d170695d8c6d102cacc55413fa86b0a6acbf3b54",
-    "cell_sha256": "0075925311f0d1a921f3afe45cc40ea7fa9e606854b5c862db8100d364238c1d"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 724,
-    "theme": "dark",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 194,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "724/724",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
-    "shot": "canvas-interactive__724__dark.png",
-    "shot_sha256": "003e6f2638c17a43baef5a56c49386daa847617f2e9d31fff2fbaaa18cf3feaf",
-    "cell_sha256": "fb3e47d739b9b5f7eeef83a52c2d452b7c28e1fd509354ef9e36c392fd503e54"
-   },
-   {
-    "page": "asset-share",
-    "width": 724,
-    "theme": "dark",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "724/724",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__724__dark.png",
-    "shot_sha256": "a27afb50b3090647c3d8378dcae873a61854d81893fbd0f9b042791c6a7a6992",
-    "cell_sha256": "4030830e69e7411972c08ea179fe99fcf613d3fefc3c6c7ea7bd4dc3942254eb"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 900,
-    "theme": "dark",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 195,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "900/900",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
-    "shot": "canvas-interactive__900__dark.png",
-    "shot_sha256": "0e7d4b13d18cfbbde9abf72d1ae54e82ce1adb0b770b516bcad7aae150edabc9",
-    "cell_sha256": "6115fcec221bdf72be958c4d6b981aedbba26d9b951ab456210cab92574c6463"
-   },
-   {
-    "page": "asset-share",
-    "width": 900,
-    "theme": "dark",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "900/900",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__900__dark.png",
-    "shot_sha256": "0ebe7de10d1804f568958e10c25efaeb0b0902a4afabdb166ac885f4eb426577",
-    "cell_sha256": "a0503860a9179f573c3b63f4799013f9d308ba0212ce8601d5f998264d1a03b0"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 1440,
-    "theme": "dark",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 195,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "1440/1440",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
-    "shot": "canvas-interactive__1440__dark.png",
-    "shot_sha256": "b0a6c27561452e2f366540fda1a6c672052c37669d13a9a74cde1302c27e411c",
-    "cell_sha256": "3ff0f338b18ffdad83eb5eaee2ee203485ec5d09bb01f39bcd229aba830bc0d9"
-   },
-   {
-    "page": "asset-share",
-    "width": 1440,
-    "theme": "dark",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "1440/1440",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__1440__dark.png",
-    "shot_sha256": "2f9537d45ade6126723f8b887207105a5bea8648fab68e2b18fef2702b799bf3",
-    "cell_sha256": "cecbecf488690d2d8f2035907e233dc72027efa4e06e117815977f9465b09f7a"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 1920,
-    "theme": "dark",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 195,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "1920/1920",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md studio-theme-dark theme-dark studio-scale-viewport",
-    "shot": "canvas-interactive__1920__dark.png",
-    "shot_sha256": "eb80ab38b48435b273df9e527048fb645b486e1600e9fb765fa1f53aa7770ebe",
-    "cell_sha256": "9669e5abf914740b8dffa68c26a0269e5f85ca059c3d8475ed8efb306aa2ee0c"
-   },
-   {
-    "page": "asset-share",
-    "width": 1920,
-    "theme": "dark",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "1920/1920",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__1920__dark.png",
-    "shot_sha256": "84bd602e5d0cd0b0dd00bbb632e56b43fbec691f2a9006f18b6258fdef7a57ae",
-    "cell_sha256": "27b2d4c6f0324f30aa4440d4ebf4623c6bc21429f9985bf66dce707cc98a054b"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 724,
-    "theme": "light",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 194,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "724/724",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
-    "shot": "canvas-interactive__724__light.png",
-    "shot_sha256": "97eba886d8d3bebb0ce8533bb661b71b9fc5b02fbfbe071ad485165caeedda90",
-    "cell_sha256": "b7f19bafb33ea2f8605fb6ef0ae5310f003724d01cb3fb9cae823fbfddf4f52f"
-   },
-   {
-    "page": "asset-share",
-    "width": 724,
-    "theme": "light",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "724/724",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__724__light.png",
-    "shot_sha256": "a27afb50b3090647c3d8378dcae873a61854d81893fbd0f9b042791c6a7a6992",
-    "cell_sha256": "4030830e69e7411972c08ea179fe99fcf613d3fefc3c6c7ea7bd4dc3942254eb"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 900,
-    "theme": "light",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 195,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "900/900",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
-    "shot": "canvas-interactive__900__light.png",
-    "shot_sha256": "25a043aa6f9d4b2bc7d39daad159bc33d546979f5c27665dcfabe4e2a398083d",
-    "cell_sha256": "419374e22d9384de37961eef55c3cbf1c400d456a02db37b034c91e734aa17b3"
-   },
-   {
-    "page": "asset-share",
-    "width": 900,
-    "theme": "light",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "900/900",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__900__light.png",
-    "shot_sha256": "0ebe7de10d1804f568958e10c25efaeb0b0902a4afabdb166ac885f4eb426577",
-    "cell_sha256": "a0503860a9179f573c3b63f4799013f9d308ba0212ce8601d5f998264d1a03b0"
-   },
-   {
-    "page": "canvas-interactive",
-    "width": 1440,
-    "theme": "light",
-    "url": "/static/embeds/canvas-list.html?embedded=1",
-    "interact": {
-     "syntheticRow": true,
-     "row": true,
-     "syntheticCard": true,
-     "card": true,
-     "status": true,
-     "trash": true
-    },
-    "nodes": 195,
-    "overflow": 0,
-    "collapsed": 8,
-    "errors": 0,
-    "doc_width": "1440/1440",
-    "body_class": "gw-signal gw-legacy-signal gw-page--canvas gw-type-body-md theme-light studio-scale-viewport",
-    "shot": "canvas-interactive__1440__light.png",
-    "shot_sha256": "a309af21209a4fc70cb6af2ee77ab95afb390d8879285899ad35ad31a463b26f",
-    "cell_sha256": "cd7dcce32d0874ab5e0a1957d1f5a1e8571fadf94bd25576eb6dbdc036209100"
-   },
-   {
-    "page": "asset-share",
-    "width": 1440,
-    "theme": "light",
-    "url": "/static/asset-share.html",
-    "interact": null,
-    "nodes": 7,
-    "overflow": 0,
-    "collapsed": 0,
-    "errors": 0,
-    "doc_width": "1440/1440",
-    "body_class": "gw-signal gw-legacy-signal gw-page--asset-share gw-type-body-md",
-    "shot": "asset-share__1440__light.png",
-    "shot_sha256": "2f9537d45ade6126723f8b887207105a5bea8648fab68e2b18fef2702b799bf3",
-    "cell_sha256": "cecbecf488690d2d8f2035907e233dc72027efa4e06e117815977f9465b09f7a"
-   },
-   {
     "page": "canvas-interactive",
     "width": 1920,
     "theme": "light",
@@ -2308,6 +2280,22 @@
     "cell_sha256": "f141cd9173a3e2305e99cb8b2a1c0dc7f483aa68fc96ade3c9c9052e13f90639"
    },
    {
+    "page": "canvas-overview",
+    "width": 1920,
+    "theme": "light",
+    "url": "/static/embeds/canvas-list.html?embedded=1&layout=overview",
+    "interact": null,
+    "nodes": 221,
+    "overflow": 0,
+    "collapsed": 5,
+    "errors": 0,
+    "doc_width": "1920/1920",
+    "body_class": "canvas-overview-page gw-type-body-md theme-light studio-scale-viewport",
+    "shot": "canvas-overview__1920__light.png",
+    "shot_sha256": "89b73fd5a22d3ac759e12d452273f005f42a21938072a68e8da186b95479b6cc",
+    "cell_sha256": "a697d3811fc55f5e1b65d57bceedc714f0a1a72e78b90b21c462b59d0f91a57e"
+   },
+   {
     "page": "asset-share",
     "width": 1920,
     "theme": "light",
@@ -2322,6 +2310,22 @@
     "shot": "asset-share__1920__light.png",
     "shot_sha256": "84bd602e5d0cd0b0dd00bbb632e56b43fbec691f2a9006f18b6258fdef7a57ae",
     "cell_sha256": "27b2d4c6f0324f30aa4440d4ebf4623c6bc21429f9985bf66dce707cc98a054b"
+   },
+   {
+    "page": "asset-manager",
+    "width": 1920,
+    "theme": "light",
+    "url": "/static/embeds/asset-manager.html?embedded=1",
+    "interact": null,
+    "nodes": 420,
+    "overflow": 0,
+    "collapsed": 8,
+    "errors": 1,
+    "doc_width": "1920/1920",
+    "body_class": "gw-signal gw-page--asset-manager gw-type-body-md theme-light studio-scale-viewport",
+    "shot": "asset-manager__1920__light.png",
+    "shot_sha256": "e5bc1a6f18e182c33d3afb63d170695d8c6d102cacc55413fa86b0a6acbf3b54",
+    "cell_sha256": "0075925311f0d1a921f3afe45cc40ea7fa9e606854b5c862db8100d364238c1d"
    },
    {
     "page": "asset-share-content",

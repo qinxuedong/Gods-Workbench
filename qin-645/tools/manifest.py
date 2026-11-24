@@ -14,7 +14,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 
 QA = Path(__file__).resolve().parent
@@ -77,6 +79,8 @@ def main() -> int:
         expected = {(page, width, theme) for page in pages for width in WIDTHS for theme in THEMES}
         actual = {(cell["page"], cell["width"], cell["theme"]) for cell in cells}
         report[label] = {
+            "head": os.environ.get(f"GW_HEAD_{label.upper()}") or os.environ.get("GW_HEAD"),
+            "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             "pages": pages,
             "expected_cells": len(expected),
             "captured_cells": len(actual),
