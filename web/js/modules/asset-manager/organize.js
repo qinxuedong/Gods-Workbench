@@ -1176,7 +1176,7 @@ async function confirmBoardSource(options={}){
         render();
         setStatus(`已受理资源文件夹“${source.name}”，正在建立索引`);
         if(source?.job_id){
-            waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+            waitForAssetIndexJob(source.job_id, source.name).catch(() => {}); waitForIndexedAssetSnapshot(source.job_id, source.name).catch(() => {});
         }
     } catch(err) {
         if(Number(boardSourceState.generation || 0) === generation){
@@ -3332,3 +3332,33 @@ export {
     textVersionActionLabel,
     toggleDetailFontLibrary,
 };
+
+// QIN-652：快扫入库后 job 顶层 `enrich` 会持续存在到终态，用它判定「快照已提交」
+// 可避免 500ms 轮询错过 `indexed`/`enriching` 的瞬时 phase 窗口。本函数只在快照
+// 就绪时做一次首屏刷新与阶段文案，随后立即返回；终态文案、状态收口与失败处理
+// 仍由既有 `waitForAssetIndexJob` 承担（该函数在 asset-manager.js，本票不可改）。
+// 追加在文件末尾而非中段：保持既有原生下拉节点的精确行号零偏移（QIN-631 白名单）。
+async function waitForIndexedAssetSnapshot(jobId, sourceName='素材库'){
+    if(!jobId) return null;
+    const deadline = Date.now() + 120000;
+    while(Date.now() < deadline){
+        try {
+            const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+            const job = data?.job || {};
+            const status = String(job.status || '');
+            const phase = String(job.progress?.phase || '');
+            const terminal = status === 'succeeded' || ['failed','cancelled','interrupted'].includes(status);
+            const snapshotReady = Boolean(job.enrich) || phase === 'indexed' || phase === 'enriching';
+            if(snapshotReady){
+                await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                setStatus(`素材库“${sourceName}”基础条目已入库，正在补齐视频元数据与哈希…（${Number(job.enrich?.done || 0)}/${Number(job.enrich?.total || 0)}）`);
+                return job;
+            }
+            // 没有富化任务的单阶段 job：不重复刷新，直接交回既有终态处理。
+            if(terminal) return job;
+        } catch(_) {}
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    return null;
+}
