@@ -102,7 +102,7 @@ Var GwDataHintLabel
   !insertmacro GW_TRIM_CRLF $GwDataDir
   !insertmacro GW_TRIM_CRLF $R7
   ${If} $INSTDIR != ""
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference='Stop'; function Norm([string]$$p){ if([string]::IsNullOrWhiteSpace($$p)){ return '' }; return [IO.Path]::GetFullPath($$p.Trim()).TrimEnd('\','/').ToLowerInvariant() }; $$a=Norm '$INSTDIR'; $$b=Norm '$GwDataDir'; $$c=Norm '$R7'; if($$a -and $$b -and ($$a -eq $$b -or $$a.StartsWith($$b+'\') -or $$b.StartsWith($$a+'\'))){ exit 1 }; if($$a -and $$c -and ($$a -eq $$c -or $$a.StartsWith($$c+'\') -or $$c.StartsWith($$a+'\'))){ exit 1 }"`
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference='Stop'; function Norm([string]$$p){ if([string]::IsNullOrWhiteSpace($$p)){ return [string]::Empty }; return [IO.Path]::GetFullPath($$p.Trim()).TrimEnd('\','/').ToLowerInvariant() }; $$a=Norm '$INSTDIR'; $$b=Norm '$GwDataDir'; $$c=Norm '$R7'; if($$a -and $$b -and ($$a -eq $$b -or $$a.StartsWith($$b+'\') -or $$b.StartsWith($$a+'\'))){ exit 1 }; if($$a -and $$c -and ($$a -eq $$c -or $$a.StartsWith($$c+'\') -or $$c.StartsWith($$a+'\'))){ exit 1 }"`
     Pop $0
     ${If} $0 != 0
       MessageBox MB_ICONSTOP "软件安装目录与用户数据目录不能相同或互相包含。请选择独立目录后重试。" /SD IDOK
