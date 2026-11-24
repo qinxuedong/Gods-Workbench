@@ -48,7 +48,10 @@ def test_hooks_nsh_has_no_double_single_quotes_and_valid_powershell_syntax() -> 
 
     for idx, raw_cmd in enumerate(commands, start=1):
         assert "''" not in raw_cmd, f"第 {idx} 条内嵌 PowerShell 命令仍包含非法双单引号 ''"
+        assert "`" not in raw_cmd, f"第 {idx} 条内嵌 PowerShell 命令内部不应包含反引号 `"
         ps_code = _render_nsis_to_powershell(raw_cmd)
+        # 跨平台静态护栏：校验单引号成对出现，避免 Linux CI 跳过 powershell.exe 时失去保护
+        assert ps_code.count("'") % 2 == 0, f"第 {idx} 条 PowerShell 命令单引号未成对闭合"
 
         if sys.platform == "win32":
             ps_exe = shutil.which("powershell.exe") or r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
