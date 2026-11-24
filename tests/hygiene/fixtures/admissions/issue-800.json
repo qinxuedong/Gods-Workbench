@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 800,
+  "authorization_basis": "GitHub Issue #800 (QIN-646)",
+  "files": [
+    "tests/runtime/test_qin_646_nsis_hooks_language.py"
+  ]
+}
