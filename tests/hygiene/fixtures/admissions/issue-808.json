@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 808,
+  "authorization_basis": "GitHub Issue #808 QIN-651, 2026-11-24",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-651-sw-navigation-network-first.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-808.json",
+    "web/sw.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-651-sw-navigation-network-first.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #808 QIN-651, 2026-11-24",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-651（GitHub Issue #808，勿与历史 Issue #651 / QIN-571 混淆）：web/sw.js 导航请求改为 Network-First、CACHE_NAME 升至 gw-static-shell-v3，并新增导航契约 Node 测试。只写本票分片，基础账本与硬计数保持不变。"
+}

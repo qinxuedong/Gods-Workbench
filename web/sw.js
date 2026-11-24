@@ -1,5 +1,5 @@
 const CACHE_PREFIX = "gw-static-shell-";
-const CACHE_NAME = `${CACHE_PREFIX}v2`;
+const CACHE_NAME = `${CACHE_PREFIX}v3`;
 const SHELL_DOCUMENT = "/static/pages/index.html";
 const PRE_CACHE_URLS = [SHELL_DOCUMENT, "/static/manifest.json"];
 const STATIC_PREFIXES = ["/static/css/", "/static/js/", "/static/vendor/", "/static/pages/"];
@@ -54,6 +54,41 @@ async function precacheStaticShell(cache, path) {
   if (isCacheableResponse(response, url)) await cache.put(request, response);
 }
 
+// 只读当前代缓存：避免旧代 cache 里的历史 index.html 串味（跨代兜底由 activate 清理保证）。
+async function readCurrentShell() {
+  const cache = await caches.open(CACHE_NAME);
+  const cached = await cache.match(SHELL_DOCUMENT);
+  return cached || null;
+}
+
+async function refreshShellCache(response, requestUrl) {
+  if (!isCacheableResponse(response, requestUrl)) return;
+  try {
+    const cache = await caches.open(CACHE_NAME);
+    await cache.put(SHELL_DOCUMENT, response.clone());
+  } catch {
+    // 配额或存储异常不应让本次导航失败
+  }
+}
+
+// 导航请求统一走 Network-First：先取服务端最新壳，只有网络/服务不可用时才回退缓存。
+async function fetchNavigationShell(request) {
+  let response;
+  try {
+    response = await fetch(request);
+  } catch {
+    const cached = await readCurrentShell();
+    if (cached) return cached;
+    return new Response("Offline shell unavailable", { status: 503, statusText: "Offline" });
+  }
+  await refreshShellCache(response, new URL(request.url));
+  if (!response.ok && response.status >= 500) {
+    const cached = await readCurrentShell();
+    if (cached) return cached;
+  }
+  return response;
+}
+
 self.addEventListener("install", event => {
   event.waitUntil(
     caches.open(CACHE_NAME)
@@ -81,10 +116,7 @@ self.addEventListener("fetch", event => {
   }
   if (request.mode === "navigate") {
     if (!isCacheableRequest(request, url)) return;
-    event.respondWith(
-      caches.match(SHELL_DOCUMENT)
-        .then(cached => cached || fetch(request).catch(() => new Response("Offline shell unavailable", { status: 503, statusText: "Offline" })))
-    );
+    event.respondWith(fetchNavigationShell(request));
     return;
   }
   if (!isCacheableRequest(request, url)) return;
