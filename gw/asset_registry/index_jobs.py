@@ -1567,7 +1567,7 @@ class IndexJobs:
                 try:
                     root, prefix = storage.resolve_asset_registration_root(normalized_path)
                 except CleanroomException as exc:
-                    if exc.code != "PATH_OUTSIDE_ALLOWED_ROOTS" or not authorize_root:
+                    if exc.code not in {"PATH_OUTSIDE_ALLOWED_ROOTS", "LOCAL_FILE_ACCESS_NOT_ADMITTED"} or not authorize_root:
                         raise
                     if str(actor.get("role") or "").lower() != "admin":
                         _error(403, "FORBIDDEN", "仅管理员可授权新的资源文件夹根")
@@ -1907,7 +1907,7 @@ class IndexJobs:
             root, prefix = storage.resolve_asset_registration_root(path)
             created_root = False
         except CleanroomException as exc:
-            if exc.code != "PATH_OUTSIDE_ALLOWED_ROOTS" or not registration.get("authorize_root"):
+            if exc.code not in {"PATH_OUTSIDE_ALLOWED_ROOTS", "LOCAL_FILE_ACCESS_NOT_ADMITTED"} or not registration.get("authorize_root"):
                 raise
             actor = _actor(auth)
             if str(actor.get("role") or "").lower() != "admin":
