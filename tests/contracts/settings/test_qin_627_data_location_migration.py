@@ -127,9 +127,10 @@ def _start(target: Path, *, expected: int = 1) -> dict:
 def test_pointer_missing_keeps_default_layout(prod_home):
     paths = resolve_runtime_paths()
     assert paths.data_location is None
-    assert paths.data_root == prod_home["runtime_root"] / "data"
-    assert paths.auth_db == prod_home["runtime_root"] / "auth" / "auth.sqlite3"
-    assert paths.video_root == prod_home["runtime_root"] / "video"
+    default_root = prod_home["local"] / "Gods Workbench" / "user data"
+    assert paths.data_root == default_root / "data"
+    assert paths.auth_db == default_root / "auth" / "auth.sqlite3"
+    assert paths.video_root == default_root / "video"
 
 
 def test_pointer_redirects_three_roots(prod_home, tmp_path):
