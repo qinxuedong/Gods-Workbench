@@ -127,6 +127,7 @@ import {
     storageLocalLibraryNames,
     storageSettingsState,
     tauriInvokeFn,
+    uploadAssetInboxFiles,
     uploadInput,
 } from '../asset-manager.js';
 import assetManagerApi from './api.js';
@@ -769,7 +770,8 @@ async function uploadViaClientPicker(){
             files.push(new File([bytes], name));
         }
         if(!files.length) return;
-        if(activeTab === 'local') uploadLocalAssets(files);
+        if(activeTab === 'inbox') await uploadAssetInboxFiles(files);
+        else if(activeTab === 'local') uploadLocalAssets(files);
         else if(activeTab === 'workflows') uploadWorkflowFiles(files).catch(err => setStatus(err.message || '上传失败'));
         else uploadFiles(files).catch(err => setStatus(err.message || '上传失败'));
     } catch(error){

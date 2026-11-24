@@ -1358,11 +1358,11 @@ function trapProjectDirectoryTemplateManagerFocus(event){
 async function saveStorageSettings(){
     gwCall('settings', 'syncStorageSettingsInputsToState');
     const dirs = {...(storageSettingsState.dirs || {})};
+    delete dirs.upload;
+    delete dirs.generated; delete dirs.local;
+    // 已下线 upload/generated/local 前端冗余保存字段；后端 PATCH 对未给出字段保持原值（QIN-649）。
     const payload = {
         dirs,
-        upload:dirs.upload || '',
-        generated:dirs.generated || '',
-        local:dirs.local || '',
         extra_local_entries:storageExtraLocalEntries().filter(entry => entry.path),
         local_library_names:storageLocalLibraryNames(),
         local_library_order:(localLibraries.length ? localLibraries : storageSettingsState.localLibraries || []).map(lib => lib.id).filter(Boolean)
@@ -1417,7 +1417,7 @@ async function loadGlobalDirectorySettings(){
             apiJsonResponse(assetManagerApi.getRegistryStatus()).then(status => { if(isCurrentLoad() && status) registryStatus = status; }).catch(() => null),
             apiJsonResponse(assetManagerApi.getRegistryFacets()).then(facets => { if(isCurrentLoad() && facets) registryFacets = { kinds:Array.isArray(facets.kinds)?facets.kinds:registryFacets.kinds, categories:Array.isArray(facets.categories)?facets.categories:registryFacets.categories, tags:Array.isArray(facets.tags)?facets.tags:registryFacets.tags, collections:Array.isArray(facets.collections)?facets.collections:registryFacets.collections, roots:Array.isArray(facets.roots)?facets.roots:registryFacets.roots }; }).catch(() => null),
             apiJsonResponse(assetManagerHttp.request('/api/workspaces', {method:'GET', credentials:'same-origin', ...signalInit})).then(ws => { if(isCurrentLoad() && ws){ Promise.resolve(gwCall('settings', 'applyWorkspaceSnapshot', ws)).catch(() => {}); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); } }).catch(() => null),
-            isTauriClientMode() ? withDirectorySettingsTimeout(Promise.resolve(gwCall('upload', 'loadClientUploadSourceDir')), 3000, '客户端来源目录读取超时', null).then(() => { if(!isCurrentLoad()) return; const el = typeof document !== 'undefined' ? document.getElementById('clientUploadSourceDir') : null; if(el && typeof clientUploadSourceDir === 'string' && document.activeElement !== el) el.value = clientUploadSourceDir; }).catch(() => null) : Promise.resolve(null),
+            // 客户端上传来源目录已收口至收集箱设置，目录设置页不再读取（QIN-649）。
         ]).finally(() => { if(directorySettingsAbortController === controller) directorySettingsAbortController = null; });
     } catch(error){ if(directorySettingsAbortController === controller) directorySettingsAbortController = null; if(!isCurrentLoad()) return; directorySettingsReady = false; directorySettingsError = error?.name === 'AbortError' ? '读取目录设置已取消或超时，请重试。' : (error?.message || '目录设置读取失败'); Promise.resolve(gwCall('settings', 'renderGlobalDirectorySettings')).catch(() => {}); }
 }
@@ -7118,7 +7118,7 @@ function assetTreeGlobalRootsList(){
         const cleanId = String(id || '').trim();
         const cleanName = String(name || '').trim();
         const lowerId = cleanId.toLowerCase();
-        if(!cleanId || lowerId === 'video' || lowerId === 'image' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
+        if(!cleanId || lowerId === 'video' || lowerId === 'image' || lowerId === 'local' || cleanName === '视频库素材' || cleanName === '图片库素材') return;
 
         const resolvedPath = path || findRootPath(cleanId) || assetTreeResolveRootPath(cleanId, cleanName);
         const pathKey = resolvedPath ? pathCompareKey(resolvedPath) : '';
@@ -8704,6 +8704,10 @@ async function handleClick(event){
     if(handleAssetTreeNodeClick(event)) return;
     // 【QIN-547】收集箱：上传、迁移托管资产、改位置与来源筛选
     if(target.closest?.('[data-inbox-upload]')){
+        if(isTauriClientMode()){
+            void gwCall('upload', 'uploadViaClientPicker');
+            return;
+        }
         const inboxInput = document.getElementById('inboxFileInput');
         if(inboxInput){
             inboxInput.value = '';
@@ -8713,7 +8717,17 @@ async function handleClick(event){
         return;
     }
     if(target.closest?.('[data-inbox-migrate-run]')){ await gwCall('inbox', 'migrateAssetLibraryToInbox'); return; }
-    if(target.closest?.('[data-inbox-settings-toggle]')){ inboxSettingsOpen = !inboxSettingsOpen; render(); return; }
+    if(target.closest?.('[data-inbox-settings-toggle]')){
+        inboxSettingsOpen = !inboxSettingsOpen;
+        render();
+        if(inboxSettingsOpen && isTauriClientMode()){
+            void Promise.resolve(gwCall('upload', 'loadClientUploadSourceDir')).then(() => {
+                const el = document.getElementById('clientUploadSourceDir');
+                if(el && typeof clientUploadSourceDir === 'string' && document.activeElement !== el) el.value = clientUploadSourceDir;
+            }).catch(() => {});
+        }
+        return;
+    }
     if(target.closest?.('[data-inbox-settings-cancel]')){ inboxSettingsOpen = false; render(); return; }
     if(target.closest?.('[data-inbox-settings-save]')){ await gwCall('inbox', 'saveAssetInboxSettings'); return; }
     const inboxSourceChip = target.closest?.('[data-inbox-source]');
@@ -8916,7 +8930,7 @@ async function handleClick(event){
         if(directorySettingsPage && (!directorySettingsReady || directorySettingsSaving)) return;
         if(directorySettingsPage){
             gwCall('settings', 'syncStorageSettingsInputsToState');
-            if(['upload','generated','local','projects'].some(key => !storageSettingsState.dirs[key])){ setStatus('素材与项目目录不能为空'); return; }
+            if(!storageSettingsState.dirs.projects){ setStatus('项目工作区根目录不能为空'); return; }
             thumbnailGeneratorState.directory = document.getElementById('thumbnailDirectory')?.value.trim() || '';
             directorySettingsSaving = true;
             gwCall('settings', 'renderGlobalDirectorySettings');
@@ -12781,6 +12795,7 @@ export {
     thumbnailGeneratorState,
     toggleSelectionSet,
     uniqueCanvasAssets,
+    uploadAssetInboxFiles,
     uploadInput,
     videoStoryboardImageCache,
     visibleAssetBoards,
