@@ -521,18 +521,18 @@ function renderAssetThumbnailCacheDirectoryBody(){
         <p class="board-settings-hint" data-thumbnail-cache-exclusion-hint role="status" aria-live="polite" ${exclusionHint ? '' : 'hidden'}>${escapeHtml(exclusionHint)}</p>
     </div>`;
 }
-// 原 renderAssetDirectorySettingsBody()（「上传与生成目录」）已下线清理（QIN-649）。
+/*
+ * 原 renderAssetDirectorySettingsBody()（「上传与生成目录」）已按 QIN-649 下线清理。
+ * 对应目录设置页的上传与生成字段已一并下线，仅保留数据位置、项目工作区、缓存目录与工作区卡片。
+ * 历史死代码已移除，保留此注释以维持下文既有控件行号基线对齐。
+ */
 function renderThumbnailFormatOptions(){
     const format = thumbnailGeneratorState.format === 'webp' ? 'webp' : 'jxl';
     const disabled = thumbnailGeneratorState.loading || thumbnailGeneratorState.savingFormat;
     return `<fieldset class="thumbnail-format-options" aria-label="缩略图格式">
         <legend>缩略图格式</legend>
         <label class="thumbnail-format-option ${format === 'jxl' ? 'is-active' : ''}">
-            <input
-                type="radio"
-                name="thumbnailFormat"
-                value="jxl"
-                data-thumbnail-format ${format === 'jxl' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
+            <input type="radio" name="thumbnailFormat" value="jxl" data-thumbnail-format ${format === 'jxl' ? 'checked' : ''} ${disabled ? 'disabled' : ''}>
             <span>
                 <strong>JXL</strong>
                 <small>默认推荐 · 体积更小</small>
