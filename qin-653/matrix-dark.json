@@ -1,0 +1,214 @@
+[
+ {
+  "topTheme": "dark",
+  "frameTheme": "dark",
+  "bodyBg": "rgb(9, 10, 13)",
+  "viewportW": 724,
+  "frameW": 452,
+  "frameInnerW": 452,
+  "viewer": true,
+  "type": "video",
+  "shell": {
+   "top": 0,
+   "left": 0,
+   "bottom": 393,
+   "w": 452,
+   "h": 393
+  },
+  "toolbar": {
+   "top": 0,
+   "left": 0,
+   "bottom": 92,
+   "w": 452,
+   "h": 92
+  },
+  "viewport": {
+   "top": 92,
+   "left": 0,
+   "bottom": 393,
+   "w": 452,
+   "h": 301
+  },
+  "sidebar": {
+   "top": 393,
+   "left": 0,
+   "bottom": 693,
+   "w": 452,
+   "h": 300
+  },
+  "tabs": {
+   "top": 394,
+   "left": 0,
+   "bottom": 432,
+   "w": 452,
+   "h": 38
+  },
+  "overflowX": 0,
+  "typeTexts": [],
+  "actions": 0,
+  "shortcuts": 0,
+  "activeBg": "linear-gradient(rgba(201, 168, 88, 0.2), rgba(201, 168, 88, 0.07))",
+  "path": "位置不可用",
+  "width": 724,
+  "opened": true
+ },
+ {
+  "topTheme": "dark",
+  "frameTheme": "dark",
+  "bodyBg": "rgb(9, 10, 13)",
+  "viewportW": 900,
+  "frameW": 628,
+  "frameInnerW": 628,
+  "viewer": true,
+  "type": "video",
+  "shell": {
+   "top": 0,
+   "left": 0,
+   "bottom": 429,
+   "w": 628,
+   "h": 429
+  },
+  "toolbar": {
+   "top": 0,
+   "left": 0,
+   "bottom": 92,
+   "w": 628,
+   "h": 92
+  },
+  "viewport": {
+   "top": 92,
+   "left": 0,
+   "bottom": 429,
+   "w": 628,
+   "h": 337
+  },
+  "sidebar": {
+   "top": 429,
+   "left": 0,
+   "bottom": 739,
+   "w": 628,
+   "h": 310
+  },
+  "tabs": {
+   "top": 430,
+   "left": 0,
+   "bottom": 468,
+   "w": 628,
+   "h": 38
+  },
+  "overflowX": 0,
+  "typeTexts": [],
+  "actions": 0,
+  "shortcuts": 0,
+  "activeBg": "linear-gradient(rgba(201, 168, 88, 0.2), rgba(201, 168, 88, 0.07))",
+  "path": "位置不可用",
+  "width": 900,
+  "opened": true
+ },
+ {
+  "topTheme": "dark",
+  "frameTheme": "dark",
+  "bodyBg": "rgb(9, 10, 13)",
+  "viewportW": 1440,
+  "frameW": 1144,
+  "frameInnerW": 1144,
+  "viewer": true,
+  "type": "video",
+  "shell": {
+   "top": 0,
+   "left": 0,
+   "bottom": 784,
+   "w": 724,
+   "h": 784
+  },
+  "toolbar": {
+   "top": 0,
+   "left": 0,
+   "bottom": 92,
+   "w": 724,
+   "h": 92
+  },
+  "viewport": {
+   "top": 92,
+   "left": 0,
+   "bottom": 784,
+   "w": 724,
+   "h": 692
+  },
+  "sidebar": {
+   "top": 92,
+   "left": 724,
+   "bottom": 784,
+   "w": 420,
+   "h": 692
+  },
+  "tabs": {
+   "top": 92,
+   "left": 725,
+   "bottom": 130,
+   "w": 419,
+   "h": 38
+  },
+  "overflowX": 0,
+  "typeTexts": [],
+  "actions": 0,
+  "shortcuts": 0,
+  "activeBg": "linear-gradient(rgba(201, 168, 88, 0.2), rgba(201, 168, 88, 0.07))",
+  "path": "位置不可用",
+  "width": 1440,
+  "opened": true
+ },
+ {
+  "topTheme": "dark",
+  "frameTheme": "dark",
+  "bodyBg": "rgb(9, 10, 13)",
+  "viewportW": 1920,
+  "frameW": 1624,
+  "frameInnerW": 1624,
+  "viewer": true,
+  "type": "video",
+  "shell": {
+   "top": 0,
+   "left": 0,
+   "bottom": 784,
+   "w": 1204,
+   "h": 784
+  },
+  "toolbar": {
+   "top": 0,
+   "left": 0,
+   "bottom": 92,
+   "w": 1204,
+   "h": 92
+  },
+  "viewport": {
+   "top": 92,
+   "left": 0,
+   "bottom": 784,
+   "w": 1204,
+   "h": 692
+  },
+  "sidebar": {
+   "top": 92,
+   "left": 1204,
+   "bottom": 784,
+   "w": 420,
+   "h": 692
+  },
+  "tabs": {
+   "top": 92,
+   "left": 1205,
+   "bottom": 130,
+   "w": 419,
+   "h": 38
+  },
+  "overflowX": 0,
+  "typeTexts": [],
+  "actions": 0,
+  "shortcuts": 0,
+  "activeBg": "linear-gradient(rgba(201, 168, 88, 0.2), rgba(201, 168, 88, 0.07))",
+  "path": "位置不可用",
+  "width": 1920,
+  "opened": true
+ }
+]

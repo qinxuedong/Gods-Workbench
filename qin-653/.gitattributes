@@ -1,0 +1,5 @@
+# 证据脚本与读数必须是 LF 落盘，避免 Windows core.autocrlf 造成行尾漂移。
+*.mjs text eol=lf
+*.json text eol=lf
+*.md text eol=lf
+*.png binary
