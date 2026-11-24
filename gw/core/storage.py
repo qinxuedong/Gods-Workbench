@@ -1062,8 +1062,89 @@ def relative_display(path: Path) -> str:
 
 
 
-# 只有服务端明确产物目录可以经通用下载/清理接口访问；根目录状态和视频ACL目录不准入。
-OUTPUT_NAMESPACES = frozenset({"ai_uploads", "media_output", "registry_uploads", "local_assets"})
+# 只有服务端明确产物目录可以经通用下载/清理接口访问；根目录状态、视频ACL与无项目generated目录不准入。
+OUTPUT_NAMESPACES = frozenset(
+    {"ai_uploads", "media_output", "registry_uploads", "local_assets"}
+)
+
+_SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
+
+
+def _validate_safe_segment(segment: str, *, code: str, message: str) -> str:
+    """校验单个路径段严格符合 ASCII 安全命名规范（^[A-Za-z0-9_.\\-]+$）且非保留名。"""
+    from pathlib import PureWindowsPath
+
+    clean = str(segment or "")
+    if (
+        not clean
+        or len(clean) > 255
+        or not _SAFE_SEGMENT_RE.fullmatch(clean)
+        or clean in {".", ".."}
+        or clean.endswith(".")
+        or PureWindowsPath(clean).is_reserved()
+    ):
+        raise CleanroomException(400, code, message)
+    return clean
+
+
+def _checked_relative_dir(base_root: Path, segments: tuple[str, ...], *, create: bool) -> Path:
+    """在指定根目录下逐级校验目录组件并拒绝符号链接或重解析点。"""
+    base = base_root.expanduser().resolve(strict=False)
+    current = base
+    for part in segments:
+        current = current / part
+        try:
+            try:
+                info = current.lstat()
+            except FileNotFoundError:
+                if not create:
+                    continue
+                current.mkdir(parents=True, exist_ok=True)
+                info = current.lstat()
+        except OSError:
+            raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "无法安全核实或创建生成产物目录") from None
+        if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
+            raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "生成产物目录不允许链接或重解析点")
+        if not stat.S_ISDIR(info.st_mode):
+            raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "生成产物目录路径类型非法")
+    try:
+        resolved = current.resolve(strict=create)
+        resolved.relative_to(base)
+    except (ValueError, OSError, RuntimeError):
+        raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "生成产物目录不在允许根目录内") from None
+    return resolved
+
+
+def resolve_generated_output_root(
+    project_id: str | None = None,
+    *,
+    workspace_root: Path | None = None,
+    create: bool = True,
+) -> Path:
+    """解析生成素材默认落盘根目录。
+
+    - 有归属项目（project_id 非空且非 default）：跟随项目工作区目录 `<workspace_root>/projects/<project_id>/generated/`。
+    - 无归属项目（独立画布 / 临时生成）：落盘至用户数据目录 `<data_root>/generated/`。
+    """
+    pid = str(project_id or "").strip()
+    if not pid or pid == "default":
+        return _checked_relative_dir(data_root(), ("generated",), create=create)
+
+    safe_pid = _validate_safe_segment(pid, code="INVALID_REQUEST", message="project_id 包含非法路径字符")
+    if workspace_root is not None:
+        base_root = Path(workspace_root).expanduser().resolve(strict=False)
+    else:
+        # 延迟导入以保持 gw.core.storage 无领域循环依赖。
+        from gw.workspaces import context as workspace_context
+        from gw.workspaces.service import default_workspace_service
+
+        execution_root = workspace_context.execution_root()
+        if execution_root is None:
+            execution_root = Path(default_workspace_service.build_execution_context()["result_root"])
+        base_root = execution_root.expanduser().resolve(strict=False)
+    if not base_root.is_absolute():
+        raise CleanroomException(503, "PROJECT_STATE_UNAVAILABLE", "项目工作区根目录不可用")
+    return _checked_relative_dir(base_root, ("projects", safe_pid, "generated"), create=create)
 
 
 def _output_parts(raw_path: str) -> list[str]:
