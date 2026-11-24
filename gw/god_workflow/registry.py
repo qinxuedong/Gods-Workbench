@@ -12,6 +12,7 @@ import re
 import tempfile
 import threading
 import uuid
+from collections.abc import Mapping
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,7 @@ from typing import Any
 from fastapi import Request
 from starlette.datastructures import UploadFile
 
+from gw.core import storage
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import RuntimePathError, resolve_runtime_paths
 from gw.god_workflow.clients import PROVIDERS, get_provider
@@ -396,6 +398,57 @@ def _probe_dimensions(payload: bytes, media_type: str) -> tuple[int, int]:
         return (0, 0)
 
 
+def _resolve_asset_project_id(item: Mapping[str, Any]) -> str | None:
+    """从资产记录或 source_context 中提取归属项目 ID；无归属或 default 返回 None。"""
+    raw = item.get("project_id")
+    if not raw and isinstance(item.get("source_context"), Mapping):
+        raw = item["source_context"].get("project_id")
+    pid = str(raw or "").strip()
+    if not pid or pid == "default":
+        return None
+    return pid
+
+
+def _asset_file_candidates(context: Any, item: Mapping[str, Any]) -> list[Path]:
+    """按新落盘策略与存量旧路径生成资产物理文件候选路径列表。"""
+    asset_id = str(item.get("asset_id") or "")
+    extension = str(item.get("extension") or "")
+    if not asset_id:
+        return []
+    filename = f"{asset_id}{extension}"
+    candidates: list[Path] = []
+    scope = str(item.get("storage_scope") or "").strip()
+    project_id = _resolve_asset_project_id(item)
+
+    if scope == "project" and project_id:
+        try:
+            candidates.append(
+                storage.resolve_generated_output_root(project_id, create=False) / filename
+            )
+        except CleanroomException:
+            pass
+    elif scope == "generated":
+        try:
+            candidates.append(
+                storage.resolve_generated_output_root(None, create=False) / filename
+            )
+        except CleanroomException:
+            pass
+
+    legacy_path = _assets_root(context) / filename
+    if legacy_path not in candidates:
+        candidates.append(legacy_path)
+    return candidates
+
+
+def _resolve_existing_asset_path(context: Any, item: Mapping[str, Any]) -> Path | None:
+    """按候选顺序解析实际存在的资产文件，兼容新落盘策略与存量旧路径。"""
+    for candidate in _asset_file_candidates(context, item):
+        if candidate.is_file():
+            return candidate
+    return None
+
+
 def load_assets(context: Any) -> list[dict[str, Any]]:
     manifest = _read_json(_assets_manifest_path(context), [])
     if not isinstance(manifest, list):
@@ -417,8 +470,8 @@ def load_assets(context: Any) -> list[dict[str, Any]]:
             extension = asset.get("extension", "")
             if extension not in EXTENSION_MEDIA_TYPES:
                 continue
-            target = _assets_root(context) / f"{receipt.stem}{extension}"
-            if not target.is_file() or target.stat().st_size != asset.get("size_bytes"):
+            target = _resolve_existing_asset_path(context, asset)
+            if target is None or target.stat().st_size != asset.get("size_bytes"):
                 continue
             if hashlib.sha256(target.read_bytes()).hexdigest() != asset.get(
                 "content_sha256"
@@ -433,13 +486,11 @@ def load_assets(context: Any) -> list[dict[str, Any]]:
 
 def list_assets(context: Any) -> list[dict[str, Any]]:
     """Manifest entries whose backing file still exists."""
-    items: list[dict[str, Any]] = []
-    for item in load_assets(context):
-        if (
-            _assets_root(context) / f"{item['asset_id']}{item.get('extension', '')}"
-        ).is_file():
-            items.append(item)
-    return items
+    return [
+        item
+        for item in load_assets(context)
+        if _resolve_existing_asset_path(context, item) is not None
+    ]
 
 
 async def _read_upload(upload: UploadFile) -> bytes:
@@ -485,8 +536,8 @@ def resolve_asset_file(
 ) -> tuple[Path, dict[str, Any]] | None:
     for item in load_assets(context):
         if item.get("asset_id") == asset_id:
-            path = _assets_root(context) / f"{asset_id}{item.get('extension', '')}"
-            if path.is_file():
+            path = _resolve_existing_asset_path(context, item)
+            if path is not None:
                 return path, item
             return None
     return None
@@ -500,6 +551,7 @@ def store_bytes(
     *,
     task_id: str | None = None,
     generation: dict[str, Any] | None = None,
+    source_context: Mapping[str, Any] | None = None,
 ) -> dict[str, Any]:
     """把执行输出字节登记为素材（与上传共用同一清单与命名规则）。
 
@@ -561,6 +613,10 @@ def store_bytes(
     # QIN-600：生成元数据随资产凭单落盘，重放登记时可直接复用同一份提示词。
     if isinstance(generation, dict) and generation:
         asset["generation"] = generation
+    if isinstance(source_context, Mapping) and source_context:
+        clean_source = dict(source_context)
+        asset["source_context"] = clean_source
+        asset.update(clean_source)
     if task_id:
         try:
             task = load_task(context, task_id)
@@ -568,15 +624,23 @@ def store_bytes(
             if error.status_code != 404:
                 raise
         else:
+            task_source = task.get("source_context", {})
             asset.update(
                 {
                     "job_id": task["job_id"],
                     "workflow_id": task.get("workflow_id"),
                     "workflow_version": task.get("workflow_version"),
-                    "source_context": task.get("source_context", {}),
+                    "source_context": task_source,
                 }
             )
-            asset.update(task.get("source_context", {}))
+            asset.update(task_source)
+    project_id = _resolve_asset_project_id(asset)
+    asset["storage_scope"] = "project" if project_id else "generated"
+    asset["storage_relpath"] = (
+        f"projects/{project_id}/generated/{asset_id}{extension}"
+        if project_id
+        else f"generated/{asset_id}{extension}"
+    )
     with _STORAGE_LOCK:
         digest = hashlib.sha256(payload).hexdigest()
         manifest = load_assets(context)
@@ -589,7 +653,8 @@ def store_bytes(
                 ):
                     return existing
         asset["content_sha256"] = digest
-        target = _assets_root(context) / f"{asset_id}{extension}"
+        target_dir = storage.resolve_generated_output_root(project_id, create=True)
+        target = target_dir / f"{asset_id}{extension}"
         # 凭单先落盘；文件原子替换后才宣称清单登记成功。凭单保留作为补偿记录。
         _atomic_write(
             _principal_root(context) / "output_recovery" / f"{asset_id}.json", asset

@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 805,
+  "authorization_basis": "GitHub Issue #805 (QIN-650)",
+  "files": [
+    "tests/contracts/workflow/test_qin_650_generated_output_storage.py"
+  ]
+}
