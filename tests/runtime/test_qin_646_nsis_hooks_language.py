@@ -92,3 +92,28 @@ def test_build_release_tauri_config_enables_simpchinese_and_english(tmp_path: Pa
     nsis_cfg = config["bundle"]["windows"]["nsis"]
     assert nsis_cfg["languages"] == ["SimpChinese", "English"]
     assert nsis_cfg["installMode"] == "perMachine"
+
+
+def test_installer_init_data_location_reads_localappdata_from_env(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """installer_init_data_location 未传 localappdata 时必须从环境变量读取 LOCALAPPDATA。"""
+    from gw.settings.data_location import installer_init_data_location
+
+    local_app = tmp_path / "LocalAppData"
+    local_app.mkdir()
+    install_dir = tmp_path / "ProgramFiles" / "Gods Workbench"
+    install_dir.mkdir(parents=True)
+    target_dir = local_app / "Gods Workbench data"
+
+    monkeypatch.setenv("LOCALAPPDATA", str(local_app))
+    for key in ("GW_DATA_DIR", "GW_AUTH_DB", "GW_VIDEO_DIR", "GW_RUNTIME_MODE"):
+        monkeypatch.delenv(key, raising=False)
+    res = installer_init_data_location(
+        str(target_dir),
+        install_dir=str(install_dir),
+        localappdata=None,
+    )
+    assert res["ok"] is True
+    pointer = local_app / "GodsWorkbench" / "runtime-root.json"
+    assert pointer.is_file()

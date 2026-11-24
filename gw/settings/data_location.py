@@ -2047,7 +2047,8 @@ def validate_pointer_or_raise(exc: RuntimePathError) -> None:  # pragma: no cove
 def inspect_existing_data_location(*, localappdata: Path | None = None) -> dict[str, Any]:
     """只读探测生产态引导目录与既有数据位置，供安装向导判定新装或升级保留。"""
     try:
-        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env={})
+        prod_env = {"LOCALAPPDATA": os.environ["LOCALAPPDATA"]} if "LOCALAPPDATA" in os.environ else {}
+        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env=prod_env)
     except RuntimePathError as exc:
         raise CleanroomException(500, exc.code, str(exc)) from None
     pointer_file = data_location_pointer_path(paths.runtime_root)
@@ -2075,7 +2076,8 @@ def installer_init_data_location(
 ) -> dict[str, Any]:
     """安装向导提交阶段：复用 627 预检与单一权威指针写入新装数据位置。"""
     try:
-        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env={})
+        prod_env = {"LOCALAPPDATA": os.environ["LOCALAPPDATA"]} if "LOCALAPPDATA" in os.environ else {}
+        paths = resolve_runtime_paths(MODE_PROD, localappdata=localappdata, env=prod_env)
     except RuntimePathError as exc:
         raise CleanroomException(500, exc.code, str(exc)) from None
 
