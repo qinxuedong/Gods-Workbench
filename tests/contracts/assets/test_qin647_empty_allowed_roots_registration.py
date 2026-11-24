@@ -157,6 +157,7 @@ def test_empty_allowed_roots_retry_also_admits_local_file_access(monkeypatch, tm
         failed = _wait(client, job_id)
         assert failed["status"] == "failed"
         assert storage.allowed_roots() == []
+        assert default_storage_settings_service.get_snapshot().local_libraries == []
 
         monkeypatch.setattr(jobs.IndexJobs, "_scan", original_scan)
         retried = client.post(
@@ -170,6 +171,12 @@ def test_empty_allowed_roots_retry_also_admits_local_file_access(monkeypatch, tm
         assert completed["result"]["indexed"] == 1
 
     key = storage.directory_path_key(str(folder))
+    assert any(
+        item.get("id") == "qin647_source"
+        and item.get("path")
+        and storage.directory_path_key(str(item["path"])) == key
+        for item in default_storage_settings_service.get_snapshot().local_libraries
+    )
     assert any(
         item.source == "persistent"
         and item.active
