@@ -3,6 +3,7 @@
   "issue": 805,
   "authorization_basis": "GitHub Issue #805 (QIN-650)",
   "files": [
+    "tests/contracts/test_rh_workflow_contract.py",
     "tests/contracts/workflow/test_qin_650_generated_output_storage.py"
   ]
 }

@@ -419,11 +419,22 @@ def _asset_file_candidates(context: Any, item: Mapping[str, Any]) -> list[Path]:
     candidates: list[Path] = []
     scope = str(item.get("storage_scope") or "").strip()
     project_id = _resolve_asset_project_id(item)
+    relpath = str(item.get("storage_relpath") or "").strip()
 
     if scope == "project" and project_id:
         try:
             candidates.append(
                 storage.resolve_generated_output_root(project_id, create=False) / filename
+            )
+        except CleanroomException:
+            pass
+        # 退出自定义工作区上下文后，若按 data_root 回落，仍兼容检查默认数据根下的项目生成目录。
+        try:
+            candidates.append(
+                storage.resolve_generated_output_root(
+                    project_id, workspace_root=storage.data_root(), create=False
+                )
+                / filename
             )
         except CleanroomException:
             pass
@@ -434,6 +445,14 @@ def _asset_file_candidates(context: Any, item: Mapping[str, Any]) -> list[Path]:
             )
         except CleanroomException:
             pass
+    elif relpath:
+        # 兼容仅记录 storage_relpath 的场景：只接受安全的相对路径。
+        clean_parts = [p for p in relpath.replace("\\", "/").split("/") if p]
+        if clean_parts and all(p not in {".", ".."} for p in clean_parts):
+            try:
+                candidates.append(storage.data_root().joinpath(*clean_parts))
+            except OSError:
+                pass
 
     legacy_path = _assets_root(context) / filename
     if legacy_path not in candidates:

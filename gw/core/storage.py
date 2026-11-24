@@ -1062,26 +1062,24 @@ def relative_display(path: Path) -> str:
 
 
 
-# 只有服务端明确产物目录可以经通用下载/清理接口访问；根目录状态和视频ACL目录不准入。
+# 只有服务端明确产物目录可以经通用下载/清理接口访问；根目录状态、视频ACL与无项目generated目录不准入。
 OUTPUT_NAMESPACES = frozenset(
-    {"ai_uploads", "generated", "media_output", "registry_uploads", "local_assets"}
+    {"ai_uploads", "media_output", "registry_uploads", "local_assets"}
 )
+
+_SAFE_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_.\-]+$")
 
 
 def _validate_safe_segment(segment: str, *, code: str, message: str) -> str:
-    """校验单个路径段不包含穿越符、冒号、控制字符或 Windows 保留名。"""
+    """校验单个路径段严格符合 ASCII 安全命名规范（^[A-Za-z0-9_.\\-]+$）且非保留名。"""
     from pathlib import PureWindowsPath
 
     clean = str(segment or "")
     if (
         not clean
         or len(clean) > 255
-        or "/" in clean
-        or "\\" in clean
-        or ":" in clean
-        or any(ord(ch) < 32 for ch in clean)
+        or not _SAFE_SEGMENT_RE.fullmatch(clean)
         or clean in {".", ".."}
-        or clean != clean.strip()
         or clean.endswith(".")
         or PureWindowsPath(clean).is_reserved()
     ):
@@ -1096,14 +1094,15 @@ def _checked_relative_dir(base_root: Path, segments: tuple[str, ...], *, create:
     for part in segments:
         current = current / part
         try:
-            info = current.lstat()
-        except FileNotFoundError:
-            if not create:
-                continue
-            current.mkdir(parents=True, exist_ok=True)
-            info = current.lstat()
+            try:
+                info = current.lstat()
+            except FileNotFoundError:
+                if not create:
+                    continue
+                current.mkdir(parents=True, exist_ok=True)
+                info = current.lstat()
         except OSError:
-            raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "无法安全核实生成产物目录") from None
+            raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "无法安全核实或创建生成产物目录") from None
         if stat.S_ISLNK(info.st_mode) or getattr(info, "st_file_attributes", 0) & 0x400:
             raise CleanroomException(403, "OUTPUT_PATH_NOT_ALLOWED", "生成产物目录不允许链接或重解析点")
         if not stat.S_ISDIR(info.st_mode):
@@ -1129,11 +1128,7 @@ def resolve_generated_output_root(
     """
     pid = str(project_id or "").strip()
     if not pid or pid == "default":
-        target = resolve_output_directory("generated", must_exist=False)
-        if create:
-            target.mkdir(parents=True, exist_ok=True)
-            return resolve_output_directory("generated", must_exist=True)
-        return target
+        return _checked_relative_dir(data_root(), ("generated",), create=create)
 
     safe_pid = _validate_safe_segment(pid, code="INVALID_REQUEST", message="project_id 包含非法路径字符")
     if workspace_root is not None:
