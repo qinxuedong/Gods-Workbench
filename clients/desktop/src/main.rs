@@ -976,16 +976,43 @@ fn load_installed_manifest() -> Result<Option<BundleManifest>, String> {
     }
 }
 
-fn bootstrap_data_root() -> Result<PathBuf, String> {
-    let base = std::env::var_os("LOCALAPPDATA")
+fn localappdata_root() -> Result<PathBuf, String> {
+    std::env::var_os("LOCALAPPDATA")
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
-        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())?;
-    Ok(base.join("GodsWorkbench"))
+        .ok_or_else(|| "无法确定本机数据目录：LOCALAPPDATA 不可用".to_string())
 }
 
-fn production_data_root() -> Result<PathBuf, String> {
-    let bootstrap = bootstrap_data_root()?;
+fn bootstrap_data_root() -> Result<PathBuf, String> {
+    Ok(localappdata_root()?.join("Gods Workbench"))
+}
+
+fn legacy_bootstrap_data_root() -> Result<PathBuf, String> {
+    Ok(localappdata_root()?.join("GodsWorkbench"))
+}
+
+fn legacy_installer_data_root() -> Result<PathBuf, String> {
+    Ok(localappdata_root()?.join("Gods Workbench data"))
+}
+
+fn has_existing_production_data_at(root: &Path) -> bool {
+    if root.join("auth").join("auth.sqlite3").is_file() {
+        return true;
+    }
+    for sub in ["data", "video"] {
+        let dir = root.join(sub);
+        if dir.is_dir() {
+            if let Ok(mut entries) = fs::read_dir(&dir) {
+                if entries.next().is_some() {
+                    return true;
+                }
+            }
+        }
+    }
+    false
+}
+
+fn read_pointer_data_location(bootstrap: &Path) -> Result<Option<PathBuf>, String> {
     let pointer_path = bootstrap.join("runtime-root.json");
     match fs::symlink_metadata(&pointer_path) {
         Ok(meta) => {
@@ -1013,11 +1040,37 @@ fn production_data_root() -> Result<PathBuf, String> {
             if !path.is_absolute() {
                 return Err("数据位置指针路径必须是绝对路径".to_string());
             }
-            Ok(path)
+            Ok(Some(path))
         }
-        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(bootstrap),
+        Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(_) => Err("数据位置指针无法安全核验".to_string()),
     }
+}
+
+fn production_data_root() -> Result<PathBuf, String> {
+    let new_bootstrap = bootstrap_data_root()?;
+    let default_user_data = new_bootstrap.join("user data");
+    if let Some(path) = read_pointer_data_location(&new_bootstrap)? {
+        return Ok(path);
+    }
+    if has_existing_production_data_at(&default_user_data) {
+        return Ok(default_user_data);
+    }
+    if has_existing_production_data_at(&new_bootstrap) {
+        return Ok(new_bootstrap);
+    }
+    let legacy_bootstrap = legacy_bootstrap_data_root()?;
+    if let Some(path) = read_pointer_data_location(&legacy_bootstrap)? {
+        return Ok(path);
+    }
+    if has_existing_production_data_at(&legacy_bootstrap) {
+        return Ok(legacy_bootstrap);
+    }
+    let legacy_data = legacy_installer_data_root()?;
+    if has_existing_production_data_at(&legacy_data) {
+        return Ok(legacy_data);
+    }
+    Ok(default_user_data)
 }
 
 fn install_directory() -> Result<PathBuf, String> {

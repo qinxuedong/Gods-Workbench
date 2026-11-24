@@ -36,7 +36,8 @@ PRODUCT_VERSION_RE = re.compile(r"^(?P<core>\d+\.\d+\.\d+)(?:-(?P<suffix>[0-9A-Z
 BUILD_ID_RE = re.compile(r"^[0-9A-Za-z][0-9A-Za-z._-]{0,127}$")
 GIT_COMMIT_RE = re.compile(r"^[0-9a-f]{7,40}$")
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
-DATA_DIR_NAME = "GodsWorkbench"
+DATA_DIR_NAME = "Gods Workbench"
+DEFAULT_USER_DATA_DIR_NAME = "user data"
 UPGRADE_PS1 = PACKAGING / "nsis" / "upgrade.ps1"
 HOOKS_NSH = PACKAGING / "nsis" / "hooks.nsh"
 
@@ -121,19 +122,25 @@ def paths_non_overlapping(left: Path, right: Path) -> bool:
     return True
 
 
-def production_data_root() -> Path:
+def production_bootstrap_root() -> Path:
     local_app_data = os.environ.get("LOCALAPPDATA", "").strip()
     if not local_app_data or not Path(local_app_data).is_absolute():
         raise BuildError("无法确定数据根：LOCALAPPDATA 不可用")
     return Path(local_app_data) / DATA_DIR_NAME
 
 
+def production_data_root() -> Path:
+    return production_bootstrap_root() / DEFAULT_USER_DATA_DIR_NAME
+
+
 def assert_staging_not_in_data_root(staging: Path, install_dir: Path | None) -> None:
+    bootstrap_root = production_bootstrap_root()
     data_root = production_data_root()
-    if not paths_non_overlapping(staging, data_root):
-        raise BuildError("staging 目录与生产数据根存在包含关系")
-    if install_dir is not None and not paths_non_overlapping(install_dir, data_root):
-        raise BuildError("安装目录与生产数据根存在包含关系")
+    for root in (bootstrap_root, data_root):
+        if not paths_non_overlapping(staging, root):
+            raise BuildError("staging 目录与生产数据根存在包含关系")
+        if install_dir is not None and not paths_non_overlapping(install_dir, root):
+            raise BuildError("安装目录与生产数据根存在包含关系")
 
 
 def verify_runtime_archive(archive: Path, lock: dict[str, Any]) -> str:

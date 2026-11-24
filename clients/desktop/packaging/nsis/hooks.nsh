@@ -1,8 +1,10 @@
 ﻿!include "LogicLib.nsh"
 !include "nsDialogs.nsh"
 
-!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench data"
-!define GW_BOOTSTRAP_DIR_NAME "GodsWorkbench"
+!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench\user data"
+!define GW_BOOTSTRAP_DIR_NAME "Gods Workbench"
+!define GW_LEGACY_BOOTSTRAP_DIR_NAME "GodsWorkbench"
+!define GW_LEGACY_DATA_DIR_NAME "Gods Workbench data"
 !define GW_UPGRADE_ROOT "$LOCALAPPDATA\ai.godsworkbench.desktop\upgrade"
 !define GW_BACKUP_PROGRAM "${GW_UPGRADE_ROOT}\backup-last\program"
 !define GW_UPGRADE_REL_DIR "ai.godsworkbench.desktop\upgrade"
@@ -65,8 +67,8 @@ Var GwDataHintLabel
   StrCpy $R9 "$GwUserAppData\ai.godsworkbench.desktop\client.json"
 
   ${If} $GwDataDir == ""
-    ; 探测是否已存在 627 引导指针或旧默认 GodsWorkbench 生产数据
-    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$b=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$ptr=Join-Path $$b 'runtime-root.json'; if(Test-Path -LiteralPath $$ptr){ try{ $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ [Console]::Write('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; $$has=$false; if(Test-Path -LiteralPath (Join-Path $$b 'auth\auth.sqlite3')){ $$has=$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$b $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ $$has=$true } }; if($$has){ [Console]::Write('EXISTING|'+$$b) }else{ [Console]::Write('FRESH|'+(Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}')) }"`
+    ; 优先探测新引导目录指针/数据，再只读回退识别旧版 GodsWorkbench / Gods Workbench data 生产数据
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "function HasData([string]$$dir){ if(Test-Path -LiteralPath (Join-Path $$dir 'auth\auth.sqlite3')){ return $$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$dir $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ return $$true } }; return $$false }; $$nb=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$nd=Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}'; $$nptr=Join-Path $$nb 'runtime-root.json'; if(Test-Path -LiteralPath $$nptr){ try{ $$j=Get-Content -LiteralPath $$nptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ [Console]::Write('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; if(HasData $$nd){ [Console]::Write('EXISTING|'+$$nd); exit 0 }; if(HasData $$nb){ [Console]::Write('EXISTING|'+$$nb); exit 0 }; $$lb=Join-Path '$R6' '${GW_LEGACY_BOOTSTRAP_DIR_NAME}'; $$lptr=Join-Path $$lb 'runtime-root.json'; if(Test-Path -LiteralPath $$lptr){ try{ $$j=Get-Content -LiteralPath $$lptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ [Console]::Write('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; if(HasData $$lb){ [Console]::Write('EXISTING|'+$$lb); exit 0 }; $$ld=Join-Path '$R6' '${GW_LEGACY_DATA_DIR_NAME}'; if(HasData $$ld){ [Console]::Write('EXISTING|'+$$ld); exit 0 }; [Console]::Write('FRESH|'+$$nd)"`
     Pop $0
     Pop $1
     !insertmacro GW_TRIM_CRLF $1

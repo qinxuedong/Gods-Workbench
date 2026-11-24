@@ -33,10 +33,13 @@ DATA_DIR_ENV = "GW_DATA_DIR"
 LOCAL_AUTH_DB_ENV = "GW_LOCAL_AUTH_DB"
 VIDEO_DATA_DIR_ENV = "GW_VIDEO_DATA_DIR"
 
-# QIN-627 数据位置指针：固定落在引导目录（%LOCALAPPDATA%\GodsWorkbench），
-# 永不随数据位置迁移移动。
+# QIN-648：统一引导目录为 %LOCALAPPDATA%\Gods Workbench，默认数据目录为
+# %LOCALAPPDATA%\Gods Workbench\user data；保留旧版 GodsWorkbench /
+# Gods Workbench data 只读回退识别以兼容存量升级。
+PROD_BOOTSTRAP_DIR_NAME = "Gods Workbench"
+DEFAULT_INSTALLER_DATA_DIR_NAME = "user data"
 LEGACY_PROD_DATA_DIR_NAME = "GodsWorkbench"
-DEFAULT_INSTALLER_DATA_DIR_NAME = "Gods Workbench data"
+LEGACY_INSTALLER_DATA_DIR_NAME = "Gods Workbench data"
 DATA_LOCATION_POINTER_NAME = "runtime-root.json"
 DATA_LOCATION_SCHEMA_VERSION = 1
 PROD_DATA_LOCATION_INVALID = "PROD_DATA_LOCATION_INVALID"
@@ -376,12 +379,38 @@ def resolve_runtime_paths(
             _fail("DEV_PATH_NOT_ALLOWED", "开发态只允许固定三根运行路径")
     elif selected == MODE_PROD:
         local_root = _localappdata(localappdata, source)
-        runtime_root = _canonical(
-            local_root / "GodsWorkbench", code="INVALID_PRODUCTION_ROOT"
+        new_bootstrap = _canonical(
+            local_root / PROD_BOOTSTRAP_DIR_NAME, code="INVALID_PRODUCTION_ROOT"
         )
-        # QIN-627：指针存在时以指针为准；指针损坏在上面已失败关闭。
-        pointer_location = _pointer_data_location(runtime_root)
-        base_root = pointer_location if pointer_location is not None else runtime_root
+        legacy_bootstrap = _canonical(
+            local_root / LEGACY_PROD_DATA_DIR_NAME, code="INVALID_PRODUCTION_ROOT"
+        )
+        legacy_installer_data = _canonical(
+            local_root / LEGACY_INSTALLER_DATA_DIR_NAME, code="INVALID_PRODUCTION_ROOT"
+        )
+        # QIN-648：优先读取新引导目录指针（指针损坏必失败关闭）；
+        # 若新引导目录无指针且无生产数据，则只读回退识别旧版 GodsWorkbench / Gods Workbench data。
+        runtime_root = new_bootstrap
+        pointer_location = _pointer_data_location(new_bootstrap)
+        if pointer_location is not None:
+            base_root = pointer_location
+        elif has_existing_production_data(new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME):
+            base_root = new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME
+        elif has_existing_production_data(new_bootstrap):
+            base_root = new_bootstrap
+        else:
+            legacy_pointer = _pointer_data_location(legacy_bootstrap)
+            if legacy_pointer is not None:
+                runtime_root = legacy_bootstrap
+                pointer_location = legacy_pointer
+                base_root = legacy_pointer
+            elif has_existing_production_data(legacy_bootstrap):
+                runtime_root = legacy_bootstrap
+                base_root = legacy_bootstrap
+            elif has_existing_production_data(legacy_installer_data):
+                base_root = legacy_installer_data
+            else:
+                base_root = new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME
         defaults = (
             base_root / "data",
             base_root / "auth" / "auth.sqlite3",
@@ -405,7 +434,7 @@ def resolve_runtime_paths(
                 message=(
                     "数据位置内的三根路径不得越界"
                     if pointer_location is not None
-                    else "生产态路径必须位于 LOCALAPPDATA/GodsWorkbench 内"
+                    else f"生产态路径必须位于 LOCALAPPDATA/{PROD_BOOTSTRAP_DIR_NAME} 内"
                 ),
             )
         if not (
@@ -464,11 +493,13 @@ __all__ = [
     "DATA_LOCATION_POINTER_NAME",
     "DATA_LOCATION_SCHEMA_VERSION",
     "DEFAULT_INSTALLER_DATA_DIR_NAME",
+    "LEGACY_INSTALLER_DATA_DIR_NAME",
     "LEGACY_PROD_DATA_DIR_NAME",
     "LOCAL_AUTH_DB_ENV",
     "MODE_DEV",
     "MODE_PROD",
     "MODE_TEST",
+    "PROD_BOOTSTRAP_DIR_NAME",
     "PROD_DATA_LOCATION_INVALID",
     "RUNTIME_MODE_ENV",
     "RuntimePathError",

@@ -98,9 +98,9 @@ def bootstrap_root() -> Path:
 
 
 def current_location() -> Path:
-    """指针存在时以指针为准，否则回落到默认数据位置（引导目录）。"""
+    """指针存在时以指针为准，否则回落到当前默认数据位置（如引导目录下的 user data）。"""
     paths = _paths()
-    return paths.data_location if paths.data_location is not None else paths.runtime_root
+    return paths.data_location if paths.data_location is not None else paths.data_root.parent
 
 
 def journal_path() -> Path:
@@ -142,7 +142,7 @@ def pointer_state() -> dict[str, Any]:
         raise CleanroomException(500, exc.code, str(exc)) from None
     if payload is None:
         location = _paths()
-        default = location.runtime_root
+        default = location.data_root.parent
         return {
             "present": False,
             "schema_version": POINTER_SCHEMA_VERSION,
@@ -2053,10 +2053,13 @@ def inspect_existing_data_location(*, localappdata: Path | None = None) -> dict[
         raise CleanroomException(500, exc.code, str(exc)) from None
     pointer_file = data_location_pointer_path(paths.runtime_root)
     pointer_payload = read_data_location_pointer(paths.runtime_root)
-    legacy_has_data = has_existing_production_data(paths.runtime_root)
+    legacy_has_data = (
+        has_existing_production_data(paths.runtime_root)
+        or has_existing_production_data(paths.data_root.parent)
+    )
     has_existing = pointer_payload is not None or legacy_has_data
-    effective = paths.data_location if paths.data_location is not None else paths.runtime_root
-    suggested_fresh = paths.runtime_root.parent / DEFAULT_INSTALLER_DATA_DIR_NAME
+    effective = paths.data_location if paths.data_location is not None else paths.data_root.parent
+    suggested_fresh = paths.runtime_root / DEFAULT_INSTALLER_DATA_DIR_NAME
     return {
         "has_existing": has_existing,
         "pointer_present": pointer_payload is not None,
@@ -2083,8 +2086,11 @@ def installer_init_data_location(
 
     pointer_file = data_location_pointer_path(paths.runtime_root)
     pointer_payload = read_data_location_pointer(paths.runtime_root)
-    legacy_has_data = has_existing_production_data(paths.runtime_root)
-    current_effective = paths.data_location if paths.data_location is not None else paths.runtime_root
+    legacy_has_data = (
+        has_existing_production_data(paths.runtime_root)
+        or has_existing_production_data(paths.data_root.parent)
+    )
+    current_effective = paths.data_location if paths.data_location is not None else paths.data_root.parent
 
     candidate_raw = Path(target)
     if not candidate_raw.is_absolute():
