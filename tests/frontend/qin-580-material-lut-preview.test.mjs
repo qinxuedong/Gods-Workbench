@@ -380,7 +380,7 @@ test('QIN-580：LUT 菜单与浮窗按项目设计语言改成圆角', () => {
         assert.ok(start > 0, `缺少样式 ${selector}`);
         return styles.slice(start, styles.indexOf('}', start) + 1);
     };
-    // 本页不引 signal-flow.css（--gw-radius-* 取不到值），沿用本页浮层口径：
+    // 本页不引 signal-flow.css（该旧样式已全库下线，--gw-radius-* 不经其注入），沿用本页浮层口径：
     // 菜单/浮窗 8px（同 .registry-structure-context-menu），条目与控件 6px，小图标件 4px。
     assert.match(rule('.asset-detail-media-lut-menu'), /border-radius:8px/);
     assert.match(rule('.asset-detail-media-lut-menu-item'), /border-radius:6px/);

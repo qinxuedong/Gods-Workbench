@@ -147,6 +147,7 @@ tests/frontend/qin-638-installer-data-location.test.mjs
 tests/frontend/qin-641-resource-folder-ux.test.mjs
 tests/frontend/qin-642-directory-settings-fast-boot.test.mjs
 tests/frontend/qin-643-task-center-ux.test.mjs
+tests/frontend/qin-645-signal-flow-retired.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
 tests/frontend/test_c18_video_jump.mjs

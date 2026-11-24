@@ -1404,3 +1404,395 @@ table tbody td {
 .hw-drawer-panel { overflow:auto; }
 
 :is(.gw-shell,.gw-signal) :is([role="alert"], .directory-error, .error-message) { min-width:0; overflow-wrap:anywhere; white-space:normal; }
+
+/* ==========================================================================
+   QIN-645 内嵌/分享页公共层
+   承接已下线的 web/css/base/signal-flow.css 中被 task-center、episode-pipeline、
+   governance、canvas-list、asset-share 五页共同依赖的基础层（语义变量、
+   正文基底、元素控件、明暗切换、可访问性与窄屏断点）。
+
+   作用域与隔离：三条护栏叠加，缺一不可。
+     1. 文档标记 .gw-legacy-signal —— 只有原本真正 <link> 过 signal-flow.css 的五个
+        页面在 <body> 上携带它。web/embeds/asset-manager.html 同样是 body.gw-signal
+        但从未加载过旧样式，它的金色主题由 asset-hardware-theme.css 把 --sf-* 映射到
+        --gold-primary 提供；若只按 body.gw-signal 圈定，本层会用青色实值把它整页染色。
+     2. .gw-signal —— 迁移前所有规则本就以它为根，保留可维持原有匹配面。
+     3. :not(:where(.gw-shell)) —— 主工作台 body 的第二道排斥护栏。
+   三条护栏一律包在 :where() 里，特异性贡献为 0，使本层与迁移前 signal-flow 的
+   级联权重逐条对齐，不会因「多了一个类」而压过各页自身 CSS。
+   ========================================================================== */
+
+/* 语义变量与旧名别名：迁移前是 signal-flow 的 :root 块，这里必须回到 :root 级。
+   自定义属性按「最近声明该属性的祖先」取值，与选择器特异性无关：一旦声明在 body，
+   就会盖掉页面在 <html> 上定义的 .theme-dark / .theme-light 同名变量
+   （canvas-list.css 用 .theme-dark 给出 --strong / --strong-text 等），
+   使画布页状态条在交互态显色时取到公共层的强调青而非页面原色。
+   故此处以 :root:where(:has(...)) 落回文档根，特异性 (0,1,0) 与原 :root 完全相同，
+   同权重时由源码次序决定 —— 本文件先于各页 CSS 加载，页面定义照旧胜出。 */
+:root:where(:has(> body.gw-signal:where(.gw-legacy-signal))) {
+  --gw-type-title: var(--gw-type-headline-md);
+  --gw-type-section: var(--gw-type-headline-sm);
+  --gw-type-body: var(--gw-type-body-md);
+  --gw-type-meta: var(--gw-type-body-sm);
+
+  --sf-bg: #0a1016;
+  --sf-sidebar: #0d141b;
+  --sf-surface: #121c26;
+  --sf-content: #111d27;
+  --sf-raised: #182532;
+  --sf-line: rgba(173, 205, 220, .16);
+  --sf-line-strong: rgba(173, 205, 220, .32);
+  --sf-text: #eef5f7;
+  --sf-muted: #a7b5be;
+  --sf-faint: #7b8c95;
+  --sf-cyan: #69d6ff;
+  --sf-cyan-hover: #9be4ff;
+  --sf-cyan-soft: rgba(105, 214, 255, .14);
+  --sf-cyan-soft-subtle: rgba(105, 214, 255, .1);
+  --sf-mint: #63e2b0;
+  --sf-amber: #f2c66d;
+  --sf-coral: #ff7f78;
+  --sf-indigo: #9aa7ff;
+  --sf-on-accent: #071018;
+  --sf-radius-panel: 8px;
+  --sf-radius-control: 6px;
+  --sf-radius-tight: 4px;
+  --sf-ease: cubic-bezier(.3, 0, 0, 1);
+  --sf-shadow-float: 0 18px 48px rgba(0, 0, 0, .42);
+  --sf-font-ui: "Source Han Sans CN", "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+  --sf-font-mono: "Source Han Sans CN", "Microsoft YaHei", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --sf-font-pixel: "Source Han Sans CN", "Microsoft YaHei", ui-monospace, SFMono-Regular, Consolas, monospace;
+  --sf-fs-display: 24px;
+  --sf-fs-title: 18px;
+  --sf-fs-heading: 18px;
+  --sf-fs-body: 14px;
+  --sf-fs-secondary: 14px;
+  --sf-fs-caption: 12px;
+  --sf-fs-micro: 12px;
+  --gw-space-outer: 24px;
+  --gw-space-section: 32px;
+  --gw-row-height: 56px;
+  --gw-zebra-2: rgba(255, 255, 255, 0.02);
+  --sf-fw-regular: 400;
+  --sf-fw-medium: 500;
+  --sf-fw-semibold: 700;
+  --sf-fw-bold: 700;
+
+  /* 硬件语义 token 的旧名别名：页面 CSS 仍按旧名消费，取值统一来自本层变量。 */
+  --gw-bg: var(--sf-bg);
+  --gw-surface: var(--sf-surface);
+  --gw-surface-2: var(--sf-content);
+  --gw-surface-3: var(--sf-raised);
+  --gw-line: var(--sf-line);
+  --gw-line-strong: var(--sf-line-strong);
+  --gw-text: var(--sf-text);
+  --gw-muted: var(--sf-muted);
+  --gw-faint: var(--sf-faint);
+  --gw-cyan: var(--sf-cyan);
+  --gw-mint: var(--sf-mint);
+  --gw-amber: var(--sf-amber);
+  --gw-coral: var(--sf-coral);
+  --gw-indigo: var(--sf-indigo);
+  --gw-radius-panel: var(--sf-radius-panel);
+  --gw-radius-control: var(--sf-radius-control);
+  --gw-ease: var(--sf-ease);
+  --page: var(--sf-bg);
+  --bg: var(--sf-bg);
+  --stage-bg: var(--sf-bg);
+  --sidebar-bg: var(--sf-sidebar);
+  --panel: var(--sf-surface);
+  --panel-bg: var(--sf-surface);
+  --panel-solid: var(--sf-surface);
+  --card: var(--sf-content);
+  --card-solid: var(--sf-content);
+  --soft: var(--sf-raised);
+  --soft-2: #20313d;
+  --line: var(--sf-line);
+  --line-2: var(--sf-line-strong);
+  --text: var(--sf-text);
+  --muted: var(--sf-muted);
+  --faint: var(--sf-faint);
+  --strong: var(--sf-cyan);
+  --strong-text: var(--sf-on-accent);
+  --accent: var(--sf-cyan);
+  --accent-soft: rgba(105, 214, 255, .12);
+  --accent-line: rgba(105, 214, 255, .4);
+  --brand: var(--sf-cyan);
+  --primary: var(--sf-cyan);
+  --success: var(--sf-mint);
+  --danger: var(--sf-coral);
+  --shadow: rgba(0, 0, 0, .3);
+  --shadow-strong: rgba(0, 0, 0, .42);
+  --border: var(--sf-line);
+  --stage-border: var(--sf-line-strong);
+  --nav-hover-bg: rgba(105, 214, 255, .08);
+  --scrollbar: var(--sf-faint);
+  --scrollbar-hover: var(--sf-muted);
+}
+
+/* 正文基底：底色、前景、字体与定位上下文。 */
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) {
+  position: relative;
+  isolation: isolate;
+  min-width: 0;
+  overflow-x: clip;
+  background: var(--sf-bg) !important;
+  color: var(--sf-text) !important;
+  color-scheme: dark;
+  transition: none !important;
+  font-family: var(--gw-font-body) !important;
+  font-size: var(--sf-fs-body);
+  line-height: 1.5;
+}
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { --sf-faint: #7b8c95 !important; }
+
+/* 网点纹理底：随主题切换明暗。 */
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))::before {
+  position: fixed;
+  z-index: -1;
+  inset: 0;
+  content: "";
+  pointer-events: none;
+  opacity: .035;
+  background-image: radial-gradient(rgba(220, 239, 247, .9) .55px, transparent .7px);
+  background-size: 5px 5px;
+}
+
+/* 元素层：标题字阶、控件形态、焦点环、禁用态与等宽数字。 */
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { font-size: var(--gw-type-body); }
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(small, [data-type="meta"], [data-type="caption"]) { font-size: var(--gw-type-meta) !important; font-weight: var(--gw-weight-regular); line-height: var(--gw-leading-body-sm); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(svg, svg *) { font-size: inherit !important; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(h1, .page-title, .hero-title, [data-type="title"]) { font-size: var(--gw-type-title) !important; font-weight: var(--gw-weight-bold); line-height: var(--gw-leading-headline-md); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(h2, h3, .section-title, .panel-title, .card-title, [data-type="section"]) { font-size: var(--gw-type-section) !important; font-weight: var(--gw-weight-medium); line-height: var(--gw-leading-headline-sm); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(table tbody tr, [role="row"], .list-row, .table-row, .task-row) { height: var(--gw-row-height); min-height: var(--gw-row-height); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(table tbody tr:nth-child(even), [role="row"]:nth-child(even), .list-row:nth-child(even), .table-row:nth-child(even)) { background-color: var(--gw-zebra-2); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(time, code, pre, kbd, .font-mono) { font-size: var(--gw-type-meta) !important; }
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)),
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(button, input, select, textarea, h1, h2, h3, h4, p, label, summary, dt, dd, th, td, span, strong, small) { font-family: var(--gw-font-body) !important; }
+
+/* 字体族按迁移前 signal-flow 的原始次序落：正文族声明出现两遍，
+   第一道等宽族夹在两者之间（命中 code/.mono/time/*-id 等显式标识），
+   第二道等宽族落在最后（额外覆盖 [class*="id"]、[class*="time"] 这类旧通配）。
+   两条等宽规则的选择器集合不同，不能互换次序，否则 .font-mono 一类元素会
+   从正文字族翻成等宽字族。 */
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(code, .mono, [class*="id"], [class*="time"]) {
+  font-family: var(--gw-font-mono);
+  font-size: var(--sf-fs-caption);
+  font-variant-numeric: tabular-nums;
+}
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(code, kbd, pre, .mono, [class*="mono"], [data-mono], time, .job-id, .asset-id, .project-id, .stable-id) { font-family: var(--gw-font-mono) !important; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(button, input, select, textarea, h1, h2, h3, h4, p, label, th, td) { font-family: var(--gw-font-body) !important; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(code, pre, kbd, .mono, [class*="id"], [class*="time"]) { font-family: var(--gw-font-mono) !important; }
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(h1, h2, h3, h4, p) { text-wrap: pretty; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :where(h1, h2, h3, h4, p) { text-wrap: pretty; letter-spacing: 0; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) h1 { font-size: var(--sf-fs-display); line-height: 1.1; letter-spacing: 0; font-weight: var(--sf-fw-bold); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) h2 { font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); letter-spacing: 0; font-weight: var(--gw-weight-medium); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) h3 { font-size: var(--gw-type-headline-sm); line-height: var(--gw-leading-headline-sm); letter-spacing: 0; font-weight: var(--gw-weight-medium); }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) label { font-size: var(--sf-fs-secondary); font-weight: var(--sf-fw-medium); }
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(button, a, input, select, textarea):focus-visible { outline: 2px solid var(--gw-focus-color, var(--sf-cyan)); outline-offset: 2px; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(button:disabled, input:disabled, select:disabled, textarea:disabled) { cursor: not-allowed; opacity: .55; }
+
+/* 非首页路由的控件底座：边框、底色与焦点环统一走语义变量。 */
+body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(input, select, textarea) { border-color: var(--sf-line-strong) !important; border-radius: var(--sf-radius-control) !important; background: var(--sf-raised) !important; color: var(--sf-text) !important; }
+body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(input, select, textarea)::placeholder { color: var(--sf-muted) !important; opacity: 1; }
+body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(button, input, select, textarea, a):focus-visible { outline: 2px solid var(--gw-focus-color, var(--sf-cyan)) !important; outline-offset: 2px; }
+
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(select, textarea, input:not([type="color"]):not([type="range"]):not([type="checkbox"]):not([type="radio"]):not([type="file"])) {
+  min-height: 40px;
+  border: 1px solid var(--sf-line-strong) !important;
+  border-radius: var(--sf-radius-control) !important;
+  background: var(--sf-raised) !important;
+  color: var(--sf-text) !important;
+  caret-color: var(--sf-cyan);
+  font-size: var(--sf-fs-body);
+  font-weight: var(--sf-fw-regular);
+}
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(input, select, textarea)::placeholder { color: var(--sf-muted) !important; opacity: 1; }
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :is(input, select, textarea):focus-visible {
+  outline: 2px solid var(--gw-focus-color, var(--sf-cyan)) !important;
+  outline-offset: 2px;
+  border-color: var(--sf-cyan) !important;
+}
+body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) textarea { min-height: 86px; }
+
+/* 非硬件按钮族的原生控件统一最小高度；硬件按钮由 hardware-buttons.css 自管。 */
+body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(button, input, select, textarea):not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)) { min-height: 36px; }
+
+/* 暗色偏好：非首页路由的语义变量实值。带 !important 并与明色块条件互斥，
+   迁移前由 signal-flow.css 承担，是暗色下真正生效的一组取值。 */
+body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not([data-theme="light"]):not(.theme-light):not(:where(.gw-shell)) {
+  --sf-bg: #0a1016 !important;
+  --sf-sidebar: #0d141b !important;
+  --sf-surface: #121c26 !important;
+  --sf-content: #111b23 !important;
+  --sf-raised: #18232d !important;
+  --sf-line: rgba(173, 205, 220, .16) !important;
+  --sf-line-strong: rgba(173, 205, 220, .32) !important;
+  --sf-text: #eef5f7 !important;
+  --sf-muted: #a7b5be !important;
+  --sf-faint: #71808a !important;
+  --sf-cyan: #69d6ff !important;
+  --sf-mint: #63e2b0 !important;
+  --sf-amber: #f2c66d !important;
+  --sf-coral: #ff7f78 !important;
+  --sf-indigo: #9aa7ff !important;
+  color-scheme: dark !important;
+  background: var(--sf-bg) !important;
+  color: var(--sf-text) !important;
+  overflow-x: hidden;
+}
+
+/* 明色偏好：整套语义变量与控件形态切到浅色，保证 light 下不塌底色。 */
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"],
+html body.gw-signal:where(.gw-legacy-signal).theme-light:not(:where(.gw-shell)),
+html[data-theme="light"] body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)),
+html.theme-light body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) {
+  color-scheme: light !important;
+  --sf-bg: #f1f0ec !important;
+  --sf-sidebar: #e8e7e2 !important;
+  --sf-surface: #ffffff !important;
+  --sf-content: #faf9f6 !important;
+  --sf-raised: #eeede8 !important;
+  --sf-line: rgba(45, 48, 45, .16) !important;
+  --sf-line-strong: rgba(45, 48, 45, .31) !important;
+  --sf-text: #2d302d !important;
+  --sf-muted: #656a64 !important;
+  --sf-faint: #5f655f !important;
+  --sf-cyan: #006c67 !important;
+  --sf-cyan-hover: #005c58 !important;
+  --sf-cyan-soft: rgba(0, 108, 103, .14) !important;
+  --sf-cyan-soft-subtle: rgba(0, 108, 103, .08) !important;
+  --sf-focus: #006c67 !important;
+  --sf-primary-fill: #9bd5c0 !important;
+  --sf-primary-hover: #83c7ad !important;
+  --sf-mint: #1f765f !important;
+  --sf-amber: #8b5a0d !important;
+  --sf-coral: #a8443d !important;
+  --sf-indigo: #5965a7 !important;
+  --sf-on-accent: #1d342d !important;
+  --chat-user-bg: var(--sf-content) !important;
+  --sf-shadow-float: 0 16px 34px rgba(47, 50, 47, .16) !important;
+  --page: var(--sf-bg) !important;
+  --bg: var(--sf-bg) !important;
+  --stage-bg: var(--sf-bg) !important;
+  --sidebar-bg: var(--sf-sidebar) !important;
+  --panel: var(--sf-surface) !important;
+  --panel-bg: var(--sf-surface) !important;
+  --panel-solid: var(--sf-surface) !important;
+  --card: var(--sf-content) !important;
+  --card-solid: var(--sf-content) !important;
+  --soft: var(--sf-raised) !important;
+  --soft-2: var(--sf-raised) !important;
+  --line: var(--sf-line) !important;
+  --line-2: var(--sf-line-strong) !important;
+  --text: var(--sf-text) !important;
+  --muted: var(--sf-muted) !important;
+  --faint: var(--sf-faint) !important;
+  --strong: var(--sf-cyan) !important;
+  --strong-text: var(--sf-on-accent) !important;
+  --accent: var(--sf-cyan) !important;
+  --accent-soft: var(--sf-cyan-soft) !important;
+  --accent-line: rgba(0, 108, 103, .42) !important;
+  --brand: var(--sf-cyan) !important;
+  --primary: var(--sf-cyan) !important;
+  --success: var(--sf-mint) !important;
+  --danger: var(--sf-coral) !important;
+  --shadow: rgba(45, 48, 45, .12) !important;
+  --shadow-strong: rgba(45, 48, 45, .18) !important;
+  --border: var(--sf-line) !important;
+  --stage-border: var(--sf-line-strong) !important;
+  --nav-hover-bg: var(--sf-cyan-soft-subtle) !important;
+  --scrollbar: var(--sf-faint) !important;
+  --scrollbar-hover: var(--sf-muted) !important;
+}
+
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"],
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"] :where(button, input, select, textarea, h1, h2, h3, h4, p, label, summary, dt, dd, th, td, span, strong, small) { color: var(--sf-text); }
+
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"] :is(input, select, textarea),
+html body.gw-signal:where(.gw-legacy-signal).theme-light:not(:where(.gw-shell)) :is(input, select, textarea) { border-color: var(--sf-line-strong) !important; background: var(--sf-surface) !important; color: var(--sf-text) !important; }
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"] :is(input, select, textarea)::placeholder,
+html body.gw-signal:where(.gw-legacy-signal).theme-light:not(:where(.gw-shell)) :is(input, select, textarea)::placeholder { color: var(--sf-muted) !important; }
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"] :is(button, a, input, select, textarea):focus-visible,
+html body.gw-signal:where(.gw-legacy-signal).theme-light:not(:where(.gw-shell)) :is(button, a, input, select, textarea):focus-visible { outline-color: var(--sf-focus) !important; border-color: var(--sf-focus) !important; }
+
+html body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))[data-theme="light"]::before,
+html body.gw-signal:where(.gw-legacy-signal).theme-light:not(:where(.gw-shell))::before,
+html[data-theme="light"] body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))::before,
+html.theme-light body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))::before { opacity: .035; background-image: radial-gradient(rgba(45, 48, 45, .45) .55px, transparent .7px); }
+
+/* 可访问性与窄屏断点。 */
+@media (forced-colors: active) {
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) :focus-visible { outline-color: Highlight !important; }
+}
+
+@media (max-width: 560px) {
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { font-size: var(--gw-type-body-sm); }
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) h1 { font-size: var(--gw-type-headline-md); font-weight: var(--gw-weight-bold); line-height: var(--gw-leading-headline-md); }
+}
+
+@media (max-width: 620px) {
+  html:has(> body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))),
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { max-width: 100vw !important; overflow-x: hidden !important; }
+}
+
+@media (min-width: 621px) {
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { --sf-context-header-height: 86px; }
+}
+
+@media (prefers-reduced-motion: reduce), (prefers-contrast: more), (forced-colors: active) {
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) *,
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) *::before,
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))::before { display: none; }
+  html:has(> body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell))),
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)) { scroll-behavior: auto !important; }
+}
+
+/* 窄屏控件高度：迁移前在 signal-flow 的 @media (max-width: 900px) 中以
+   !important 强制 36px，权重高于各页自身的 40px 声明；迁出后必须保留同一
+   强制力，否则 724/900 两档宽度下工具栏控件会回弹到 40px。
+   白名单只保留本层五个目标页实际使用的页类 —— 旧文件里的
+   .gw-page--asset-manager / --settings / --api-settings 等属于 signal-flow
+   历史上服务过、但本票范围外的页面，留着就是给范围外页面埋雷。 */
+@media (max-width: 900px) {
+  body.gw-signal:where(.gw-legacy-signal):not(:where(.gw-shell)):is(.gw-page--episode-pipeline, .gw-page--canvas, .gw-page--task-center) :is(button, input, select, textarea):not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)) { min-height: 36px !important; }
+}
+
+/* 组件圆角收紧层：迁移前 signal-flow 在同权重 !important 的 8px 面板圆角之后
+   再声明一层 6px（--sf-radius-control），后置者胜出，面板实际落在 6px。
+   迁出后 8px 随各页 CSS 后加载（页 CSS 晚于本文件），次序反转会让 8px 反超。
+
+   这里以 html 前缀补一级类型特异性（(0,2,1) → (0,2,2)）把 6px 拉回胜出位。
+   这是本票唯一一处主动改变特异性，理由与边界一并写明：
+     - 匹配集合完全不变：html 是文档根、恒存在，前缀只作用于已有匹配的元素；
+     - 增量恰为 +1 类型选择器，不引入新的类/属性维度，不会波及别的选择器；
+     - 唯一替代方案是把这条规则（68 个选择器）复制进五个页面 CSS 的迁移块之后，
+       跨文件维护同一份圆角清单，漂移风险高于一处 +1 特异性。该方案已由 PM 裁决
+       弃用（2026-11-24，保留本文件的 html 前缀写法）。
+   tests/frontend/qin-645-signal-flow-retired.test.mjs 里钉住了这条规则的具体形态，
+   若日后有人把 html 前缀去掉或再加一级，测试立即变红。 */
+html body.gw-signal:where(.gw-legacy-signal):not(.gw-page--home):not(:where(.gw-shell)) :is(
+  .btn, .action-btn, .upload-btn, .add-btn, .api-link-btn,
+  .ws-primary-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+  .ws-icon-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+  .ws-paste-btn:not(:where(.hw-btn, .btn-hw-tactile, .btn-tactile-keycap, .btn-hw-round, .hw-round-btn, .btn-segmented-item, .hw-segmented-btn, .btn-rocker-paddle, .hw-rocker-btn, .btn-slide-toggle, .hw-slide-toggle, .btn-launch-orb, .launch-orb-btn, .btn-pill-active, .btn-pill-inactive, .btn-pill-disabled)),
+  .text-button, .icon-button, .status, .status-chip,
+  .status-badge, .status-pill, .badge, .chip, .pill, .tag, .mode-badge,
+  .preview-pill, .project-access, .asset-status, .run-state, .production-status,
+  .home-priority, .home-project-stage, .provider-item, .task-detail-dialog,
+  .production-dialog, .asset-detail-dialog, .asset-image-dialog,
+  .asset-review-drawer, .asset-account-modal, .asset-share-modal, .asset-team-modal,
+  .review-drawbar, .review-approval, .review-thread, .review-comment,
+  .review-hint, .account-profile, .share-permissions, .asset-review-toast,
+  .team-create-grid, .team-group, .graph-card, .workflow-list, .side-card,
+  .panel, .section-frame, .block, .card, .stage-card, .stage-panel, .stage-shell,
+  .observability-panel, .task-table-wrap, .event-list, .overview-summary,
+  .chart-wrap, .health-list, .failure-list, .context-list, .asset-card,
+  .asset-detail, .provider-list, .settings-column, .settings-content
+) { border-radius: var(--sf-radius-control) !important; }

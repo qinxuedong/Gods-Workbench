@@ -25,11 +25,11 @@ assert.match(
   /html\.directory-settings-page\.workspace-embedded\s*\{[^}]*background:\s*var\(--gw-settings-container-background\)/s,
   '嵌入态目录设置 html 应使用共享容器底色'
 );
-// signal-flow.css 对资产路由 body 有 !important 锁底色，嵌入态需用更高权重覆盖。
+// 资产路由 body 底色由 asset-hardware-theme.css 以 !important 锁定；嵌入态需用更高权重覆盖。
 assert.match(
   directoryCss,
   /html\.directory-settings-page\.workspace-embedded\s+body\.gw-signal\.gw-page--asset-manager\s*\{[^}]*background:\s*var\(--gw-settings-container-background\)\s*!important/s,
-  '嵌入态目录设置 body 应使用共享容器底色并压过 signal-flow 锁底'
+  '嵌入态目录设置 body 应使用共享容器底色并压过资产主题锁底'
 );
 
 // 3. API与密钥配置：嵌入态与目录页同口径。

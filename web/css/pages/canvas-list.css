@@ -518,3 +518,180 @@ html body.gw-page--canvas .ws-board-actions > * { top:0; }
 .ws-card-title, .ws-trash-confirm-title { font-size:var(--gw-type-headline-sm); line-height:var(--gw-leading-headline-sm); font-weight:var(--gw-weight-medium); }
 
 .ws-trash-head-title, .ws-board-name { font-size:var(--gw-type-headline-md); line-height:var(--gw-leading-headline-md); font-weight:var(--gw-weight-bold); }
+
+/* QIN-645：signal-flow.css 下线后，本页原先依赖其提供的样式在此承接，
+   变量取值来自 hardware-design-system.css 的内嵌页公共层。
+   规则保持 signal-flow 原文顺序并置于本文件末尾（canvas-overview.css 之前），
+   对齐迁移前 signal-flow 的加载位置。 */
+body.gw-signal :is(.workspace-page, .asset-page, .page, .chat-shell, .workspace) { min-width: 0;
+  background: transparent !important;
+  color: var(--sf-text) !important; }
+body.gw-page--canvas .ws-sidebar, body.gw-page--canvas .ws-main { background: var(--sf-bg) !important; color: var(--sf-text) !important; }
+body.gw-page--canvas :is(.ws-topbar, .ws-board-actions, .ws-trash-head) { background: rgba(18, 28, 38, .9) !important; border-color: var(--sf-line) !important; backdrop-filter: blur(16px); }
+body.gw-page--canvas :is(.ws-card, .ws-trash-card, .ws-card-pop, .ws-create-card, .ws-board-empty-icon) { border-color: var(--canvas-border, var(--sf-line)) !important; background: var(--canvas-surface, var(--sf-content)) !important; border-radius: var(--sf-radius-control) !important; box-shadow: none !important; }
+@media (max-width: 760px) {
+body.gw-page--canvas .ws-sidebar { max-height: 38vh; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+body.gw-signal :is(.topbar, .episode-header, .center-titlebar, .asset-page-head, .page-head, .ws-topbar, .content-head, .observability-toolbar, .composer, .ws-board-actions, .ws-trash-head) { background: var(--sf-surface) !important; }
+}
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .container-box, .page, .wrap, .layout, .chat-shell, .workspace, .asset-page) { color: var(--sf-text) !important; }
+body.gw-page--canvas :is(.shell, .board, .workspace, .ws-board) { background-color: var(--sf-bg) !important;
+  background-image: linear-gradient(rgba(173, 205, 220, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(173, 205, 220, .07) 1px, transparent 1px) !important;
+  background-size: 32px 32px !important; }
+body.gw-page--canvas { --page: var(--sf-bg) !important;
+  --panel: rgba(18, 28, 38, .94) !important;
+  --card: var(--sf-content) !important;
+  --card-solid: var(--sf-content) !important;
+  --soft: var(--sf-raised) !important;
+  --soft-2: #20313d !important;
+  --grid: rgba(173, 205, 220, .10) !important;
+  --line: var(--sf-line) !important;
+  --line-2: var(--sf-line-strong) !important;
+  --text: var(--sf-text) !important;
+  --muted: var(--sf-muted) !important;
+  --faint: var(--sf-faint) !important;
+  --accent: var(--sf-cyan) !important;
+  --accent-soft: rgba(105, 214, 255, .12) !important;
+  --accent-line: rgba(105, 214, 255, .4) !important;
+  --shadow: rgba(0, 0, 0, .3) !important;
+  background: var(--sf-bg) !important;
+  color: var(--sf-text) !important; }
+body.gw-page--canvas :is(.ws-sidebar, .ws-main, .ws-board, .ws-trash-panel) { background-color: var(--sf-bg) !important; color: var(--sf-text) !important; }
+body.gw-page--canvas :is(.ws-topbar, .ws-board-actions, .ws-trash-head) { background: rgba(18, 28, 38, .94) !important; border-color: var(--sf-line) !important; }
+body.gw-page--canvas :is(.ws-board-name, .ws-board-empty-text, .ws-card-title) { color: var(--sf-text) !important; }
+body.gw-page--canvas :is(.ws-board-empty, .ws-board-empty-sub, .ws-card-time, .ws-card-nodes) { color: var(--sf-muted) !important; }
+body.gw-page--canvas .ws-board-empty-icon { background: var(--sf-content) !important; border-color: var(--sf-line) !important; color: var(--sf-cyan) !important; }
+@media (max-width: 620px) {
+body.gw-signal :where(.page, .wrap, .layout, .content, .workspace-page, .home-page, .home-grid, .shell, .workspace, .ws-main) { width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important; }
+}
+@media (max-width: 620px) {
+html[data-studio-scale="off"].studio-scale-managed body.gw-page--canvas .workspace,
+  body.gw-page--canvas .workspace { flex-direction: column !important;
+    overflow: hidden !important; }
+}
+@media (max-width: 620px) {
+html[data-studio-scale="off"].studio-scale-managed body.gw-page--canvas .ws-sidebar,
+  body.gw-page--canvas .ws-sidebar { flex: 0 0 auto !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    max-height: 42vh !important;
+    border-right: 0 !important;
+    border-bottom: 1px solid var(--line) !important; }
+}
+@media (max-width: 620px) {
+body.gw-page--canvas .ws-main { min-height: 0 !important; }
+}
+@media (max-width: 620px) {
+body.gw-page--canvas :is(.ws-topbar, .ws-board-actions) { width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    flex-wrap: wrap !important;
+    box-sizing: border-box !important; }
+}
+@media (max-width: 620px) {
+body.gw-page--canvas .ws-topbar-right { flex: 0 0 auto !important;
+    flex-wrap: wrap !important;
+    justify-content: flex-start !important;
+    min-width: 0 !important; }
+}
+@media (max-width: 620px) {
+body.gw-page--canvas .ws-topbar-right > * { flex: 0 0 auto !important;
+    max-width: 100% !important; }
+}
+body.gw-page--canvas :is(.ws-side-title, .ws-trash-head) { color: var(--sf-muted) !important; font-size: var(--sf-fs-caption); font-weight: var(--sf-fw-semibold); letter-spacing: .08em; }
+body.gw-page--canvas :is(.workspace, .shell) { width: 100% !important;
+  max-width: none !important;
+  min-width: 0 !important;
+  min-height: 0 !important;
+  height: 100dvh !important;
+  background: var(--sf-bg) !important;
+  color: var(--sf-text) !important; }
+body.gw-page--canvas .ws-sidebar { display: none !important; }
+body.gw-page--canvas .ws-main { min-width: 0 !important; min-height: 0 !important; background: var(--sf-bg) !important; }
+body.gw-page--canvas .ws-board-actions { min-height: 48px !important;
+  height: auto !important;
+  margin-top: 0 !important;
+  padding: 10px 18px !important;
+  align-items: center !important;
+  justify-content: flex-start !important;
+  border: 0 !important;
+  border-bottom: none !important;
+  border-radius: 0 !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important;
+  z-index: 5 !important; }
+body.gw-page--canvas :is(.ws-board-name, .ws-board-empty-text) { color: var(--sf-text) !important; font-weight: var(--sf-fw-semibold) !important; }
+body.gw-page--canvas .ws-board { background-color: var(--sf-bg) !important;
+  background-image: none !important;
+  background-size: auto !important; }
+body.gw-page--canvas :is(.ws-card, .ws-trash-card, .ws-card-pop, .ws-create-card, .ws-board-empty-icon) { border: 1px solid var(--sf-line) !important;
+  border-radius: var(--sf-radius-panel) !important;
+  background: var(--canvas-surface, var(--sf-content)) !important;
+  border-color: var(--canvas-border, var(--sf-line)) !important;
+  color: var(--sf-text) !important;
+  box-shadow: none !important; }
+body.gw-page--canvas :is(.ws-card-nodes, .ws-card-time, .ws-board-empty-sub, .ws-card-meta) { color: var(--sf-muted) !important; }
+body.gw-page--canvas :is(.ws-trash-panel, .ws-trash-head) { background: var(--sf-bg) !important; border-color: var(--sf-line) !important; }
+body.gw-page--canvas .ws-trash-head { min-height: 58px !important; padding: 10px 18px !important; }
+body.gw-page--canvas :is(.ws-trash-note, .ws-card-delete-confirm, .ws-trash-confirm) { border-color: rgba(242, 198, 109, .38) !important; background: rgba(242, 198, 109, .1) !important; color: var(--sf-amber) !important; }
+@media (max-width: 620px) {
+body.gw-page--canvas .ws-board-actions { height: auto !important; min-height: 54px !important; margin-top: 0 !important; padding: 8px 12px !important; justify-content: flex-start !important; flex-wrap: wrap !important; }
+}
+html body.gw-signal[data-theme="light"] :is(.workspace-page, .asset-page, .page, .wrap, .layout, .container-box, .layout-container, .workspace, .shell, .chat-shell, .home-page, .center-page),
+html body.gw-signal.theme-light :is(.workspace-page, .asset-page, .page, .wrap, .layout, .container-box, .layout-container, .workspace, .shell, .chat-shell, .home-page, .center-page) { background: var(--sf-bg) !important;
+  color: var(--sf-text) !important; }
+
+/* 首轮审核补漏：body.gw-page--canvas 归属族的 46 条规则，按 signal-flow 原文顺序补齐。
+   空实例下 .ws-card / .ws-project-row 等元素不存在，逐元素对拍看不出缺口；
+   但真实数据下它们分别承担卡片标题、项目行、状态色的取值，必须一并承接。 */
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { background: var(--sf-cyan) !important; color: var(--sf-on-accent) !important; }
+body.gw-page--project-board .topbar, body.gw-page--gpt-chat .chat-main > .topbar, body.gw-page--canvas .topbar { background: var(--sf-surface) !important; background-color: var(--sf-surface) !important; }
+body.gw-page--canvas :is(.panel, .toolbar, .canvas-nav, .tool-btn) { border-color: var(--sf-line) !important; background: var(--sf-surface) !important; background-color: var(--sf-surface) !important; color: var(--sf-text) !important; box-shadow: none !important; }
+body.gw-page--canvas .ws-board-count { background: rgba(242, 198, 109, .14) !important; color: var(--sf-amber) !important; border: 1px solid rgba(242, 198, 109, .4) !important; }
+body.gw-page--canvas :is(.ws-card, .ws-trash-card, .ws-card-pop, .ws-create-card) { background: var(--sf-content) !important; border-color: var(--sf-line) !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { background: var(--sf-cyan) !important; border-color: var(--sf-cyan) !important; color: #071018 !important; }
+body.gw-page--canvas .ws-project-name { color: var(--sf-text); font-size: var(--gw-type-body-sm); font-weight: var(--sf-fw-medium); }
+body.gw-page--canvas .ws-project-count { color: var(--sf-faint); font-family: var(--gw-font-mono); font-size: var(--sf-fs-micro); }
+body.gw-page--canvas .ws-project-row.active .ws-project-name { color: var(--sf-cyan); }
+body.gw-page--canvas .ws-board-name { font-size: var(--sf-fs-title); font-weight: var(--sf-fw-semibold); }
+body.gw-page--canvas .ws-board-count { font-family: var(--gw-font-mono); font-size: var(--sf-fs-micro); }
+body.gw-page--canvas .ws-card-title { color: var(--sf-text) !important; font-size: var(--gw-type-body-sm); font-weight: var(--sf-fw-semibold); }
+body.gw-page--canvas :is(.ws-card-nodes, .ws-card-time) { color: var(--sf-muted) !important; font-family: var(--gw-font-mono); font-size: var(--sf-fs-micro); }
+body.gw-page--canvas .ws-board-count { background: rgba(242, 198, 109, .14) !important; border: 1px solid rgba(242, 198, 109, .4) !important; color: var(--sf-amber) !important; border-radius: var(--sf-radius-tight) !important; }
+body.gw-page--canvas :is(.ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))) { min-height: 36px !important; height: 36px !important; border: 1px solid var(--sf-line-strong) !important; border-radius: var(--sf-radius-control) !important; background: var(--sf-surface) !important; color: var(--sf-text) !important; box-shadow: none !important; }
+body.gw-page--canvas :is(.ws-icon-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)), .ws-paste-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled))):hover { border-color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .12) !important; color: var(--sf-cyan) !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)) { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: #071018 !important; }
+body.gw-page--canvas .ws-primary-btn:not(:where(.hw-btn,.btn-hw-tactile,.btn-tactile-keycap,.btn-hw-round,.hw-round-btn,.btn-segmented-item,.hw-segmented-btn,.btn-rocker-paddle,.hw-rocker-btn,.btn-slide-toggle,.hw-slide-toggle,.btn-launch-orb,.launch-orb-btn,.btn-pill-active,.btn-pill-inactive,.btn-pill-disabled)):hover { background: #9be4ff !important; color: #071018 !important; }
+body.gw-page--canvas :is(.ws-card:hover, .ws-card.selected, .ws-card.active) { border-color: var(--canvas-accent, var(--sf-cyan)) !important; background: var(--canvas-surface, var(--sf-content)) !important; transform: none !important; }
+body.gw-page--canvas :is(.ws-card.scope-project, .ws-card.scope-standalone) { border-left: 1px solid var(--sf-line) !important; }
+body.gw-page--canvas :is(.ws-card-icon, .ws-card-meta) { border-color: var(--sf-line) !important; background: var(--sf-raised) !important; color: var(--sf-muted) !important; }
+body.gw-page--canvas :is(.ws-card-kind.smart, .ws-card-kind.reference, .ws-card-kind.classic, .ws-card-scope) { border-color: var(--sf-line-strong) !important; background: rgba(105, 214, 255, .1) !important; color: var(--sf-cyan) !important; border-radius: var(--sf-radius-tight) !important; }
+body.gw-page--canvas :is(.ws-pop-item:hover, .ws-trash-act:hover, .ws-card-menu:hover, .ws-card-child-btn:hover) { background: rgba(105, 214, 255, .1) !important; color: var(--sf-cyan) !important; border-color: var(--sf-line-strong) !important; }
+body.gw-page--canvas .shell > .topbar { top: 12px !important; left: 24px !important; right: 24px !important; min-height: 52px !important; }
+body.gw-page--canvas .shell :is(.panel, .toolbar, .canvas-nav, .tool-btn) { border-color: var(--sf-line) !important; border-radius: var(--sf-radius-panel) !important; background: var(--sf-surface) !important; color: var(--sf-text) !important; box-shadow: none !important; backdrop-filter: none !important; }
+body.gw-page--canvas .shell :is(.tool-btn:hover, .tool-btn.active, .canvas-asset-toggle.active) { border-color: var(--sf-cyan) !important; background: rgba(105, 214, 255, .14) !important; color: var(--sf-cyan) !important; }
+body.gw-page--canvas .shell :is(.board, .shell) { background-color: var(--sf-bg) !important; background-image: linear-gradient(rgba(173, 205, 220, .07) 1px, transparent 1px), linear-gradient(90deg, rgba(173, 205, 220, .07) 1px, transparent 1px) !important; background-size: 32px 32px !important; }
+body.gw-page--canvas .shell .node { border: 1px solid var(--sf-line) !important; border-radius: var(--sf-radius-panel) !important; background: var(--sf-content) !important; color: var(--sf-text) !important; box-shadow: none !important; }
+body.gw-page--canvas .shell .node::before { border-radius: inherit !important; background: var(--sf-content) !important; }
+body.gw-page--canvas .shell .node:hover, body.gw-page--canvas .shell .node.selected { border-color: var(--sf-cyan) !important; box-shadow: 0 0 0 1px var(--sf-cyan) !important; }
+body.gw-page--canvas .shell .node-head { border-radius: 7px 7px 0 0 !important; border-bottom-color: var(--sf-line) !important; background: var(--sf-raised) !important; }
+body.gw-page--canvas .shell .node-title { color: var(--sf-muted) !important; font-size: var(--sf-fs-caption) !important; font-weight: var(--sf-fw-semibold) !important; letter-spacing: .06em !important; }
+body.gw-page--canvas .shell :is(.node-run-status.queued, .node-run-status.running, .node-run-status.failed) { border: 1px solid currentColor !important; border-radius: var(--sf-radius-tight) !important; background: transparent !important; }
+body.gw-page--canvas .shell .node-run-status.queued { color: var(--sf-muted) !important; }
+body.gw-page--canvas .shell .node-run-status.running { color: var(--sf-cyan) !important; }
+body.gw-page--canvas .shell .node-run-status.failed { color: var(--sf-coral) !important; }
+body.gw-page--canvas .shell :is(.create-menu, .workflow-transfer-panel, .canvas-asset-panel, .asset-manager-panel, .log-panel, .image-edit-modal, .minimap, .minimap-arrange-btn) { border: 1px solid var(--sf-line-strong) !important; border-radius: var(--sf-radius-panel) !important; background: var(--sf-surface) !important; color: var(--sf-text) !important; box-shadow: var(--sf-shadow-float) !important; backdrop-filter: none !important; }
+body.gw-page--canvas .shell :is(.menu-btn:hover, .workflow-transfer-btn:hover, .asset-manager-tools button:hover, .asset-manager-list button:hover) { background: rgba(105, 214, 255, .12) !important; color: var(--sf-cyan) !important; }
+body.gw-page--canvas .shell :is(.workflow-transfer-btn.primary, .asset-manager-tools button.primary) { border-color: var(--sf-cyan) !important; background: var(--sf-cyan) !important; color: #071018 !important; }
+body.gw-page--canvas .shell :is(.canvas-asset-select, .canvas-asset-drop, .asset-manager-side, .asset-manager-main) { border-color: var(--sf-line-strong) !important; background: var(--sf-raised) !important; color: var(--sf-text) !important; }
+body.gw-page--canvas .shell :is(.canvas-asset-item, .asset-manager-card) { border-color: var(--sf-line) !important; border-radius: var(--sf-radius-control) !important; background: var(--sf-content) !important; box-shadow: none !important; }
+body.gw-page--canvas .shell :is(.canvas-asset-item:hover, .asset-manager-card:hover) { border-color: var(--sf-cyan) !important; transform: none !important; }
+body.gw-page--canvas .shell :is(.canvas-asset-thumb-wrap, .asset-manager-card img, .asset-manager-card-text) { background: var(--sf-raised) !important; }
+body.gw-page--canvas .shell :is(.link, .link-active, .link.temp) { stroke: var(--sf-cyan) !important; }
+@media (max-width: 620px) { body.gw-page--canvas .shell > .topbar { top: 10px !important; left: 12px !important; right: 12px !important; flex-direction: column !important; align-items: stretch !important; } }
+@media (max-width: 620px) { body.gw-page--canvas .shell > .topbar :is(.canvas-nav, .toolbar) { width: 100% !important; max-width: 100% !important; } }

@@ -1,3 +1,352 @@
+/* QIN-645：signal-flow.css 下线后，本页原先依赖其提供的样式在此承接，
+   变量取值来自 hardware-design-system.css 的内嵌页公共层。
+   规则保持 signal-flow 原文顺序并置于本页 CSS 顶部，对齐迁移前
+   signal-flow 先于本页规则加载的级联次序。 */
+body.gw-signal :is(.workspace-page, .asset-page, .page, .chat-shell, .workspace) { min-width: 0;
+  background: transparent !important;
+  color: var(--sf-text) !important; }
+body.gw-signal :is(.topbar, .episode-header, .center-titlebar, .asset-page-head, .page-head, .ws-topbar, .content-head, .observability-toolbar) { border-color: var(--sf-line) !important;
+  background: rgba(18, 28, 38, .88) !important;
+  backdrop-filter: blur(16px) saturate(1.08); }
+body.gw-signal :is(.breadcrumbs, .breadcrumbs span, .asset-breadcrumbs, .page-subtitle, .episode-brand p, .muted, .faint, .sub, .hint) { color: var(--sf-muted) !important; font-size: var(--sf-fs-secondary); font-weight: var(--sf-fw-regular); }
+body.gw-signal :is(.section-frame, .panel, .overview-panel, .agent-panel, .episode-create, .center-pane, .observability-panel, .settings-column, .settings-content, .side-card, .block, .graph-card, .result-frame, .upload-item, .masonry-item, .asset-tabs, .asset-manager-root) { border: 1px solid var(--sf-line) !important;
+  border-radius: var(--sf-radius-panel) !important;
+  background: var(--sf-content) !important;
+  box-shadow: none !important; }
+body.gw-signal :is(.section-head, .section-body, .panel-heading, .block-head, .content-head) { border-color: var(--sf-line) !important; }
+body.gw-signal :is(.section-head, .panel-heading, .block-head) { background: var(--sf-raised) !important; }
+body.gw-page--home .workspace-page,
+body.gw-page--project-board .workspace-page,
+body.gw-page--video .workspace-page,
+body.gw-page--settings .workspace-page,
+body.gw-page--task-center .workspace-page { padding: 20px 24px 28px; }
+body.gw-page--task-center .observability-toolbar { border-radius: var(--sf-radius-panel); }
+body.gw-page--task-center :is(.observability-tabs, .observability-tab) { border-color: var(--sf-line) !important; }
+body.gw-page--task-center :is(.overview-summary, .summary-item, .task-table-wrap, .event-list, .chart-wrap, .health-list, .failure-list, .context-list) { background: var(--sf-content) !important; border-color: var(--sf-line) !important; }
+body.gw-page--task-center .context-list > * { background: var(--sf-raised) !important; color: var(--sf-text) !important; border-color: var(--sf-line) !important; }
+body.gw-page--task-center .context-list :is(dt, dd, span, code) { color: inherit !important; }
+body.gw-page--task-center .data-gap { color: var(--sf-faint) !important; }
+@media (max-width: 980px) {
+body.gw-signal :is(.workspace-page, .asset-page, .page, .container-box) { padding-inline: 16px !important; }
+}
+@media (max-width: 980px) {
+body.gw-signal :is(.home-page, .center-page) { height: auto; min-height: 100vh; overflow: visible; }
+}
+@media (max-width: 980px) {
+body.gw-signal :is(.topbar, .episode-header, .page-head, .center-titlebar) { flex-wrap: wrap; height: auto; min-height: 44px; gap: 10px; }
+}
+@media (max-width: 980px) {
+body.gw-signal .top-actions { flex-wrap: wrap; }
+}
+@media (max-width: 760px) {
+body.gw-signal :is(.topbar, .episode-header, .page-head, .center-titlebar) { padding: 12px !important; }
+}
+@media (max-width: 760px) {
+body.gw-signal :is(.top-actions, .project-toolbar, .episode-toolbar, .content-actions) { width: 100%; }
+}
+@media (max-width: 760px) {
+body.gw-signal :is(.top-actions > *, .project-toolbar > *, .episode-toolbar > *, .content-actions > *) { min-height: 40px; }
+}
+@media (max-width: 760px) {
+body.gw-signal :is(.two-col, .form-grid, .overview-charts, .metrics-grid) { grid-template-columns: 1fr !important; }
+}
+@supports not (backdrop-filter: blur(1px)) {
+body.gw-signal :is(.topbar, .episode-header, .center-titlebar, .asset-page-head, .page-head, .ws-topbar, .content-head, .observability-toolbar, .composer, .ws-board-actions, .ws-trash-head) { background: var(--sf-surface) !important; }
+}
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .container-box, .page, .wrap, .layout, .chat-shell, .workspace, .asset-page) { color: var(--sf-text) !important; }
+body.gw-signal:not(.gw-page--home) :is(.topbar, .episode-header, .center-titlebar, .asset-page-head, .page-head, .ws-topbar, .content-head, .observability-toolbar) { border-color: var(--sf-line) !important;
+  background: var(--sf-surface) !important;
+  color: var(--sf-text) !important;
+  box-shadow: none !important; }
+body.gw-signal:not(.gw-page--home) :is(.panel, .section-frame, .block, .card, .stage-card, .stage-panel, .stage-shell, .production-project-summary, .production-filterbar, .production-board, .production-gate-grid, .production-jobs, .observability-panel, .task-table-wrap, .event-list, .overview-summary, .chart-wrap, .health-list, .failure-list, .context-list, .provider-list, .provider-item, .settings-column, .settings-content, .asset-manager-root, .asset-board, .asset-grid, .asset-card, .asset-detail, .graph-card, .workflow-list, .side-card) { border-color: var(--sf-line) !important;
+  background: var(--sf-content) !important;
+  border-radius: var(--sf-radius-panel) !important;
+  box-shadow: none !important; }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) :is(table, .task-table) { border-collapse: separate;
+  border-spacing: 0;
+  color: var(--sf-text); }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) :is(th, td) { min-height: 40px;
+  border-color: var(--sf-line) !important;
+  color: var(--sf-text) !important;
+  font-size: var(--sf-fs-body); }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) :is(th, .panel-heading, .section-head, .view-heading) { color: var(--sf-muted) !important;
+  font-size: var(--sf-fs-title);
+  font-weight: var(--sf-fw-semibold); }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) th { font-size: var(--sf-fs-caption) !important;
+  font-weight: var(--sf-fw-medium) !important; }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) :is(.production-dialog, .task-detail-dialog, dialog, .asset-review-drawer, .asset-account-modal, .asset-team-modal, .asset-share-modal) { border: 1px solid var(--sf-line-strong) !important;
+  border-radius: var(--sf-radius-panel) !important;
+  background: var(--sf-surface) !important;
+  color: var(--sf-text) !important;
+  box-shadow: var(--sf-shadow-float) !important; }
+body:is(.gw-page--project-board, .gw-page--task-center, .gw-page--asset-manager, .gw-page--settings, .gw-page--api-settings) dialog::backdrop { background: rgba(4, 9, 14, .72); }
+@media (max-width: 900px) {
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .container-box, .page, .wrap, .layout) { padding-inline: 16px !important; }
+}
+@media (max-width: 900px) {
+body.gw-signal:not(.gw-page--home) :is(.topbar, .episode-header, .center-titlebar, .page-head, .asset-page-head) { min-height: 58px; height: auto !important; flex-wrap: wrap; gap: 12px; }
+}
+@media (max-width: 900px) {
+body.gw-signal:not(.gw-page--home) :is(.top-actions, .project-toolbar, .episode-toolbar, .content-actions, .asset-head-actions) { width: 100%; flex-wrap: wrap; }
+}
+@media (max-width: 900px) {
+body.gw-page--project-board .production-gate-grid,
+  body.gw-page--task-center .observability-main-grid,
+  body.gw-page--asset-manager .asset-manager-root { grid-template-columns: 1fr !important; }
+}
+@media (max-width: 600px) {
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .container-box, .page, .wrap, .layout) { padding: 12px !important; }
+}
+@media (max-width: 600px) {
+body.gw-signal:not(.gw-page--home) :is(.topbar, .episode-header, .center-titlebar, .page-head, .asset-page-head) { padding: 10px 0 !important; }
+}
+@media (max-width: 600px) {
+body.gw-signal:not(.gw-page--home) :is(.top-actions, .project-toolbar, .episode-toolbar, .content-actions, .asset-head-actions) { gap: 6px; }
+}
+@media (max-width: 600px) {
+body.gw-signal:not(.gw-page--home) :is(.top-actions > *, .project-toolbar > *, .episode-toolbar > *, .content-actions > *, .asset-head-actions > *) { min-height: 40px; }
+}
+@media (max-width: 600px) {
+body.gw-signal:not(.gw-page--home) :is(.task-table-wrap, .event-list, .asset-grid, .workflow-list) { overflow-x: auto; }
+}
+body.gw-signal:not(.gw-page--home) :is(.topbar, .episode-header, .center-titlebar, .asset-page-head, .page-head, .ws-topbar, .content-head, .observability-toolbar) { background: var(--sf-surface) !important;
+  background-color: var(--sf-surface) !important;
+  background-image: none !important;
+  color: var(--sf-text) !important; }
+body.gw-signal:not(.gw-page--home) .topbar,
+body.gw-signal:not(.gw-page--home) .ws-topbar,
+body.gw-signal:not(.gw-page--home) .asset-page-head,
+body.gw-signal:not(.gw-page--home) .page-head,
+body.gw-signal:not(.gw-page--home) .episode-header,
+body.gw-signal:not(.gw-page--home) .center-titlebar { background: var(--sf-surface) !important;
+  background-color: var(--sf-surface) !important;
+  background-image: none !important; }
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .asset-page, .container-box, .page, .wrap, .layout) { width: 100% !important;
+  max-width: none !important;
+  margin-inline: 0 !important;
+  box-sizing: border-box;
+  padding: 12px 24px 18px !important; }
+body.gw-signal:not(.gw-page--home) :is(.workspace-page > .topbar, .asset-page > .asset-page-head, .page > .page-head, .wrap > .page-head) { min-height: 50px !important;
+  height: 50px !important;
+  margin-bottom: 10px !important;
+  padding: 0 2px 10px !important;
+  align-items: center !important;
+  box-sizing: border-box; }
+body.gw-signal:not(.gw-page--home) :is(.workspace-page > .topbar .top-actions, .asset-page-head .asset-head-actions, .page-head .content-actions) { align-items: center;
+  gap: 9px; }
+@media (max-width: 620px) {
+body.gw-signal:not(.gw-page--home) :is(.workspace-page, .asset-page, .container-box, .page, .wrap, .layout) { padding: 10px 12px 14px !important; }
+}
+@media (max-width: 620px) {
+body.gw-signal:not(.gw-page--home) :is(.workspace-page > .topbar, .asset-page > .asset-page-head, .page > .page-head, .wrap > .page-head) { min-height: 50px !important;
+    height: auto !important;
+    padding: 0 0 10px !important;
+    flex-wrap: wrap;
+    row-gap: 8px; }
+}
+@media (max-width: 620px) {
+body.gw-signal :where(.page, .wrap, .layout, .content, .workspace-page, .home-page, .home-grid, .shell, .workspace, .ws-main) { width: 100% !important;
+    max-width: 100% !important;
+    min-width: 0 !important;
+    box-sizing: border-box !important; }
+}
+body.gw-page--task-center .observability-field > span { color: var(--sf-muted) !important; font-size: var(--sf-fs-caption); font-weight: var(--sf-fw-medium); }
+body.gw-page--task-center .summary-item span { color: var(--sf-muted) !important; font-size: var(--sf-fs-caption); }
+body.gw-page--task-center .summary-item strong { color: var(--sf-text) !important; font-family: var(--gw-font-mono); font-size: var(--gw-type-metric-sm); font-weight: var(--sf-fw-semibold); font-variant-numeric: tabular-nums; }
+body.gw-page--task-center .observability-panel :is(h3, .panel-heading h3) { font-size: var(--sf-fs-heading); font-weight: var(--sf-fw-semibold); }
+body.gw-page--task-center :is(td code, td .mono, .task-table code) { color: var(--sf-cyan) !important; font-family: var(--gw-font-mono); font-size: var(--sf-fs-caption); }
+@media (min-width: 621px) {
+body.gw-signal :is(
+    .workspace-page > .topbar,
+    .asset-page > .asset-page-head,
+    .page > .page-head,
+    .wrap > .page-head,
+    .workspace > .ws-main > .ws-topbar,
+    .episode-header
+  ) { min-height: var(--sf-context-header-height) !important;
+    height: var(--sf-context-header-height) !important;
+    margin-bottom: 10px !important;
+    padding: 0 2px 10px !important;
+    align-items: flex-end !important;
+    box-sizing: border-box;
+    border: 0 !important;
+    border-bottom: 1px solid var(--sf-line) !important;
+    border-radius: 0 !important;
+    background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important; }
+}
+@media (min-width: 621px) {
+body.gw-signal :is(.page-header, .center-titlebar) { background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important; }
+}
+@media (min-width: 621px) {
+html body.gw-signal:not(.gw-page--home):not(.studio-theme-dark):not(.theme-dark):not([data-theme="dark"]) :is(
+    .workspace-page > .topbar,
+    .asset-page > .asset-page-head,
+    .page > .page-head,
+    .wrap > .page-head,
+    .workspace > .ws-main > .ws-topbar,
+    .episode-header,
+    .center-titlebar,
+    .page-header
+  ),
+  html body.gw-signal:not(.gw-page--home) :is(
+    .workspace-page > .topbar,
+    .asset-page > .asset-page-head,
+    .page > .page-head,
+    .wrap > .page-head,
+    .workspace > .ws-main > .ws-topbar,
+    .episode-header,
+    .center-titlebar,
+    .page-header
+  ) { background: transparent !important;
+    background-color: transparent !important;
+    background-image: none !important;
+    box-shadow: none !important;
+    backdrop-filter: none !important; }
+}
+html body.gw-signal:not(.gw-page--home) :is(
+  .workspace-page > .topbar,
+  .asset-page > .asset-page-head,
+  .page > .page-head,
+  .wrap > .page-head,
+  .workspace > .ws-main > .ws-topbar,
+  .episode-header,
+  .center-titlebar,
+  .page-header
+) { background: transparent !important;
+  background-color: transparent !important;
+  background-image: none !important;
+  box-shadow: none !important;
+  backdrop-filter: none !important; }
+html body.gw-signal[data-theme="light"] :is(.workspace-page, .asset-page, .page, .wrap, .layout, .container-box, .layout-container, .workspace, .shell, .chat-shell, .home-page, .center-page),
+html body.gw-signal.theme-light :is(.workspace-page, .asset-page, .page, .wrap, .layout, .container-box, .layout-container, .workspace, .shell, .chat-shell, .home-page, .center-page) { background: var(--sf-bg) !important;
+  color: var(--sf-text) !important; }
+html body.gw-signal[data-theme="light"] :is(.panel, .section-frame, .block, .card, .stage-card, .stage-panel, .stage-shell, .production-board, .production-gate-grid, .production-jobs, .observability-panel, .task-table-wrap, .event-list, .overview-summary, .chart-wrap, .health-list, .failure-list, .context-list, .provider-list, .provider-item, .settings-column, .settings-content, .asset-manager-root, .asset-board, .asset-grid, .asset-card, .asset-detail, .graph-card, .workflow-list, .side-card, .tool-panel, .engine-panel, .console-card) { border-color: var(--sf-line) !important;
+  background: var(--sf-content) !important;
+  color: var(--sf-text) !important;
+  box-shadow: none !important; }
+html body.gw-signal[data-theme="light"] :is(.section-head, .panel-heading, .block-head, .content-head, .panel-head, .content-toolbar, .manage-tools, .asset-clipboard-bar, .stage-heading, .asset-toolbar) { border-color: var(--sf-line) !important;
+  background: var(--sf-raised) !important;
+  color: var(--sf-text) !important; }
+html body.gw-signal[data-theme="light"] :is(.stage, .pipeline-shell, .panel, .section-frame, .production-board, .observability-panel, .settings-content, .asset-manager-root, .container-box, .layout, .chat-shell) { --episode-bg: var(--sf-bg) !important;
+  --episode-surface: var(--sf-content) !important;
+  --episode-surface-2: var(--sf-raised) !important;
+  --episode-surface-3: var(--sf-surface) !important;
+  --episode-ink: var(--sf-text) !important;
+  --episode-muted: var(--sf-muted) !important;
+  --episode-line: var(--sf-line-strong) !important;
+  --episode-line-soft: var(--sf-line) !important;
+  --episode-accent: var(--sf-cyan) !important;
+  --episode-accent-strong: var(--sf-primary-fill) !important;
+  --episode-green: var(--sf-mint) !important;
+  --episode-warning: var(--sf-amber) !important;
+  --episode-danger: var(--sf-coral) !important;
+  --episode-blue: var(--sf-indigo) !important; }
+html body.gw-signal.gw-page--task-center { --sf-asset-image: var(--sf-cyan);
+  --sf-asset-video: var(--sf-mint);
+  --sf-asset-audio: var(--sf-amber);
+  --sf-asset-font: var(--sf-indigo);
+  --sf-asset-model: var(--sf-coral);
+  --sf-asset-document: color-mix(in srgb, var(--sf-cyan) 72%, var(--sf-indigo) 28%);
+  --sf-asset-workflow: color-mix(in srgb, var(--sf-indigo) 72%, var(--sf-mint) 28%);
+  --sf-asset-project-file: color-mix(in srgb, var(--sf-amber) 68%, var(--sf-coral) 32%);
+  --sf-asset-text: color-mix(in srgb, var(--sf-coral) 55%, var(--sf-cyan) 45%);
+  --sf-asset-other: var(--sf-muted); }
+html body.gw-signal.gw-page--task-center :is(.longtask-panel, .asset-volume-panel) { min-width: 0;
+  overflow: hidden; }
+html body.gw-signal.gw-page--task-center :is(.longtask-panel, .asset-volume-panel) > .panel-heading > div { min-width: 0; }
+html body.gw-signal.gw-page--task-center :is(.longtask-panel, .asset-volume-panel) > .panel-heading > :last-child { flex: 0 0 auto;
+  max-width: 100%;
+  overflow-wrap: anywhere; }
+html body.gw-signal.gw-page--task-center #longTaskProgress { display: block;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 96px;
+  padding: 10px 12px 0;
+  overflow: hidden;
+  background: var(--sf-content) !important; }
+html body.gw-signal.gw-page--task-center #longTaskProgress > .longtask-list { display: grid;
+  width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  gap: 1px;
+  list-style: none;
+  background: var(--sf-line) !important; }
+html body.gw-signal.gw-page--task-center #longTaskProgress > .data-gap { width: 100%;
+  max-width: 100%;
+  min-height: 58px;
+  margin: 0;
+  padding: 12px;
+  background: var(--sf-content) !important; }
+html body.gw-signal.gw-page--task-center #longTaskProgress .longtask-list > li { width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--sf-content) !important; }
+html body.gw-signal.gw-page--task-center :is(.asset-volume-columns, .asset-volume-row) { width: 100%;
+  max-width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+  grid-template-columns: minmax(120px, .56fr) minmax(0, 1fr) minmax(104px, .38fr) !important;
+  gap: 10px; }
+html body.gw-signal.gw-page--task-center .asset-volume-columns { padding: 0 10px 7px; }
+@media (max-width: 780px) {
+html body.gw-signal.gw-page--task-center :is(.asset-volume-columns, .asset-volume-row) { grid-template-columns: minmax(0, 1fr) minmax(4.5ch, 10ch) !important;
+    gap: 6px 10px; }
+}
+@media (max-width: 780px) {
+html body.gw-signal.gw-page--task-center .asset-volume-columns span:first-child,
+  html body.gw-signal.gw-page--task-center .asset-volume-row > .asset-volume-head { grid-column: 1 / -1; }
+}
+@media (max-width: 780px) {
+html body.gw-signal.gw-page--task-center .asset-volume-columns span:nth-child(2) { grid-column: 1; }
+}
+html body.gw-signal.gw-page--task-center :is(.longtask-trigger, .observability-tab, .asset-volume-more .btn, .observability-field input, .observability-field select, .text-button):focus-visible { outline: 2px solid var(--sf-focus, var(--gw-focus-color,var(--sf-cyan))) !important;
+  outline-offset: 2px; }
+@media (forced-colors: active) {
+html body.gw-signal.gw-page--task-center :is(.longtask-panel, .asset-volume-panel, #longTaskProgress, .asset-volume-chart) { border-color: CanvasText !important;
+    background: Canvas !important;
+    color: CanvasText !important; }
+}
+@media (forced-colors: active) {
+html body.gw-signal.gw-page--task-center :is(#longTaskProgress > .longtask-list, #longTaskProgress .longtask-list > li, #longTaskProgress .longtask-row, #longTaskProgress .longtask-trigger, .asset-volume-list > .asset-volume-row) { background: Canvas !important;
+    color: CanvasText !important; }
+}
+@media (forced-colors: active) {
+html body.gw-signal.gw-page--task-center :is(.longtask-trigger, .observability-tab, .asset-volume-more .btn, .observability-field input, .observability-field select, .text-button):focus-visible { outline-color: Highlight !important; }
+}
+body.gw-page--task-center .task-center-refresh-actions { display: inline-flex;
+  align-items: flex-end;
+  gap: 10px;
+  min-height: 32px; }
+body.gw-page--task-center .task-center-refresh-actions #refreshState { align-self: flex-end;
+  line-height: 30px;
+  white-space: nowrap; }
+@media (max-width: 640px) {
+body.gw-page--task-center .task-center-refresh-actions { width: 100%;
+    flex-wrap: wrap;
+    align-items: flex-end; }
+}
+@media (max-width: 640px) {
+body.gw-page--task-center .task-center-refresh-actions #refreshState { line-height: 30px; }
+}
+@media (max-width: 780px) {
+body.gw-page--task-center .task-center-refresh-actions { width: auto; }
+}
+
 /* B3：观测页只维护布局与标题，按钮材质引用共享实现。 */
 body.gw-page--task-center #observationViews { width:max-content; max-width:100%; gap:3px; }
 body.gw-page--task-center #observationViews .btn-segmented-item { height:32px; min-height:32px; }
