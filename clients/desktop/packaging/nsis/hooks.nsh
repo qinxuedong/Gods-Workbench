@@ -22,7 +22,7 @@ Var GwDataHintLabel
 !macro GW_RESOLVE_PATHS
   ${If} $GwResolvedReady != "1"
     ; 解析原本登录的普通用户 LOCALAPPDATA 与 APPDATA，避免异用户 UAC 提权写入管理员 profile。
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='Stop'; $$sid=$null; $$exp=Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1; if($$exp){ try{ $$owner=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$$exp.Id) | Invoke-CimMethod -MethodName GetOwnerSid); if($$owner.ReturnValue -eq 0){ $$sid=$$owner.Sid } }catch{} }; if(-not $$sid){ $$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }; if($$sid -match '^S-1-5-(18|19|20)$$'){ exit 2 }; $$sf='Registry::HKEY_USERS\'+$$sid+'\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'; $$la=$null; $$ra=$null; if(Test-Path $$sf){ $$p=Get-ItemProperty $$sf; $$la=$$p.'Local AppData'; $$ra=$$p.AppData }; if(-not $$la){ $$la=$env:LOCALAPPDATA }; if(-not $$ra){ $$ra=$env:APPDATA }; if(-not $$la -or -not $$ra){ exit 3 }; Write-Output ('OK|'+$$la+'|'+$$ra)"'
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command "$$ErrorActionPreference='Stop'; $$sid=$null; $$exp=Get-Process -Name explorer -ErrorAction SilentlyContinue | Select-Object -First 1; if($$exp){ try{ $$owner=(Get-CimInstance Win32_Process -Filter ('ProcessId='+$$exp.Id) | Invoke-CimMethod -MethodName GetOwnerSid); if($$owner.ReturnValue -eq 0){ $$sid=$$owner.Sid } }catch{} }; if(-not $$sid){ $$sid=[System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value }; if($$sid -match '^S-1-5-(18|19|20)$$'){ exit 2 }; $$sf='Registry::HKEY_USERS\'+$$sid+'\Software\Microsoft\Windows\CurrentVersion\Explorer\Shell Folders'; $$la=$null; $$ra=$null; if(Test-Path $$sf){ $$p=Get-ItemProperty $$sf; $$la=$$p.'Local AppData'; $$ra=$$p.AppData }; if(-not $$la){ $$la=$env:LOCALAPPDATA }; if(-not $$ra){ $$ra=$env:APPDATA }; if(-not $$la -or -not $$ra){ exit 3 }; Write-Output ('OK|'+$$la+'|'+$$ra)"`
     Pop $0
     Pop $1
     ${If} $0 != 0
@@ -30,14 +30,14 @@ Var GwDataHintLabel
       Abort
     ${EndIf}
     ; 剥离末尾换行并拆分 OK|<LocalAppData>|<AppData>
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s='$1'.Trim(); $$p=$$s.Split('|'); if($$p.Length -lt 3 -or $$p[0] -ne 'OK'){ exit 4 }; Write-Output $$p[1]"'
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s='$1'.Trim(); $$p=$$s.Split('|'); if($$p.Length -lt 3 -or $$p[0] -ne 'OK'){ exit 4 }; Write-Output $$p[1]"`
     Pop $0
     Pop $GwUserLocalAppData
     ${If} $0 != 0
       MessageBox MB_ICONSTOP "无法读取原本登录用户的 LOCALAPPDATA，安装已中止。" /SD IDOK
       Abort
     ${EndIf}
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s='$1'.Trim(); $$p=$$s.Split('|'); Write-Output $$p[2]"'
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$s='$1'.Trim(); $$p=$$s.Split('|'); Write-Output $$p[2]"`
     Pop $0
     Pop $GwUserAppData
 
@@ -54,7 +54,7 @@ Var GwDataHintLabel
 
   ${If} $GwDataDir == ""
     ; 探测是否已存在 627 引导指针或旧默认 GodsWorkbench 生产数据
-    nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$b=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$ptr=Join-Path $$b 'runtime-root.json'; if(Test-Path -LiteralPath $$ptr){ try{ $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ Write-Output ('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; $$has=$false; if(Test-Path -LiteralPath (Join-Path $$b 'auth\auth.sqlite3')){ $$has=$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$b $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ $$has=$true } }; if($$has){ Write-Output ('EXISTING|'+$$b) }else{ Write-Output ('FRESH|'+(Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}')) }"'
+    nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$b=Join-Path '$R6' '${GW_BOOTSTRAP_DIR_NAME}'; $$ptr=Join-Path $$b 'runtime-root.json'; if(Test-Path -LiteralPath $$ptr){ try{ $$j=Get-Content -LiteralPath $$ptr -Raw -Encoding UTF8 | ConvertFrom-Json; if($$j.data_location){ Write-Output ('EXISTING|'+$$j.data_location); exit 0 } }catch{} }; $$has=$false; if(Test-Path -LiteralPath (Join-Path $$b 'auth\auth.sqlite3')){ $$has=$true }; foreach($$sub in 'data','video'){ $$p=Join-Path $$b $$sub; if((Test-Path -LiteralPath $$p) -and @(Get-ChildItem -LiteralPath $$p -Force -ErrorAction SilentlyContinue).Count -gt 0){ $$has=$true } }; if($$has){ Write-Output ('EXISTING|'+$$b) }else{ Write-Output ('FRESH|'+(Join-Path '$R6' '${GW_DATA_DIR_DEFAULT_NAME}')) }"`
     Pop $0
     Pop $1
     ${If} $0 == 0
@@ -86,7 +86,7 @@ Var GwDataHintLabel
 
 !macro GW_ASSERT_NON_CONTAINMENT
   !insertmacro GW_RESOLVE_PATHS
-  nsExec::ExecToStack '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference='Stop'; function Norm([string]$$p){ return [IO.Path]::GetFullPath($$p).TrimEnd('\','/').ToLowerInvariant() }; $$a=Norm '$INSTDIR'; $$b=Norm '$GwDataDir'; $$c=Norm '$R7'; if($$a -eq $$b -or $$a.StartsWith($$b+'\') -or $$b.StartsWith($$a+'\') -or $$a -eq $$c -or $$a.StartsWith($$c+'\') -or $$c.StartsWith($$a+'\')){ exit 1 }"'
+  nsExec::ExecToStack `"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -Command "$$ErrorActionPreference='Stop'; function Norm([string]$$p){ return [IO.Path]::GetFullPath($$p).TrimEnd('\','/').ToLowerInvariant() }; $$a=Norm '$INSTDIR'; $$b=Norm '$GwDataDir'; $$c=Norm '$R7'; if($$a -eq $$b -or $$a.StartsWith($$b+'\') -or $$b.StartsWith($$a+'\') -or $$a -eq $$c -or $$a.StartsWith($$c+'\') -or $$c.StartsWith($$a+'\')){ exit 1 }"`
   Pop $0
   ${If} $0 != 0
     MessageBox MB_ICONSTOP "软件安装目录与用户数据目录不能相同或互相包含。请选择独立目录后重试。" /SD IDOK

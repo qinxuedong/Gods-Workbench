@@ -18,10 +18,10 @@ HOOKS_NSH = REPO_ROOT / "clients" / "desktop" / "packaging" / "nsis" / "hooks.ns
 def _extract_embedded_powershell_commands(nsh_text: str) -> list[str]:
     """从 hooks.nsh 的 nsExec::ExecToStack 调用中提取内嵌 PowerShell -Command 内容。"""
     pattern = re.compile(
-        r'nsExec::ExecToStack\s+\'"\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe"[^"]*-Command\s+"([^"]+)"\''
+        r'nsExec::ExecToStack\s+`"\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe"[^`"]*-Command\s+"([^`]+)"`'
     )
     commands = pattern.findall(nsh_text)
-    assert len(commands) == 5, f"预期提取 5 条内嵌 PowerShell 命令，实际 {len(commands)} 条"
+    assert len(commands) == 5, f"预期提取 5 条反引号定界的内嵌 PowerShell 命令，实际 {len(commands)} 条"
     return commands
 
 
