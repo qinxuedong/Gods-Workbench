@@ -388,22 +388,25 @@ def resolve_runtime_paths(
         legacy_installer_data = _canonical(
             local_root / LEGACY_INSTALLER_DATA_DIR_NAME, code="INVALID_PRODUCTION_ROOT"
         )
-        # QIN-648：优先读取新引导目录指针（指针损坏必失败关闭）；
-        # 若新引导目录无指针且无生产数据，则只读回退识别旧版 GodsWorkbench / Gods Workbench data。
-        runtime_root = new_bootstrap
-        pointer_location = _pointer_data_location(new_bootstrap)
-        if pointer_location is not None:
-            base_root = pointer_location
-        elif has_existing_production_data(new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME):
-            base_root = new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME
-        elif has_existing_production_data(new_bootstrap):
-            base_root = new_bootstrap
+        # QIN-648：先校验新、旧两处指针（任一存在但损坏必失败关闭，绝不因新目录已有 data 跳过）；
+        # 合法指针优先于无指针目录探测：新指针 → 旧指针 → 新/旧目录生产数据 → 全新默认 user data。
+        new_pointer = _pointer_data_location(new_bootstrap)
+        legacy_pointer = _pointer_data_location(legacy_bootstrap)
+        if new_pointer is not None:
+            runtime_root = new_bootstrap
+            pointer_location = new_pointer
+            base_root = new_pointer
+        elif legacy_pointer is not None:
+            runtime_root = legacy_bootstrap
+            pointer_location = legacy_pointer
+            base_root = legacy_pointer
         else:
-            legacy_pointer = _pointer_data_location(legacy_bootstrap)
-            if legacy_pointer is not None:
-                runtime_root = legacy_bootstrap
-                pointer_location = legacy_pointer
-                base_root = legacy_pointer
+            runtime_root = new_bootstrap
+            pointer_location = None
+            if has_existing_production_data(new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME):
+                base_root = new_bootstrap / DEFAULT_INSTALLER_DATA_DIR_NAME
+            elif has_existing_production_data(new_bootstrap):
+                base_root = new_bootstrap
             elif has_existing_production_data(legacy_bootstrap):
                 runtime_root = legacy_bootstrap
                 base_root = legacy_bootstrap
@@ -434,7 +437,7 @@ def resolve_runtime_paths(
                 message=(
                     "数据位置内的三根路径不得越界"
                     if pointer_location is not None
-                    else f"生产态路径必须位于 LOCALAPPDATA/{PROD_BOOTSTRAP_DIR_NAME} 内"
+                    else "生产态路径必须位于当前数据目录内"
                 ),
             )
         if not (
