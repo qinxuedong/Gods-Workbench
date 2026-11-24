@@ -2048,7 +2048,7 @@ def test_r0_output_manifest_failure_recovers_orphan_without_redownload(
         registry.store_bytes(
             context, _tiny_png(), "out.png", "image/png", task_id="orphan-task"
         )
-    files = list((tmp_path / "data" / "workflow").glob("*/assets/*.png"))
+    files = list((tmp_path / "data" / "generated").glob("*.png"))
     assert len(files) == 1
     monkeypatch.setattr(registry, "_atomic_write", write)
     assets = registry.load_assets(context)
@@ -2131,7 +2131,7 @@ def test_r0_task_persistence_faults_fail_closed_and_recover(
         "/api/god_workflow/tasks/" + recovered["job_id"], headers=_headers()
     ).json()
     assert done["status"] == "completed"
-    assert len(list((tmp_path / "data" / "workflow").glob("*/assets/*.png"))) == 1
+    assert len(list((tmp_path / "data" / "generated").glob("*.png"))) == 1
 
 
 def test_r0_local_registration_disk_failure_is_item_error(client, monkeypatch):
@@ -2380,7 +2380,7 @@ def test_r0_output_pre_manifest_fault_keeps_no_false_success(
             context, _tiny_png(), "out.png", "image/png", task_id="pre-manifest"
         )
     assert registry.load_assets(context) == []
-    assert list((tmp_path / "data" / "workflow").glob("*/assets/*.png")) == []
+    assert list((tmp_path / "data" / "generated").glob("*.png")) == []
     monkeypatch.setattr(registry, "_atomic_write", write)
     monkeypatch.setattr(registry.os, "replace", replace)
     recovered = registry.store_bytes(
@@ -2407,7 +2407,7 @@ def test_r0_recovery_rejects_corrupt_backing_file_without_deleting_it(
         registry.store_bytes(
             context, _tiny_png(), "out.png", "image/png", task_id="corrupt"
         )
-    backing = next((tmp_path / "data" / "workflow").glob("*/assets/*.png"))
+    backing = next((tmp_path / "data" / "generated").glob("*.png"))
     original = backing.read_bytes()
     backing.write_bytes(b"x" * len(original))
     monkeypatch.setattr(registry, "_atomic_write", write)
