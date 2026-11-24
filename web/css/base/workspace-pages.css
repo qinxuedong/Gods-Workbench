@@ -840,7 +840,7 @@ body:has(.observability-content) { background: var(--paper); }
 }
 #assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button .asset-shell-nav-label,
 #assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub .asset-shell-nav-label {
-  font-size: 13px !important;
+  font-size: var(--gw-type-label-lg) !important;
   font-weight: 400 !important;
   color: #e2e8f0 !important;
   overflow: hidden;
@@ -849,7 +849,7 @@ body:has(.observability-content) { background: var(--paper); }
 }
 #assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button .asset-shell-nav-count,
 #assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub .asset-shell-nav-count {
-  font-size: 11px !important;
+  font-size: var(--gw-type-label-md) !important;
   font-family: var(--gw-font-mono) !important;
   color: #64748b !important;
   margin-left: auto !important;

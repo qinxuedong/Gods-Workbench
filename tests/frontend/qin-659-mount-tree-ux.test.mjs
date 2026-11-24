@@ -244,13 +244,13 @@ test('AC1: 挂载目录树样式去除常态亮框并建立三层黑金视觉权
     '选中态应显示暗金底与金色细边框',
   );
   assert.match(workspaceCss, /\.asset-shell-nav-button\s+svg[\s\S]*?width:\s*14px !important;[\s\S]*?color:\s*#94a3b8 !important;/);
-  assert.match(workspaceCss, /\.asset-shell-nav-label[\s\S]*?font-size:\s*13px !important;[\s\S]*?font-weight:\s*400 !important;[\s\S]*?color:\s*#e2e8f0 !important;[\s\S]*?text-overflow:\s*ellipsis;/);
-  assert.match(workspaceCss, /\.asset-shell-nav-count[\s\S]*?font-size:\s*11px !important;[\s\S]*?font-family:\s*var\(--gw-font-mono\) !important;[\s\S]*?color:\s*#64748b !important;/);
+  assert.match(workspaceCss, /\.asset-shell-nav-label[\s\S]*?font-size:\s*var\(--gw-type-label-lg\) !important;[\s\S]*?font-weight:\s*400 !important;[\s\S]*?color:\s*#e2e8f0 !important;[\s\S]*?text-overflow:\s*ellipsis;/);
+  assert.match(workspaceCss, /\.asset-shell-nav-count[\s\S]*?font-size:\s*var\(--gw-type-label-md\) !important;[\s\S]*?font-family:\s*var\(--gw-font-mono\) !important;[\s\S]*?color:\s*#64748b !important;/);
 
   // 独立页 asset-manager.css 同步对齐三层视觉
   assert.match(managerCss, /\.asset-tree-icon\s*\{[^}]*width:14px;[^}]*color:#94a3b8;/);
-  assert.match(managerCss, /\.asset-tree-name\s*\{[^}]*font-size:13px;[^}]*font-weight:400;[^}]*color:#e2e8f0;/);
-  assert.match(managerCss, /\.asset-tree-count\s*\{[^}]*color:#64748b;[^}]*font-size:11px;/);
+  assert.match(managerCss, /\.asset-tree-name\s*\{[^}]*font-size:var\(--gw-type-label-lg\);[^}]*font-weight:400;[^}]*color:#e2e8f0;/);
+  assert.match(managerCss, /\.asset-tree-count\s*\{[^}]*color:#64748b;[^}]*font-size:var\(--gw-type-label-md\);/);
   assert.match(managerCss, /\.asset-tree-node\.is-selected\s*>\s*\.asset-tree-row\s*\{[^}]*background:rgba\(223,195,132,\.12\);[^}]*border-color:rgba\(223,195,132,\.45\);/);
 });
 

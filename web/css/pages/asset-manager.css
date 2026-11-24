@@ -3973,8 +3973,8 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .asset-tree-dot { width:5px; height:5px; flex:0 0 auto; border-radius:50%; background:var(--faint); box-shadow:0 0 0 3px transparent; }
 .asset-tree-icon { width:14px; height:14px; flex:0 0 auto; color:#94a3b8; }
 .asset-tree-icon svg { width:14px; height:14px; }
-.asset-tree-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13px; font-weight:400; color:#e2e8f0; }
-.asset-tree-count { flex:0 0 auto; margin-left:auto; color:#64748b; font-family:var(--gw-font-mono); font-size:11px; text-align:right; font-variant-numeric:tabular-nums; }
+.asset-tree-name { flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:var(--gw-type-label-lg); font-weight:400; color:#e2e8f0; }
+.asset-tree-count { flex:0 0 auto; margin-left:auto; color:#64748b; font-family:var(--gw-font-mono); font-size:var(--gw-type-label-md); text-align:right; font-variant-numeric:tabular-nums; }
 .asset-tree-group-label { padding:10px 10px 4px; color:var(--faint); font-size:var(--gw-type-label-md); font-weight:700; letter-spacing:.05em; }
 .asset-tree-footer { flex:0 0 auto; padding:8px 10px; border-top:1px solid var(--line); display:flex; }
 .asset-tree-footer .hw-btn { width:100%; }
