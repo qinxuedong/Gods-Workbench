@@ -98,9 +98,11 @@ def bootstrap_root() -> Path:
 
 
 def current_location() -> Path:
-    """指针存在时以指针为准，否则回落到当前默认数据位置（如引导目录下的 user data）。"""
+    """指针存在时以指针为准，否则生产态回落到 data_root.parent，测试/开发态保持 runtime_root。"""
     paths = _paths()
-    return paths.data_location if paths.data_location is not None else paths.data_root.parent
+    if paths.data_location is not None:
+        return paths.data_location
+    return paths.data_root.parent if paths.mode == MODE_PROD else paths.runtime_root
 
 
 def journal_path() -> Path:
@@ -142,7 +144,7 @@ def pointer_state() -> dict[str, Any]:
         raise CleanroomException(500, exc.code, str(exc)) from None
     if payload is None:
         location = _paths()
-        default = location.data_root.parent
+        default = location.data_root.parent if location.mode == MODE_PROD else location.runtime_root
         return {
             "present": False,
             "schema_version": POINTER_SCHEMA_VERSION,
