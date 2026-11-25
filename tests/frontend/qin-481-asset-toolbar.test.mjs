@@ -51,7 +51,9 @@ assert.match(
   '方格比例切换应携带 aria-pressed 选中态'
 );
 const toolbar = js.slice(js.indexOf('function renderRegistryToolbar('), js.indexOf('function renderRegistryEditableTags('));
-assert.doesNotMatch(toolbar, /data-registry-group-selected|data-registry-group-remove|data-registry-add-url/);
+assert.match(toolbar, /data-registry-group-selected \$\{selectedIds\.length \? '' : 'disabled'\}/);
+assert.match(toolbar, /data-registry-group-remove \$\{selectedGroupIds\.length \? '' : 'disabled'\}/);
+assert.doesNotMatch(toolbar, /data-registry-add-url/);
 assert.match(toolbar, /<span>建议<\/span><span class="governance-topbar-count"/);
 assert.match(toolbar, /workspaceContext\?\.active_workspace_id === 'ws_nas_01' \? '' : ' hidden'/);
 assert.match(css, /\.registry-toolbar \[data-transfer-open\]\[hidden\] \{\s*display:none !important/);

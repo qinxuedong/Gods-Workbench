@@ -6426,6 +6426,8 @@ function applyRegistrySelectValue(kind, value){
     render();
 }
 function renderRegistryToolbar(board, title, subtitle, options={}){
+    const selectedIds = registryActiveSelectedIds(board);
+    const selectedGroupIds = selectedRegistryCustomGroupIds(board);
     const searchLabel = board?.name || '全部资产';
     const coverflowAvailable = registryCoverflowAssets(board).length > 0;
     const coverflowLabel = coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频';
@@ -6439,11 +6441,14 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const shellUnassignedCount = shellUnassignedSource?.querySelector('[data-unassigned-count]')?.textContent || '';
     const shellUnassignedVisibility = shellUnassignedSource?.style.display === 'none' ? ' style="display:none"' : '';
     const groupActions = embeddedVault ? `<div class="registry-toolbar-group-actions">
+        <button class="hw-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
+        <button class="hw-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>
         <div class="registry-toolbar-shell-actions" aria-label="资产库操作">
             <button class="hw-btn" type="button" data-vault-shell-unassigned${shellUnassignedVisibility} onclick="parent.GWUnassignedInbox.open()" title="尚未归属任何项目的资产（仅本人可见）"><i data-lucide="inbox"></i><span>未归属</span><span data-unassigned-count>${escapeHtml(shellUnassignedCount)}</span></button>
             <button class="hw-btn" type="button" data-vault-shell-settings onclick="parent.WorkbenchAssets.openAssetSettings()" title="打开资产库设置"><i data-lucide="settings-2"></i><span>资产设置</span></button>
         </div>
-    </div>` : '';
+    </div>` : `<button class="hw-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
+            <button class="hw-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>`;
     const governanceTotal = governanceSuggestionTotal();
     const governanceBadge = governanceSuggestionsError ? '!' : governanceSuggestionsLoading ? '…' : governanceSuggestionsData ? String(governanceTotal) : '—';
     const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';

@@ -106,8 +106,7 @@ test('AC3/AC14: 左栏移除导入按钮，资产操作保留在工具栏末端'
     const toolbarEnd = manager.indexOf('function renderRegistryEditableTags(', toolbarStart);
     const toolbar = manager.slice(toolbarStart, toolbarEnd);
     const groupActions = toolbar.match(/<div class="registry-toolbar-group-actions">([\s\S]*?)<\/div>\s*<\/div>/)?.[1] || '';
-    assert.match(groupActions, /data-vault-shell-unassigned[\s\S]*data-vault-shell-settings/);
-    assert.doesNotMatch(groupActions, /data-registry-group-remove/);
+    assert.match(groupActions, /data-registry-group-remove[\s\S]*data-vault-shell-unassigned[\s\S]*data-vault-shell-settings/);
     assert.match(toolbar, /onclick="parent\.GWUnassignedInbox\.open\(\)"/);
     assert.match(toolbar, /onclick="parent\.WorkbenchAssets\.openAssetSettings\(\)"/);
     assert.match(managerCss, /\.registry-toolbar-group-actions\s*\{[^}]*margin-left:\s*auto/);

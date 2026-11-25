@@ -80,7 +80,9 @@ test('QIN-662: 工作区状态决定工具栏传输入口，保留批量分组�
     host.main.setWorkspaceContext({active_workspace_id:'ws_nas_01'});
     const remote = host.toolbar('registry');
     assert.match(remote, /data-transfer-open aria-haspopup/);
-    assert.doesNotMatch(remote, /data-registry-group-selected|data-registry-group-remove|data-registry-add-url/);
+    assert.match(remote, /data-registry-group-selected/);
+    assert.match(remote, /data-registry-group-remove/);
+    assert.doesNotMatch(remote, /data-registry-add-url/);
     host.main.setWorkspaceContext({active_workspace_id:'ws_local_01'});
     assert.match(host.toolbar('registry'), /data-transfer-open hidden/);
     assert.match(managerJs, /data-registry-\$\{owning\.group \? 'bulk-release' : 'structure-merge'\}="group"/);
