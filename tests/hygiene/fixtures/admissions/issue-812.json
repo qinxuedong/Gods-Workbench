@@ -1,0 +1,22 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 812,
+  "authorization_basis": "GitHub Issue #812 QIN-652, 2026-11-24",
+  "files": [
+    "gw/asset_registry/index_jobs.py",
+    "tests/contracts/assets/test_qin_469_index_progress_visibility.py",
+    "tests/contracts/assets/test_qin_652_staged_index_enrichment.py",
+    "tests/hygiene/fixtures/admissions/issue-812.json",
+    "web/js/modules/asset-manager/organize.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #812 QIN-652, 2026-11-24",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-652（GitHub Issue #812）：索引任务拆为快扫入库 + 后台双通道富化（视频探测并发 1 / 文件哈希并发 2，PM 裁决不扩编 gw/media/*）；organize.js 增加阶段感知刷新；QIN-469 的「运行中递增进度」契约迁移到 job 顶层 enrich.done 并补 AC1 断言，progress 仍为三键。只写本票分片，基础账本与 114 条硬计数保持不变。"
+}

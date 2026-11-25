@@ -854,16 +854,22 @@ function invalidateResourceFolderAction(){
 function resolveResourceFolderIdentity(rootTarget={}){
     const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
         .map(value => String(value || '').trim()).filter(Boolean);
-    const allowedRootId = candidates.find(value => /^root_[a-f0-9]{24}$/i.test(value)) || '';
-    let sourceId = candidates.find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+    const isAllowedRootId = value => /^root_[a-f0-9]{24}$/i.test(value);
+    const isSourceId = value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value);
     const normalizePath = value => String(value || '').split(String.fromCharCode(92)).join('/').replace(/\/+$/, '').toLocaleLowerCase();
+    const facetFor = (ids) => (registryFacets.roots || []).find(item =>
+        [item.id, ...(item.aliases || [])].map(String).some(value => ids.includes(value)));
+    // 外壳侧栏的树节点可能只带登记来源身份（local_extra_*）——facet 组的别名里才有
+    // 允许根身份（root_*）。按 id/别名命中同组后再取，避免误报「无法识别资源文件夹身份」。
+    const groupIds = (facet) => facet ? [facet.id, ...(facet.aliases || [])].map(String).filter(Boolean) : [];
+    const pool = [...new Set([...candidates, ...groupIds(facetFor(candidates))])];
+    const allowedRootId = pool.find(isAllowedRootId) || '';
+    let sourceId = pool.find(isSourceId) || '';
     if(allowedRootId && !sourceId){
         const targetPath = normalizePath(rootTarget.path);
-        const facet = (registryFacets.roots || []).find(item =>
-            [item.id, ...(item.aliases || [])].map(String).includes(allowedRootId) ||
-            (targetPath && normalizePath(item.path) === targetPath));
-        sourceId = [facet?.id, ...(facet?.aliases || [])].map(String)
-            .find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+        const facet = facetFor([allowedRootId]) || (targetPath ? (registryFacets.roots || []).find(item =>
+            normalizePath(item.path) === targetPath) : null);
+        sourceId = groupIds(facet).find(isSourceId) || '';
     }
     return allowedRootId ? {allowedRootId, sourceId} : null;
 }
@@ -1176,7 +1182,7 @@ async function confirmBoardSource(options={}){
         render();
         setStatus(`已受理资源文件夹“${source.name}”，正在建立索引`);
         if(source?.job_id){
-            waitForAssetIndexJob(source.job_id, source.name).catch(() => {});
+            waitForAssetIndexJob(source.job_id, source.name).catch(() => {}); waitForIndexedAssetSnapshot(source.job_id, source.name).catch(() => {});
         }
     } catch(err) {
         if(Number(boardSourceState.generation || 0) === generation){
@@ -3360,3 +3366,43 @@ export {
     textVersionActionLabel,
     toggleDetailFontLibrary,
 };
+
+// QIN-652：快扫入库后 job 顶层 `enrich` 会持续存在到终态，用它判定「快照已提交」
+// 可避免 500ms 轮询错过 `indexed`/`enriching` 的瞬时 phase 窗口。本函数只在快照
+// 就绪时做一次首屏刷新与阶段文案，随后立即返回；终态文案、状态收口与失败处理
+// 仍由既有 `waitForAssetIndexJob` 承担（该函数在 asset-manager.js，本票不可改）。
+// 追加在文件末尾而非中段：保持既有原生下拉节点的精确行号零偏移（QIN-631 白名单）。
+async function waitForIndexedAssetSnapshot(jobId, sourceName='素材库'){
+    if(!jobId) return null;
+    const deadline = Date.now() + 120000;
+    let snapshotRefreshed = false;
+    while(Date.now() < deadline){
+        try {
+            const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+            const job = data?.job || {};
+            const status = String(job.status || '');
+            const phase = String(job.progress?.phase || '');
+            const terminal = status === 'succeeded' || ['failed','cancelled','interrupted'].includes(status);
+            const snapshotReady = Boolean(job.enrich) || phase === 'indexed' || phase === 'enriching';
+            if(snapshotReady){
+                if(!snapshotRefreshed){
+                    await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+                    if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                    snapshotRefreshed = true;
+                }
+                if(terminal){
+                    // 终态后不再写「正在补齐」：避免晚到的轮询把完成文案覆盖回进行中。
+                    if(status === 'succeeded') setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+                    return job;
+                }
+                // 顶尖栏单行约 230px（1440 实测），文案按此收短，避免被截断。
+                setStatus(`“${sourceName}”已入库，补齐中 ${Number(job.enrich?.done || 0)}/${Number(job.enrich?.total || 0)}`);
+            }else if(terminal){
+                // 没有富化任务的单阶段 job：不重复刷新，直接交回既有终态处理。
+                return job;
+            }
+        } catch(_) {}
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    return null;
+}

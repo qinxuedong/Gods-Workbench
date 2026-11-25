@@ -16,6 +16,11 @@
 
 回归点：小样本长耗时文件凑不满 25 项批次时 `progress.scanned` 全程为 0，
 只有任务结束才一次性跳到总数，长任务无法观察进度。
+
+QIN-652 契约迁移：快扫阶段只做 stat / LUT / 生成元数据，小样本扫描在毫秒级
+完成，`progress.scanned` 一次性到总数正是 AC1「秒级可见」的期望；长耗时部分
+移到后台富化，因此「运行中递增进度」改由 job 顶层 `enrich.done` 观察，并新增
+「未终态时 scanned 已达总数且富化仍在进行」断言。`progress` 仍是三键。
 """
 
 import time
@@ -85,7 +90,7 @@ def _slow_hash(monkeypatch):
 
 
 def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
-    """AC1/AC2：小样本慢文件在运行中即可读到递增的非零 scanned。"""
+    """AC1/AC2：运行中基础条目已全部入库，且能读到递增的后台富化进度。"""
     _slow_hash(monkeypatch)
     observed = []
     with TestClient(create_app()) as client:
@@ -97,7 +102,15 @@ def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
             job = _read_job(client, job_id)
             if job["status"] in jobs.TERMINAL:
                 break
-            observed.append((job["status"], job["progress"]["scanned"]))
+            enrich = job.get("enrich") or {}
+            observed.append(
+                (
+                    job["status"],
+                    job["progress"]["scanned"],
+                    int(enrich.get("done") or 0),
+                    int(enrich.get("pending") or 0),
+                )
+            )
             time.sleep(0.01)
         final = _wait_job(client, job_id)
 
@@ -107,10 +120,14 @@ def test_scanned_progress_advances_while_running(ingest_runtime, monkeypatch):
         "error_count": 0,
         "phase": "completed",
     }
-    running = [scanned for status, scanned in observed if status == "running"]
+    running = [row for row in observed if row[0] == "running"]
     assert running, "未采到运行中的进度快照"
-    assert any(0 < scanned < FILE_COUNT for scanned in running), (
-        f"运行中未读到递增进度，仅观测到: {sorted(set(running))}"
+    assert any(row[1] == FILE_COUNT and row[3] > 0 for row in running), (
+        "AC1：任务未终结时基础条目应已全部入库，且后台富化仍在进行"
+    )
+    assert any(0 < row[2] < FILE_COUNT for row in running), (
+        "运行中未读到递增的富化进度，仅观测到: "
+        f"{sorted({row[2] for row in running})}"
     )
 
 
@@ -154,7 +171,12 @@ def test_progress_save_contention_does_not_fail_ingest(ingest_runtime, monkeypat
             job = _read_job(client, job_id)
             if job["status"] in jobs.TERMINAL:
                 break
-            observed.append(job["progress"]["scanned"])
+            observed.append(
+                (
+                    job["progress"]["scanned"],
+                    int((job.get("enrich") or {}).get("done") or 0),
+                )
+            )
             time.sleep(0.01)
         final = _wait_job(client, job_id)
 
@@ -164,6 +186,10 @@ def test_progress_save_contention_does_not_fail_ingest(ingest_runtime, monkeypat
         "error_count": 0,
         "phase": "completed",
     }
-    assert any(0 < scanned < FILE_COUNT for scanned in observed), (
-        f"抖动下仍应能观察到递增进度，仅观测到: {sorted(set(observed))}"
+    assert any(scanned == FILE_COUNT for scanned, _ in observed), (
+        "AC1：抖动下基础条目仍应在任务未终结时全部入库"
+    )
+    assert any(0 < done < FILE_COUNT for _, done in observed), (
+        "抖动下仍应能观察到递增的富化进度，仅观测到: "
+        f"{sorted({done for _, done in observed})}"
     )

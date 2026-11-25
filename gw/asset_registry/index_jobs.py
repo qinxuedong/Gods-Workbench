@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import math
 import os
 import re
 import stat
@@ -28,6 +29,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import suppress
 from pathlib import Path
+from queue import Empty, Queue
 
 from gw.asset_registry import generation_metadata
 from gw.core import storage
@@ -77,6 +79,117 @@ ACTIONS = {
     "cancel": {"queued", "running", "paused"},
     "retry": {"failed", "cancelled", "interrupted"},
 }
+
+# QIN-652：快扫入库后，视频探测与文件哈希在后台受控并发补齐。
+# PM 裁决（issue #812）：视频镜头检测并发固定为 1，避免多个 ffmpeg 全片软解
+# 同时吃满多核；文件哈希并发默认 2，仅哈希通道可由环境变量在 1..4 调整。
+# 不扩编 gw/media/*，也不改 ffmpeg 线程参数。
+ENRICH_VIDEO_CONCURRENCY = 1
+ENRICH_HASH_CONCURRENCY_DEFAULT = 2
+ENRICH_HASH_CONCURRENCY_MAX = 4
+ENRICH_HASH_CHUNK_BYTES = 8 * 1024 * 1024
+ENRICH_BATCH_SIZE = 20
+ENRICH_BATCH_INTERVAL_SECONDS = 1.5
+# 单条目长时间无结果才视为卡死；暂停时长不计入，取消另有 _checkpoint 即时生效。
+ENRICH_STALL_SECONDS = 600
+
+
+def _enrich_hash_concurrency() -> int:
+    """哈希通道并发数；视频通道恒为 1，不受此值影响。"""
+    raw = os.environ.get("GW_INDEX_ENRICH_CONCURRENCY", "")
+    try:
+        value = int(raw)
+    except (TypeError, ValueError):
+        return ENRICH_HASH_CONCURRENCY_DEFAULT
+    return max(1, min(ENRICH_HASH_CONCURRENCY_MAX, value))
+
+
+# 扫描期落盘的文件版本指纹键。旧记录的 `modified_at` 只有秒级精度，同秒等长
+# 改写会与原版本逐字节相同；`mtime_ns` 提供纳秒分辨率，`ino`/`dev` 再区分
+# 「原子替换成另一份同秒同长文件」，三者合起来才足以判定「内容未变」。
+FILE_VERSION_FIELDS = ("size_bytes", "mtime_ns", "ino", "dev")
+
+
+def _file_version(info) -> dict:
+    """由 stat 结果构造版本指纹（扫描与富化同一口径）。"""
+    return {
+        "size_bytes": int(getattr(info, "st_size", 0) or 0),
+        "mtime_ns": int(getattr(info, "st_mtime_ns", 0) or 0),
+        "ino": int(getattr(info, "st_ino", 0) or 0),
+        "dev": int(getattr(info, "st_dev", 0) or 0),
+    }
+
+
+def _same_file_version(left: object, right: object) -> bool:
+    """两个版本指纹是否逐字段相同；任一侧缺失/畸形一律判「不同」。
+
+    缺失即未知（既有登记建于本改动之前），按不同处理让富化重新计算并补写
+    指纹，宁可多算一次也不复用可能过期的旧结果。
+    """
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    for field in FILE_VERSION_FIELDS:
+        if field not in left or field not in right:
+            return False
+        try:
+            if int(left[field]) != int(right[field]):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+class _EnrichGate:
+    """跨任务富化通道闸门：进程内同一通道并发数不超过 ``limit``。
+
+    PM 裁决（issue #812）的并发上限是**全局**口径：视频 1 / 哈希 2。
+    每个任务各建线程池时，两个并发索引任务会同时跑 2 个视频探测、4 个哈希，
+    因此把上限收到进程级闸门上，池大小只决定「谁在等闸门」。
+    """
+
+    def __init__(self, limit: int):
+        self._condition = threading.Condition()
+        self._active = 0
+        self._limit = max(1, int(limit))
+
+    def configure(self, limit: int) -> None:
+        """按当前配置对齐上限；调小只拦新进入者，已在跑的不强杀。"""
+        with self._condition:
+            self._limit = max(1, int(limit))
+            self._condition.notify_all()
+
+    def acquire(self, timeout: float) -> bool:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._condition:
+            while self._active >= self._limit:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._condition:
+            if self._active > 0:
+                self._active -= 1
+            self._condition.notify()
+
+
+_ENRICH_GATES: dict[str, _EnrichGate] = {}
+_ENRICH_GATES_LOCK = threading.Lock()
+
+
+def _enrich_gate(kind: str) -> _EnrichGate:
+    """取（必要时创建）通道闸门；上限每次按当前配置对齐。"""
+    limit = ENRICH_VIDEO_CONCURRENCY if kind == "video" else _enrich_hash_concurrency()
+    with _ENRICH_GATES_LOCK:
+        gate = _ENRICH_GATES.get(kind)
+        if gate is None:
+            gate = _ENRICH_GATES[kind] = _EnrichGate(limit)
+        else:
+            gate.configure(limit)
+        return gate
 
 
 def _error(status, code, message, *, data_status=None, unavailable=False):
@@ -143,6 +256,52 @@ def _runtime_path_configuration():
     )
 
 
+def _video_frame_rate(path: Path) -> float | None:
+    """读取真实帧率，供详情面板显示；探测失败返回 None（不阻断入库）。
+
+    复用 ``gw.asset_registry.media_probe.probe`` 既有 ffprobe 口径，不新增
+    ``gw/media/*`` 依赖，也不整片解码。
+    """
+    try:
+        media_probe = importlib.import_module("gw.asset_registry.media_probe")
+        probed = media_probe.probe(path)
+    except Exception:  # noqa: BLE001 - 任何探测失败都不影响该条目入库
+        return None
+    try:
+        value = float((probed or {}).get("fps") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def video_detail_fields(metadata: dict | None) -> dict:
+    """把 ``metadata.video_metadata`` 的技术字段投影成详情面板读的扁平字段。
+
+    前端详情面板读取的是资产顶层 ``width``/``height``/``frame_rate``（与
+    ``import_assets`` 既有口径一致），而索引把技术元数据写在
+    ``metadata.video_metadata``。这里给出唯一的投影口径，扫描与富化共用。
+    """
+    video = (metadata or {}).get("video_metadata")
+    if not isinstance(video, dict):
+        return {}
+    fields: dict[str, float | int] = {}
+    try:
+        width = int(video.get("width") or 0)
+        height = int(video.get("height") or 0)
+    except (TypeError, ValueError):
+        width = height = 0
+    if width > 0 and height > 0:
+        fields["width"] = width
+        fields["height"] = height
+    try:
+        frame_rate = float(video.get("frame_rate") or 0)
+    except (TypeError, ValueError):
+        frame_rate = 0.0
+    if math.isfinite(frame_rate) and frame_rate > 0:
+        fields["frame_rate"] = round(frame_rate, 6)
+    return fields
+
+
 def _video_index_data(path: Path) -> tuple[dict, float | None]:
     """为本地视频登记镜头与技术元数据，关键帧逐张解码后立即释放。"""
     decode_keyframe_to_memory = importlib.import_module(
@@ -194,6 +353,10 @@ def _video_index_data(path: Path) -> tuple[dict, float | None]:
         "scene_detection_status": "complete",
         "keyframe_status": "pending",
     }
+    # 详情面板要显示分辨率与帧率：帧率只能由 ffprobe 拿到，探测失败按缺省处理。
+    frame_rate = _video_frame_rate(path)
+    if frame_rate is not None:
+        video_metadata["frame_rate"] = frame_rate
     try:
         for scene in scenes:
             midpoint = scene["start_sec"] + (
@@ -1006,6 +1169,18 @@ class IndexJobs:
             for job in raw["jobs"].values():
                 receipt = receipts.get(f"{job['job_id']}:{job['attempt']}")
                 if receipt:
+                    if job["status"] == "cancelled":
+                        # 已取消任务不得因残留收据在重启时被恢复成成功；
+                        # 快照条目本身保留，取消语义优先。
+                        continue
+                    if isinstance(receipt, dict) and receipt.get("enrich_pending"):
+                        # QIN-652：进程在富化阶段退出时仍按既有「有收据即成功」
+                        # 口径恢复，但如实标注富化未完成，retry 按跳过条件补齐。
+                        receipt = dict(receipt)
+                        receipt.pop("enrich_pending", None)
+                        enrich = dict(receipt.get("enrich") or job.get("enrich") or {})
+                        enrich["interrupted"] = True
+                        receipt["enrich"] = enrich
                     job.update(
                         status="succeeded",
                         phase="completed",
@@ -1215,7 +1390,14 @@ class IndexJobs:
     def _committed_truth(self, job):
         """业务提交收据高于任务快照；写状态失败也绝不开放取消或重试。"""
         receipt = self._receipt_from_registry(job)
-        if receipt is not None and job["status"] != "succeeded":
+        # QIN-652：快扫收据只代表「基础条目已入库」，富化仍在后台运行。若按
+        # 既有口径把它投影成 succeeded，下一次 _checkpoint 会抛 _Stopped 打断
+        # 富化，pause/cancel 也会被终态拒绝；只有终态收据才沿用既有投影。
+        if (
+            receipt is not None
+            and job["status"] not in ("succeeded", "cancelled")
+            and not (isinstance(receipt, dict) and receipt.get("enrich_pending"))
+        ):
             job.update(
                 status="succeeded",
                 phase="completed",
@@ -2100,6 +2282,420 @@ class IndexJobs:
             logical_source_id=stored.get("logical_source_id"),
         )
 
+    # ------------------------------------------------------------------
+    # QIN-652：快扫入库后的后台富化（视频探测并发 1 / 文件哈希并发 N）
+    # ------------------------------------------------------------------
+
+    def _enrich_video_value(self, task):
+        """复用既有探测入口，产物形状与单阶段实现逐字段一致。"""
+        metadata, duration = _video_index_data(Path(task["path"]))
+        return {"metadata": metadata, "duration": duration}
+
+    def _enrich_hash_value(self, task, job_id, attempt):
+        """复用既有哈希口径（含防篡改三件套），仅把分块放宽到 8 MiB。"""
+        from gw.asset_registry.dedup_confirm import build_full_sha256_cache
+
+        path = Path(task["path"])
+        stat_info = task["stat"]
+        if stat_info.st_size > _HASH_LIMIT_BYTES:
+            return {
+                "sha256": self._sampled_hash(job_id, attempt, path, stat_info),
+                "hash_mode": HASH_MODE_SAMPLED,
+            }
+        digest = self._hash(
+            job_id, attempt, path, stat_info, ENRICH_HASH_CHUNK_BYTES
+        )
+        return {
+            "sha256": digest,
+            "hash_mode": HASH_MODE_FULL,
+            "full_sha256_cache": build_full_sha256_cache(
+                digest, stat_info, source="index_full"
+            ),
+        }
+
+    def _enrich_acquire(self, gate, stop, job_id, attempt):
+        """拿通道闸门；等不到就短暂让出，暂停阻塞、取消抛 ``_Stopped``。
+
+        闸门的条件变量不跨 ``_checkpoint`` 持有：暂停期间 worker 会阻塞在
+        任务条件上，若同时握着闸门锁，别的任务连释放都做不到。
+        """
+        while not stop.is_set():
+            if gate.acquire(0.2):
+                return True
+            self._checkpoint(job_id, attempt)
+        return False
+
+    def _enrich_worker(self, kind, pending, completed, stop, job_id, attempt, tasks):
+        """通道 worker：在条目边界检查暂停/取消，失败只上报不整单失败。"""
+        gate = _enrich_gate(kind)
+        while not stop.is_set():
+            try:
+                index = pending.get(timeout=0.2)
+            except Empty:
+                continue
+            try:
+                if index is None:
+                    return
+                try:
+                    # paused 时在此阻塞等待，不取新任务；cancelled/新尝试抛 _Stopped。
+                    self._checkpoint(job_id, attempt)
+                except _Stopped:
+                    stop.set()
+                    return
+                task = tasks[index]
+                try:
+                    acquired = self._enrich_acquire(gate, stop, job_id, attempt)
+                except _Stopped:
+                    stop.set()
+                    return
+                if not acquired:
+                    return
+                try:
+                    value = (
+                        self._enrich_video_value(task)
+                        if kind == "video"
+                        else self._enrich_hash_value(task, job_id, attempt)
+                    )
+                    completed.put((index, kind, value, None))
+                except _Stopped:
+                    # 取消/新尝试/停机：不是条目失败，不得计入 enrich.failed。
+                    stop.set()
+                    return
+                except Exception as exc:  # 单条目失败：保留条目，计入 enrich.failed
+                    completed.put((index, kind, None, str(exc)))
+                finally:
+                    gate.release()
+            finally:
+                pending.task_done()
+
+    def _save_enrich_progress(self, job, summary):
+        """job 顶层 enrich 进度（progress 三键保持不动）。"""
+        with self.condition:
+            current = self.store.read()["jobs"].get(job["job_id"])
+            if (
+                current is None
+                or current["attempt"] != job["attempt"]
+                or current["status"] in TERMINAL
+            ):
+                return
+            current["enrich"] = dict(summary)
+            self._save(current)
+
+    def _flush_enrich_batch(self, job, files, tasks, ready, results, summary):
+        """把已补齐的条目合并进已存在资产；复用 _commit 的字段合并与检索索引。"""
+        indexes = sorted(ready)
+        ready.clear()
+        batch = []
+        for index in indexes:
+            task = tasks[index]
+            item = files[task["index"]]
+            video = results[index].get("video")
+            hashed = results[index].get("hash")
+            if video is not None:
+                metadata = dict(item.get("metadata") or {})
+                metadata.update(video["metadata"])
+                item["metadata"] = metadata
+                if video["duration"] is not None:
+                    item["duration"] = video["duration"]
+                # 详情面板读顶层技术字段；口径与扫描期一致，统一走同一投影。
+                item.update(video_detail_fields(metadata))
+            if hashed is not None:
+                item.update(hashed)
+            batch.append(item)
+        if batch:
+            # skip：只合并资产与镜头行，不动幂等收据；update_only：绝不新增记录。
+            # 走 _commit_items 而非 _commit，保持既有「一次任务一次提交」契约。
+            self._commit_items(
+                job,
+                batch,
+                None,
+                {"receipt_mode": "skip", "update_only": True},
+            )
+        self._save_enrich_progress(job, summary)
+
+    def _write_receipt_result(self, job, result):
+        """富化结束后把收据从「快照态」更新为终态（幂等键不变）。"""
+        from gw.asset_registry import repository as repo
+
+        receipt_id = f"{job['job_id']}:{job['attempt']}"
+
+        def update(raw):
+            raw.setdefault("index_job_receipts", {})[receipt_id] = result
+
+        execution_context = self._reverify_workspace_context(job)
+        token = (
+            workspace_context.set_execution_context(execution_context)
+            if execution_context
+            else None
+        )
+        try:
+            return repo.state().mutate(update)
+        finally:
+            if token is not None:
+                workspace_context.reset_execution_context(token)
+
+    def _finalize_enrich_result(self, job, files, snapshot_result, summary):
+        """终态 result：沿用快照计数，哈希统计按补齐后的真实值覆盖。"""
+        result = dict(snapshot_result)
+        result.pop("enrich_pending", None)
+        if job["_request"].get("hash_files"):
+            result["hashed"] = sum(
+                1 for x in files if x.get("hash_mode") == HASH_MODE_FULL
+            )
+            result["hash_sampled_oversize"] = sum(
+                1 for x in files if x.get("hash_mode") == HASH_MODE_SAMPLED
+            )
+        else:
+            result.pop("hashed", None)
+            result.pop("hash_sampled_oversize", None)
+        result["enrich"] = dict(summary)
+        self._write_receipt_result(job, result)
+        return result
+
+    def _enrich_abort_reason(self, job_id, attempt):
+        """富化中断归因：只读任务当前状态，供取消/接管/停机分支如实收尾。
+
+        返回 None 表示任务仍在 running（仅 watchdog 停池，可按已批准口径
+        写终态并标注 interrupted）；返回 cancelled/superseded/failed/closed
+        表示任务已离开运行态，必须保留 enrich_pending、不得写终态收据。
+        """
+        if self.closed:
+            return "closed"
+        try:
+            with self.condition:
+                current = self.store.read()["jobs"].get(job_id)
+        except Exception:
+            return "closed"
+        if current is None or current["attempt"] != attempt:
+            return "superseded"
+        status = str(current.get("status") or "")
+        if status == "cancelled":
+            return "cancelled"
+        if status in ("failed", "interrupted"):
+            return "failed"
+        return None
+
+    def _pending_enrich_result(self, snapshot_result, summary):
+        """取消/接管/停机：收据保持快照态（含 enrich_pending），不写终态收据。"""
+        result = dict(snapshot_result)
+        result["enrich"] = dict(summary)
+        return result
+
+    def _enrich(self, job, files, tasks, snapshot_result, summary, pre_commit_existing):
+        """双通道并发补齐视频元数据与哈希，按批次增量落盘。
+
+        幂等基线必须是**快照提交前**的注册表状态：提交会把 size/modified_at
+        更新为本次值，但保留旧 sha256；若用提交后的状态判「未变」，同秒改写
+        内容时会误判成可跳过，旧哈希永远不被刷新。跳过判定统一用
+        ``scan_version`` 版本指纹（``mtime_ns`` + ``ino``/``dev`` + size），
+        秒级 ``modified_at`` 不参与判定。
+        """
+        job_id, attempt = job["job_id"], job["attempt"]
+        hash_workers = _enrich_hash_concurrency()
+        summary["hash_concurrency"] = hash_workers
+        existing = pre_commit_existing or {}
+
+        video_pending = Queue()
+        hash_pending = Queue()
+        completed = Queue()
+        stop = threading.Event()
+        results = {index: {} for index in range(len(tasks))}
+        needed = {
+            index: int(task["want_video"]) + int(task["want_hash"])
+            for index, task in enumerate(tasks)
+        }
+        ready = set()
+        received = 0
+        total = int(summary["total"])
+
+        for index, task in enumerate(tasks):
+            item = files[task["index"]]
+            current = existing.get(
+                (str(task["root_id"]), str(task["canonical_relpath"]))
+            )
+            if not isinstance(current, dict):
+                current = {}
+            # 「未变化」必须按版本指纹判定：秒级 modified_at + 文件大小无法区分
+            # 同秒等长改写，会复用过期的哈希与镜头数据。
+            unchanged = _same_file_version(
+                current.get("scan_version"), item.get("scan_version")
+            )
+            if task["want_hash"]:
+                if current.get("sha256") and unchanged:
+                    for field in ("sha256", "hash_mode", "full_sha256_cache"):
+                        if field in current:
+                            item[field] = current[field]
+                    needed[index] -= 1
+                    received += 1
+                    summary["skipped"] += 1
+                    summary["done"] += 1
+                    summary["pending"] -= 1
+                else:
+                    hash_pending.put(index)
+            if task["want_video"]:
+                current_metadata = current.get("metadata")
+                if not isinstance(current_metadata, dict):
+                    current_metadata = {}
+                video_meta = current_metadata.get("video_metadata")
+                if not isinstance(video_meta, dict):
+                    video_meta = {}
+                if (
+                    video_meta.get("scene_detection_status") == "complete"
+                    and unchanged
+                ):
+                    metadata = dict(item.get("metadata") or {})
+                    for field in ("video_segments", "video_metadata"):
+                        if field in current_metadata:
+                            metadata[field] = current_metadata[field]
+                    item["metadata"] = metadata
+                    if "duration" in current:
+                        item["duration"] = current["duration"]
+                    needed[index] -= 1
+                    received += 1
+                    summary["skipped"] += 1
+                    summary["done"] += 1
+                    summary["pending"] -= 1
+                else:
+                    video_pending.put(index)
+            # 两个重活都命中跳过时 existing 已是现值，不加入待落盘集合；
+            # 有计算结果的条目在结果到达、needed 归零时才进入 ready。
+        if received >= total:
+            self._save_enrich_progress(job, summary)
+            if ready:
+                self._flush_enrich_batch(
+                    job, files, tasks, ready, results, summary
+                )
+            return self._finalize_enrich_result(
+                job, files, snapshot_result, summary
+            )
+
+        video_pool = ThreadPoolExecutor(
+            max_workers=ENRICH_VIDEO_CONCURRENCY,
+            thread_name_prefix="gw-enrich-video",
+        )
+        hash_pool = ThreadPoolExecutor(
+            max_workers=hash_workers, thread_name_prefix="gw-enrich-hash"
+        )
+        futures = [
+            video_pool.submit(
+                self._enrich_worker,
+                "video",
+                video_pending,
+                completed,
+                stop,
+                job_id,
+                attempt,
+                tasks,
+            )
+            for _ in range(ENRICH_VIDEO_CONCURRENCY)
+        ] + [
+            hash_pool.submit(
+                self._enrich_worker,
+                "hash",
+                hash_pending,
+                completed,
+                stop,
+                job_id,
+                attempt,
+                tasks,
+            )
+            for _ in range(hash_workers)
+        ]
+        last_flush = time.monotonic()
+        last_progress = last_flush
+        last_progress_save = last_flush
+        abort_reason = None
+        try:
+            while received < total and not stop.is_set():
+                try:
+                    index, kind, value, error = completed.get(timeout=0.2)
+                except Empty:
+                    with self.condition:
+                        current_job = self.store.read()["jobs"].get(job_id)
+                        if (
+                            self.closed
+                            or current_job is None
+                            or current_job["attempt"] != attempt
+                            or current_job["status"] in TERMINAL
+                        ):
+                            stop.set()
+                            abort_reason = self._enrich_abort_reason(job_id, attempt)
+                            break
+                        # paused 时 worker 在 _checkpoint 阻塞等恢复，暂停时长
+                        # 不计入「无进展」，避免 600s 看门狗误停并翻转终态。
+                        if current_job["status"] == "paused":
+                            last_progress = time.monotonic()
+                    now = time.monotonic()
+                    if now - last_progress > ENRICH_STALL_SECONDS:
+                        stop.set()
+                        abort_reason = "stalled"
+                        break
+                    if ready and now - last_flush >= ENRICH_BATCH_INTERVAL_SECONDS:
+                        self._flush_enrich_batch(
+                            job, files, tasks, ready, results, summary
+                        )
+                        last_flush = now
+                    continue
+                received += 1
+                summary["pending"] -= 1
+                last_progress = time.monotonic()
+                if error is not None:
+                    summary["failed"] += 1
+                else:
+                    summary["done"] += 1
+                    results[index][kind] = value
+                needed[index] -= 1
+                if needed[index] == 0:
+                    ready.add(index)
+                now = time.monotonic()
+                # 与扫描期同口径节流：长耗时富化也要能观察到递增进度。
+                if now - last_progress_save >= PROGRESS_MIN_INTERVAL_SECONDS:
+                    self._save_enrich_progress(job, summary)
+                    last_progress_save = now
+                if len(ready) >= ENRICH_BATCH_SIZE or (
+                    ready and now - last_flush >= ENRICH_BATCH_INTERVAL_SECONDS
+                ):
+                    self._flush_enrich_batch(
+                        job, files, tasks, ready, results, summary
+                    )
+                    last_flush = now
+            if ready:
+                self._flush_enrich_batch(job, files, tasks, ready, results, summary)
+        finally:
+            stop.set()
+            for _ in range(ENRICH_VIDEO_CONCURRENCY):
+                video_pending.put(None)
+            for _ in range(hash_workers):
+                hash_pending.put(None)
+            video_pool.shutdown(wait=True)
+            hash_pool.shutdown(wait=True)
+            for future in futures:
+                with suppress(Exception):
+                    future.exception()
+        # 取消/接管/停机导致未收齐时，如实留下 pending，不伪造完成。
+        summary["pending"] = max(0, total - received)
+        if received < total:
+            reason = abort_reason or self._enrich_abort_reason(job_id, attempt)
+            if reason is None:
+                # 任务仍在 running：仅看门狗停池，按已批准口径写终态并标注中断。
+                summary["interrupted"] = True
+                summary["interrupt_reason"] = "stalled"
+                return self._finalize_enrich_result(
+                    job, files, snapshot_result, summary
+                )
+            summary["interrupted"] = True
+            summary["interrupt_reason"] = reason
+            # 取消/新尝试/停机：收据保留 enrich_pending，绝不写终态收据，
+            # 否则 _committed_truth 会把 cancelled 投影回 succeeded。
+            return self._pending_enrich_result(snapshot_result, summary)
+        # 收齐也要复核：取消可能恰在最后一个结果之后、收据写入之前到达。
+        reason = self._enrich_abort_reason(job_id, attempt)
+        if reason is not None:
+            summary["interrupted"] = True
+            summary["interrupt_reason"] = reason
+            return self._pending_enrich_result(snapshot_result, summary)
+        return self._finalize_enrich_result(job, files, snapshot_result, summary)
+
     def _run(self, job_id, attempt):
         try:
             with self.condition:
@@ -2114,8 +2710,32 @@ class IndexJobs:
             job = self._checkpoint(job_id, attempt)
             self._reverify_workspace_context(job)
             roots = self._check(job)
-            files = self._scan(job_id, attempt, roots, job["_request"])
+            # QIN-652：只在 reindex 的 request 副本上打开快扫。_request 与
+            # _request_digest 逐字节不变，幂等键与 sync 分支语义保持原样。
+            request = dict(job["_request"])
+            fast_scan = request.get("kind") == "reindex"
+            if fast_scan:
+                request["_fast_scan"] = True
+            files = self._scan(job_id, attempt, roots, request)
             generation_stats = getattr(files, "generation_stats", None)
+            enrich_tasks = (
+                list(getattr(files, "enrich_tasks", None) or []) if fast_scan else []
+            )
+            summary = None
+            if enrich_tasks:
+                total_units = sum(
+                    int(task["want_video"]) + int(task["want_hash"])
+                    for task in enrich_tasks
+                )
+                summary = {
+                    "total": total_units,
+                    "done": 0,
+                    "failed": 0,
+                    "skipped": 0,
+                    "pending": total_units,
+                    "video_concurrency": ENRICH_VIDEO_CONCURRENCY,
+                    "hash_concurrency": _enrich_hash_concurrency(),
+                }
             with self.condition:
                 job = self._checkpoint(job_id, attempt)
                 job.update(phase="indexing", scanned=len(files))
@@ -2129,21 +2749,92 @@ class IndexJobs:
                 # 提交必须与取消/暂停在同一线程锁内线性化：
                 # test_commit_wins_cancel_never_reports_cancelled 覆盖该不变量，
                 # 不能在提交期间放开任务锁。
-                result = self._commit(job, files, generation_stats)
+                # 提交前先取幂等基线（只保留判定所需字段的快照，避免提交
+                #  mutate 原地修改同一 dict 造成基线漂移）。
+                pre_commit_existing = {}
+                if enrich_tasks:
+                    from gw.asset_registry import repository as repo
+
+                    try:
+                        for asset in (
+                            repo.readonly_registry_snapshot().get("assets", {}).values()
+                        ):
+                            if not isinstance(asset, dict):
+                                continue
+                            source_metadata = asset.get("metadata")
+                            if not isinstance(source_metadata, dict):
+                                source_metadata = {}
+                            pre_commit_existing[
+                                (
+                                    str(asset.get("root_id") or ""),
+                                    str(asset.get("canonical_relpath") or ""),
+                                )
+                            ] = {
+                                "size_bytes": asset.get("size_bytes"),
+                                "modified_at": asset.get("modified_at"),
+                                "scan_version": asset.get("scan_version"),
+                                "sha256": asset.get("sha256"),
+                                "hash_mode": asset.get("hash_mode"),
+                                "full_sha256_cache": asset.get("full_sha256_cache"),
+                                "duration": asset.get("duration"),
+                                "metadata": {
+                                    field: source_metadata[field]
+                                    for field in ("video_segments", "video_metadata")
+                                    if field in source_metadata
+                                },
+                            }
+                    except Exception:
+                        pre_commit_existing = {}
+                job["_enrich_commit_options"] = {
+                    "enrich_pending": bool(enrich_tasks)
+                }
+                try:
+                    result = self._commit(job, files, generation_stats)
+                finally:
+                    job.pop("_enrich_commit_options", None)
+                if enrich_tasks:
+                    job.update(phase="indexed", result=result, enrich=dict(summary))
+                else:
+                    job.update(
+                        status="succeeded",
+                        phase="completed",
+                        result=result,
+                        scanned=len(files),
+                        error_code=None,
+                    )
+                job["version"] += 1
+                self._save(job)
+                # QIN-652（PM 确认）：登记 settle 提前到快照提交后，用户立即
+                # 可进库；后台富化异常不回滚已入库条目。
+                registration = job.get("_resource_folder_registration") or {}
+                if registration.get("operation_id"):
+                    self._settle_resource_folder_registration(
+                        str(registration["operation_id"]), committed=True
+                    )
+                self.condition.notify_all()
+            if not enrich_tasks:
+                return
+            with self.condition:
+                job = self._checkpoint(job_id, attempt)
+                job.update(phase="enriching")
+                self._save(job)
+                self.condition.notify_all()
+            result = self._enrich(
+                job, files, enrich_tasks, result, summary, pre_commit_existing
+            )
+            with self.condition:
+                job = self._checkpoint(job_id, attempt)
                 job.update(
                     status="succeeded",
                     phase="completed",
                     result=result,
                     scanned=len(files),
                     error_code=None,
+                    enrich=dict(summary),
                 )
                 job["version"] += 1
                 self._save(job)
-                registration = job.get("_resource_folder_registration") or {}
-                if registration.get("operation_id"):
-                    self._settle_resource_folder_registration(
-                        str(registration["operation_id"]), committed=True
-                    )
+                self.condition.notify_all()
         except _Stopped:
             return
         except Exception as exc:
@@ -2155,6 +2846,13 @@ class IndexJobs:
                     return
                 # 注册表已提交而任务状态落盘失败时，以同事务收据为准。
                 receipt = self._receipt_from_registry(job)
+                if isinstance(receipt, dict) and receipt.get("enrich_pending"):
+                    # 富化阶段异常：收据只是快照态，如实标注未补齐，不伪造完成。
+                    receipt = dict(receipt)
+                    receipt.pop("enrich_pending", None)
+                    enrich = dict(receipt.get("enrich") or job.get("enrich") or {})
+                    enrich["interrupted"] = True
+                    receipt["enrich"] = enrich
                 job.update(
                     status="succeeded"
                     if receipt
@@ -2226,7 +2924,8 @@ class IndexJobs:
         finally:
             iterator.close()
 
-    def _hash(self, job_id, attempt, path, expected):
+    def _hash(self, job_id, attempt, path, expected, chunk_bytes=1024 * 1024):
+        """完整 sha256；分块大小可由富化通道按位置参数放宽，防篡改三件套不变。"""
         with self.condition:
             self._checkpoint(job_id, attempt)
             # 与 scandir 分支一致：映射盘上 resolve() 返回 UNC 而 absolute() 保留
@@ -2251,7 +2950,7 @@ class IndexJobs:
             while True:
                 with self.condition:
                     self._checkpoint(job_id, attempt)
-                    chunk = handle.read(1024 * 1024)
+                    chunk = handle.read(chunk_bytes)
                 if not chunk:
                     break
                 digest.update(chunk)
@@ -2318,6 +3017,12 @@ class IndexJobs:
 
         files = []
         entries = 0
+        # QIN-652：_run 只在 request 副本上注入 _fast_scan，快扫阶段跳过视频
+        # 探测与哈希；直接调用 _scan 的既有测试与 sync 分支默认 False，单阶段
+        # 语义原样保留。富化任务清单挂在 _ScanFiles 上，绝不序列化进注册表。
+        fast_scan = bool(request.get("_fast_scan"))
+        enrich_tasks = []
+        scan_paths = {}
         # QIN-600：只在重建索引时读生成元数据；sync 只做差集统计，不碰文件内容。
         want_generation = request.get("kind") == "reindex"
         generation_stats = {
@@ -2463,6 +3168,10 @@ class IndexJobs:
                             "modified_at": time.strftime(
                                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime(info.st_mtime)
                             ),
+                            # QIN-652 返工：落盘版本指纹，供下次 reindex 判定
+                            # 「内容未变」与富化批次校验版本，避免同秒等长改写
+                            # 复用过期哈希/镜头数据。
+                            "scan_version": _file_version(info),
                         }
                         if path.suffix.lower() == ".cube":
                             from gw.asset_registry.lut_cube import (
@@ -2477,11 +3186,13 @@ class IndexJobs:
                                 }
                             except LutCubeError as exc:
                                 _error(422, exc.code, str(exc))
-                        if path.suffix.lower() in VIDEO_SUFFIXES:
+                        if path.suffix.lower() in VIDEO_SUFFIXES and not fast_scan:
                             video_metadata, duration = _video_index_data(path)
                             item["metadata"] = video_metadata
                             if duration is not None:
                                 item["duration"] = duration
+                            # 详情面板读顶层字段；与富化批次同一投影口径。
+                            item.update(video_detail_fields(video_metadata))
                         if want_generation and generation_metadata.is_supported_image(
                             path
                         ):
@@ -2502,7 +3213,7 @@ class IndexJobs:
                                     generation_stats["comfyui_tagged"] += 1
                                 if generation.get("truncated"):
                                     generation_stats["truncated"] += 1
-                        if request["hash_files"]:
+                        if request["hash_files"] and not fast_scan:
                             # QIN-564：超限文件不再 413 fail-fast 整单失败，
                             # 改走首尾 4MiB + 长度的采样哈希并诚实标记 hash_mode。
                             if info.st_size > _HASH_LIMIT_BYTES:
@@ -2523,6 +3234,29 @@ class IndexJobs:
                                     source="index_full",
                                 )
                         files.append(item)
+                        if fast_scan:
+                            scan_paths[(root_id, item["canonical_relpath"])] = path
+                        want_video = path.suffix.lower() in VIDEO_SUFFIXES
+                        want_hash = bool(request["hash_files"])
+                        # 只有确实需要后台重活的文件才进富化清单：非哈希、
+                        # 非视频的纯快扫保持单阶段一次提交语义。
+                        if fast_scan and (want_video or want_hash):
+                            enrich_tasks.append(
+                                {
+                                    "index": len(files) - 1,
+                                    "path": str(path),
+                                    "stat": info,
+                                    "root_id": root_id,
+                                    "storage_root_id": item["storage_root_id"],
+                                    "canonical_relpath": item["canonical_relpath"],
+                                    "display_path": display_path,
+                                    "name": item["name"],
+                                    "size_bytes": info.st_size,
+                                    "modified_at": item["modified_at"],
+                                    "want_video": want_video,
+                                    "want_hash": want_hash,
+                                }
+                            )
                         now = time.monotonic()
                         if (
                             len(files) % PROGRESS_BATCH_SIZE == 0
@@ -2554,12 +3288,36 @@ class IndexJobs:
                                     )
         scanned = _ScanFiles(files)
         scanned.generation_stats = generation_stats
+        scanned.enrich_tasks = enrich_tasks
+        scanned.scan_paths = scan_paths if fast_scan else None
         return scanned
 
     def _commit(self, job, files, generation_stats=None):
+        """原子提交扫描结果（既有入口，签名与语义保持三参数不变）。
+
+        QIN-652：后台富化批次走 ``_commit_items`` 而非 ``_commit``，使既有
+        「一次索引任务一次提交」契约（含对 ``_commit`` 的 monkeypatch 计数）
+        不被批次增量落盘打破。
+        """
+        options = job.get("_enrich_commit_options") or {}
+        return self._commit_items(job, files, generation_stats, options)
+
+    def _commit_items(self, job, files, generation_stats, options):
+        """提交实现；``options`` 只由后台编排传入（下划线键，不进 public）。
+
+        * ``enrich_pending``：快照收据标记「富化未完成」，``_committed_truth``
+          不会把它投影成 succeeded，富化期间 pause/cancel 仍然可用；
+        * ``receipt_mode``：``write`` 首次写收据与登记收据（既有行为）、
+          ``skip`` 富化批次只合并资产不动收据、``update`` 终态只更新收据；
+        * ``update_only``：富化批次只更新已存在条目，绝不新增资产记录。
+        """
         from gw.asset_registry import repository as repo
 
         self._check(job)
+        enrich_pending = bool(options.get("enrich_pending"))
+        receipt_mode = options.get("receipt_mode", "write")
+        update_only = bool(options.get("update_only"))
+        scan_paths = getattr(files, "scan_paths", None)
         receipt_id = f"{job['job_id']}:{job['attempt']}"
 
         def commit(raw):
@@ -2596,7 +3354,7 @@ class IndexJobs:
                 and (not scoped_root_ids or str(item.get("root_id") or "") in live_root_ids)
             ]
             receipts = raw.setdefault("index_job_receipts", {})
-            if receipt_id in receipts:
+            if receipt_id in receipts and receipt_mode == "write":
                 return receipts[receipt_id]
             by_relpath = {}
             for item in valid_files:
@@ -2638,34 +3396,94 @@ class IndexJobs:
             if job["_request"]["kind"] == "reindex":
                 search_documents = {}
                 next_asset_number = repo._asset_sequence_start(raw)
+                # 富化批次（update_only）只允许回写富化产物：身份、名称、大小、
+                # 修改时间、类型都属扫描字段，旧批次绝不能覆盖新版本。
+                scan_fields = (
+                    ("sha256", "hash_mode")
+                    if update_only
+                    else (
+                        "storage_root_id",
+                        "canonical_relpath",
+                        "name",
+                        "size_bytes",
+                        "sha256",
+                        "hash_mode",
+                        "modified_at",
+                        "kind",
+                    )
+                )
+                cache_breaking_fields = {
+                    "storage_root_id",
+                    "canonical_relpath",
+                    "size_bytes",
+                    "sha256",
+                    "hash_mode",
+                    "modified_at",
+                }
                 for item in valid_files:
                     identity = (item["root_id"], item["canonical_relpath"])
                     existing = known.get(identity)
                     if existing is not None:
+                        item_version = item.get("scan_version")
+                        # 版本校验：富化批次只对「扫描时那一版」的资产生效。
+                        # 两个 reindex 交错时，旧任务晚到的批次会把新版本的
+                        # 信息与富化结果改回旧值，因此版本不符整条丢弃。
+                        version_changed = not _same_file_version(
+                            existing.get("scan_version"), item_version
+                        )
+                        if update_only and version_changed:
+                            continue
+                        if not update_only and version_changed and scan_paths is not None:
+                            # 指纹没有先后顺序。提交锁内复核磁盘当前版本，防止
+                            # 旧任务在新任务完成后迟到并清空新版本的富化结果。
+                            path = scan_paths.get(identity)
+                            try:
+                                current_stat = path.lstat() if path is not None else None
+                            except OSError:
+                                current_stat = None
+                            current_version = _file_version(current_stat) if current_stat else {}
+                            # Windows 的 DirEntry.stat 在无哈希扫描时可能不提供
+                            # ino/dev；保留扫描侧的未知值，只比较可得字段。
+                            if isinstance(item_version, dict):
+                                for field in ("ino", "dev"):
+                                    if item_version.get(field) == 0:
+                                        current_version[field] = 0
+                            if (
+                                current_stat is None
+                                or not stat.S_ISREG(current_stat.st_mode)
+                                or getattr(current_stat, "st_file_attributes", 0) & 0x400
+                                or not _same_file_version(current_version, item_version)
+                            ):
+                                continue
                         changed = False
                         cache_invalidated = False
                         was_lut = existing.get("kind") == "lut"
-                        for field in (
-                            "storage_root_id",
-                            "canonical_relpath",
-                            "name",
-                            "size_bytes",
-                            "sha256",
-                            "hash_mode",
-                            "modified_at",
-                            "kind",
-                        ):
+                        if version_changed and item_version is not None:
+                            # 扫到新版本：旧哈希/镜头结果描述的是上一份内容，
+                            # 必须先失效再等富化补齐；否则富化失败或取消后，
+                            # 下一次 reindex 会把「新文件信息 + 旧结果」判成
+                            # 未变化而永久跳过。
+                            for stale in (
+                                "sha256",
+                                "hash_mode",
+                                "full_sha256_cache",
+                                "duration",
+                                "width",
+                                "height",
+                                "frame_rate",
+                            ):
+                                existing.pop(stale, None)
+                            stale_metadata = existing.get("metadata")
+                            if isinstance(stale_metadata, dict):
+                                stale_metadata.pop("video_segments", None)
+                                stale_metadata.pop("video_metadata", None)
+                            existing["scan_version"] = item_version
+                            changed = True
+                        for field in scan_fields:
                             if field in item and existing.get(field) != item[field]:
                                 existing[field] = item.get(field)
                                 changed = True
-                                if field in (
-                                    "storage_root_id",
-                                    "canonical_relpath",
-                                    "size_bytes",
-                                    "sha256",
-                                    "hash_mode",
-                                    "modified_at",
-                                ):
+                                if field in cache_breaking_fields:
                                     cache_invalidated = True
                         if cache_invalidated and "full_sha256_cache" in existing:
                             existing.pop("full_sha256_cache", None)
@@ -2714,6 +3532,14 @@ class IndexJobs:
                                             field
                                         )
                                         changed = True
+                                # 与前端详情面板的读取口径对齐：顶层投影必须与
+                                # metadata 同源，避免出现「元数据补齐了、详情仍读取中」。
+                                for detail_field, detail_value in video_detail_fields(
+                                    scanned_metadata
+                                ).items():
+                                    if existing.get(detail_field) != detail_value:
+                                        existing[detail_field] = detail_value
+                                        changed = True
                             if "lut" in scanned_metadata:
                                 if current_metadata.get("lut") != scanned_metadata["lut"]:
                                     current_metadata["lut"] = scanned_metadata["lut"]
@@ -2753,6 +3579,9 @@ class IndexJobs:
                         if asset_id:
                             search_documents[asset_id] = existing
                         continue
+                    if update_only:
+                        # QIN-652：富化批次只补齐已存在条目，不产生重复/新增记录。
+                        continue
                     asset_id = f"ast_{next_asset_number:04d}"
                     next_asset_number += 1
                     asset_kind = item.get("kind", "indexed")
@@ -2782,6 +3611,9 @@ class IndexJobs:
                 # QIN-600：生成元数据提取的可复核统计（终态后不变）。
                 if generation_stats is not None:
                     result["generation"] = dict(generation_stats)
+                # QIN-652：快照收据带标记，避免富化阶段被投影成终态。
+                if enrich_pending:
+                    result["enrich_pending"] = True
                 # QIN-564 AC1/AC4：哈希模式任务结果如实区分「完整哈希 N /
                 # 超限转采样 M」；非哈希任务不附加哈希计数（诚实口径）。
                 if job["_request"].get("hash_files"):
@@ -2804,8 +3636,11 @@ class IndexJobs:
                     "missing_from_disk": len(scoped - disk),
                     "revision": raw["revision"],
                 }
+            if receipt_mode == "skip":
+                return result
             receipts[receipt_id] = result
-            repo.write_resource_folder_registration_receipt(raw, job)
+            if receipt_mode == "write":
+                repo.write_resource_folder_registration_receipt(raw, job)
             return result
 
         # 提交前最后一次实时核验；令牌只包裹注册表写入，避免跨任务泄漏。
@@ -2823,13 +3658,13 @@ class IndexJobs:
 
 
 class _ScanFiles(list):
-    """扫描结果：保持 list 语义，附带生成元数据统计（QIN-600）。
+    """扫描结果：保持 list 语义，附带统计与后台富化任务（QIN-600 / QIN-652）。
 
     既有调用方与契约测试都把 `_scan` 的返回值当列表使用（遍历、`len`），
-    因此统计挂在列表子类的属性上，而不是把返回值改成元组。
+    因此统计与富化清单挂在列表子类的属性上，而不是把返回值改成元组。
     """
 
-    __slots__ = ("generation_stats",)
+    __slots__ = ("generation_stats", "enrich_tasks", "scan_paths")
 
 
 class _Stopped(Exception):

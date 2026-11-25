@@ -187,13 +187,13 @@ export const FROZEN_BASELINE_SELECTS = [
   },
   {
     "file": "web/js/modules/asset-manager/organize.js",
-    "line": 1106,
+    "line": 1112,
     "col": 37,
     "pattern": "boardSourceExisting"
   },
   {
     "file": "web/js/modules/asset-manager/organize.js",
-    "line": 1653,
+    "line": 1659,
     "col": 20,
     "pattern": "boardFolderCreateRoot"
   },
