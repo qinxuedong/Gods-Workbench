@@ -818,7 +818,7 @@ function refreshRegistryDetailPanelDom(keepScroll=false){
     const savedScrollTop = keepScroll && detailScroll ? detailScroll.scrollTop : 0;
     const template = document.createElement('template');
     template.innerHTML = renderRegistryDetailPanel().trim();
-    const next = template.content.firstElementChild;
+    const next = template.content?.firstElementChild;
     if(!next) return false;
     panel.replaceWith(next);
     if(savedScrollTop > 0) next.querySelector('.detail-scroll')?.scrollTo?.({top:savedScrollTop});
@@ -904,13 +904,14 @@ function toggleRegistryDetailPanel(){
     // 【修复滚动跳顶】折叠/展开只切换根类与详情面板局部节点：网格卡片节点保持不变，
     // 布局变化由 CSS 类（registry-detail-collapsed 列宽切换）与 masonry 重排承接，
     // 不整树 render()，避免锚点恢复失败导致的视口跳顶与缩略图回退。
-    root.classList.toggle('registry-detail-collapsed', assetBoardById(activeTab)?.system === false && registryDetailPanelCollapsed);
+    // 【QIN-661】LUT 与自定义库共用右侧详情栏，折叠切换必须同步维护根类，否则 Grid 第 3 列保持 320px。
+    root.classList.toggle('registry-detail-collapsed', (assetBoardById(activeTab)?.system === false || activeTab === 'lut') && registryDetailPanelCollapsed);
     syncRegistryDetailGridWidth();
     const panel = root.querySelector('.registry-detail-panel');
     if(!panel){ render(); return; }
     const template = document.createElement('template');
     template.innerHTML = renderRegistryDetailPanel().trim();
-    const next = template.content.firstElementChild;
+    const next = template.content?.firstElementChild;
     if(next){
         panel.replaceWith(next);
         refreshIcons();
@@ -4452,4 +4453,5 @@ export {
     scheduleDetailMediaVideoDockPosition,
     showDetailPreview,
     switchDetailImageEditorAsset,
+    toggleRegistryDetailPanel,
 };

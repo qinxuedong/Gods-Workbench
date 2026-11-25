@@ -4161,54 +4161,57 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .asset-manager-root.asset-tree-layout.asset-manager-root-page-lut.registry-detail-collapsed {
     grid-template-columns:240px minmax(0,1fr) 44px;
 }
-.registry-detail-panel.is-collapsed .registry-detail-expand {
-    justify-content:flex-start;
-    padding:0 0 12px;
-    gap:12px;
+@media (min-width: 821px) {
+    .registry-detail-panel.is-collapsed .registry-detail-expand {
+        justify-content:flex-start;
+        padding:0 0 12px;
+        gap:12px;
+    }
+    .registry-detail-panel.is-collapsed .registry-detail-expand::before {
+        content:"";
+        display:block;
+        width:100%;
+        height:1px;
+        background:var(--line-2,rgba(223,195,132,.18));
+        flex:0 0 auto;
+    }
+    .registry-detail-panel.is-collapsed .registry-detail-expand > svg {
+        width:28px;
+        height:28px;
+        padding:6px;
+        margin-top:8px;
+        border:1px solid var(--line-2,rgba(223,195,132,.34));
+        border-radius:6px;
+        background:var(--card-gradient,var(--card));
+        color:var(--gold-primary,var(--text));
+        box-sizing:border-box;
+        flex:0 0 auto;
+    }
 }
-.registry-detail-panel.is-collapsed .registry-detail-expand::before {
-    content:"";
-    display:block;
-    width:100%;
-    height:1px;
-    background:rgba(223,195,132,.18);
-    flex:0 0 auto;
-}
-.registry-detail-panel.is-collapsed .registry-detail-expand > svg {
-    width:28px;
-    height:28px;
-    padding:6px;
-    margin-top:8px;
-    border:1px solid rgba(223,195,132,.34);
-    border-radius:6px;
-    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
-    color:var(--vault-gold-light,#eddab3);
-    box-sizing:border-box;
-    flex:0 0 auto;
-}
+/* 【QIN-661】.asset-lightbox 挂在 html 下，改用全站主题变量（--card-gradient / --text / --gold-primary），确保 dark/light 主题下均对比度正常。 */
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar {
     min-width:0;
-    border-left:1px solid var(--vault-line-soft,rgba(223,195,132,.22));
-    border-top:1px solid rgba(223,195,132,.18);
-    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
-    color:var(--vault-text,#e8ecf4);
+    border-left:1px solid var(--line-2,var(--line));
+    border-top:1px solid var(--line-2,var(--line));
+    background:var(--card-gradient,var(--panel));
+    color:var(--text);
 }
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-tabs {
-    border-bottom:1px solid rgba(223,195,132,.22);
-    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
-    box-shadow:inset 0 1px rgba(255,255,255,.06),0 3px 12px rgba(0,0,0,.28);
+    border-bottom:1px solid var(--line-2,var(--line));
+    background:var(--card-gradient,var(--panel));
+    box-shadow:inset 0 1px rgba(255,255,255,.06),0 3px 12px var(--shadow,rgba(0,0,0,.2));
 }
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle {
-    border:1px solid rgba(223,195,132,.34);
+    border:1px solid var(--line-2,var(--line));
     border-radius:6px;
-    background:rgba(255,255,255,.03);
-    color:var(--vault-gold-light,#eddab3);
+    background:var(--soft);
+    color:var(--gold-primary,var(--text));
 }
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle:hover,
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar .asset-detail-media-sidebar-toggle:focus-visible {
-    border-color:rgba(223,195,132,.65);
-    background:rgba(223,195,132,.14);
-    color:#fff;
+    border-color:var(--gold-primary,var(--line-2));
+    background:var(--gold-dim,var(--soft-2));
+    color:var(--text);
 }
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar.is-collapsed {
     padding:0;
@@ -4226,7 +4229,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     border:0;
     border-radius:0;
     background:transparent;
-    color:var(--vault-gold-light,#eddab3);
+    color:var(--gold-primary,var(--text));
     display:flex;
     flex-direction:column;
     align-items:center;
@@ -4235,14 +4238,14 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     cursor:pointer;
 }
 .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar.is-collapsed > .asset-detail-media-sidebar-expand:hover {
-    background:rgba(223,195,132,.08);
-    color:#fff;
+    background:var(--gold-dim,var(--soft));
+    color:var(--text);
 }
 .asset-detail-media-sidebar-expand-icon {
     width:100%;
     height:38px;
-    border-bottom:1px solid rgba(223,195,132,.22);
-    background:linear-gradient(180deg,var(--vault-card,#12161f),var(--vault-card-deep,#0b0e14));
+    border-bottom:1px solid var(--line-2,var(--line));
+    background:var(--card-gradient,var(--panel));
     display:grid;
     place-items:center;
     flex:0 0 auto;
@@ -4252,9 +4255,9 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     height:15px;
     padding:5px;
     box-sizing:content-box;
-    border:1px solid rgba(223,195,132,.34);
+    border:1px solid var(--line-2,var(--line));
     border-radius:6px;
-    color:var(--vault-gold-light,#eddab3);
+    color:var(--gold-primary,var(--text));
 }
 .asset-detail-media-sidebar-expand-label {
     writing-mode:vertical-rl;
