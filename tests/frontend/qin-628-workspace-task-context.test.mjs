@@ -36,11 +36,15 @@ function sliceFunction(source, name){
 
 function createHarness(){
     const host = {hidden:true, innerHTML:''};
+    const transfer = {hidden:true};
     const context = vm.createContext({
         console, Math, Number, String, Array, Object, JSON, Boolean,
         document: {
             querySelector(selector){
                 return selector === '[data-workspace-indicator]' ? host : null;
+            },
+            querySelectorAll(selector){
+                return selector === '[data-transfer-open]' ? [transfer] : [];
             },
         },
     });
@@ -55,6 +59,7 @@ function createHarness(){
         ${sliceFunction(MANAGER, 'renderWorkspaceIndicator')}
         return {setWorkspaceContext, setWorkspaceTaskContext, host};
     })()`, context, {filename: 'qin-628-workspace-indicator-harness.js'});
+    api.transfer = transfer;
     return api;
 }
 
@@ -81,6 +86,17 @@ test('页头先显示工作区快照，再由任务上下文覆盖执行端与�
     assert.match(api.host.innerHTML, /结果：连接 NAS 工作区 · machine_nas_exec_01/);
     assert.match(api.host.innerHTML, /任务 job_index_00000001/);
     assert.doesNotMatch(api.host.innerHTML, /执行：machine_local_01/);
+});
+
+test('传输入口随当前工作区切换，未知状态及本机隐藏', () => {
+    const api = createHarness();
+    api.setWorkspaceContext(null);
+    assert.equal(api.transfer.hidden, true);
+    api.setWorkspaceContext({active_workspace_id:'ws_nas_01'});
+    assert.equal(api.transfer.hidden, false);
+    api.setWorkspaceTaskContext({workspace_id:'ws_nas_01'});
+    api.setWorkspaceContext({active_workspace_id:'ws_local_01'});
+    assert.equal(api.transfer.hidden, true);
 });
 
 test('切换工作区后丢弃旧任务上下文，避免旧执行端串到新工作区', () => {

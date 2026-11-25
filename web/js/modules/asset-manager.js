@@ -264,7 +264,7 @@ function setWorkspaceContext(snapshot){
     if(workspaceTaskContext && workspaceContext && workspaceTaskContext.workspace_id !== workspaceContext.active_workspace_id){
         workspaceTaskContext = null;
     }
-    renderWorkspaceIndicator();
+    renderWorkspaceIndicator(); document.querySelectorAll('[data-transfer-open]').forEach(button => { button.hidden = workspaceContext?.active_workspace_id !== 'ws_nas_01'; });
 }
 function setWorkspaceTaskContext(job){
     if(!job || !job.workspace_id) return;
@@ -6426,8 +6426,6 @@ function applyRegistrySelectValue(kind, value){
     render();
 }
 function renderRegistryToolbar(board, title, subtitle, options={}){
-    const selectedIds = registryActiveSelectedIds(board);
-    const selectedGroupIds = selectedRegistryCustomGroupIds(board);
     const searchLabel = board?.name || '全部资产';
     const coverflowAvailable = registryCoverflowAssets(board).length > 0;
     const coverflowLabel = coverflowAvailable ? '打开当前素材库 Coverflow' : '当前素材库没有图片或视频';
@@ -6441,21 +6439,18 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
     const shellUnassignedCount = shellUnassignedSource?.querySelector('[data-unassigned-count]')?.textContent || '';
     const shellUnassignedVisibility = shellUnassignedSource?.style.display === 'none' ? ' style="display:none"' : '';
     const groupActions = embeddedVault ? `<div class="registry-toolbar-group-actions">
-        <button class="hw-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
-        <button class="hw-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>
         <div class="registry-toolbar-shell-actions" aria-label="资产库操作">
             <button class="hw-btn" type="button" data-vault-shell-unassigned${shellUnassignedVisibility} onclick="parent.GWUnassignedInbox.open()" title="尚未归属任何项目的资产（仅本人可见）"><i data-lucide="inbox"></i><span>未归属</span><span data-unassigned-count>${escapeHtml(shellUnassignedCount)}</span></button>
             <button class="hw-btn" type="button" data-vault-shell-settings onclick="parent.WorkbenchAssets.openAssetSettings()" title="打开资产库设置"><i data-lucide="settings-2"></i><span>资产设置</span></button>
         </div>
-    </div>` : `<button class="hw-btn" type="button" data-registry-group-selected ${selectedIds.length ? '' : 'disabled'}><i data-lucide="folder-plus"></i><span>加入分组</span></button>
-            <button class="hw-btn" type="button" data-registry-group-remove ${selectedGroupIds.length ? '' : 'disabled'}><i data-lucide="folder-minus"></i><span>移出分组</span></button>`;
+    </div>` : '';
     const governanceTotal = governanceSuggestionTotal();
     const governanceBadge = governanceSuggestionsError ? '!' : governanceSuggestionsLoading ? '…' : governanceSuggestionsData ? String(governanceTotal) : '—';
-    const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>治理建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';
+    const governanceTrigger = '<button class="hw-btn governance-topbar-entry' + (governanceSuggestionsError ? ' has-error' : '') + '" type="button" data-governance-open aria-haspopup="dialog" aria-expanded="' + String(governanceDrawerOpen) + '" aria-label="' + escapeAttr(governanceTriggerLabel()) + '" title="' + escapeAttr(governanceTriggerLabel()) + '"><i data-lucide="list-checks"></i><span>建议</span><span class="governance-topbar-count" data-governance-total>' + escapeHtml(governanceBadge) + '</span></button>';
     if(embeddedVault && activeTab === 'scripts') options.hideHeading = true;
     const hideHeading = Boolean(options.hideHeading || (embeddedVault && ['prompts', 'canvas-assets', 'workflows'].includes(activeTab)));
     const transferControl = !board && ['assets', 'registry'].includes(activeTab)
-        ? '<button class="hw-btn" type="button" data-transfer-open aria-haspopup="dialog" aria-label="传输到工作区" title="把本机选择的文件显式传输到当前工作区"><i data-lucide="cloud-upload"></i><span>传输到工作区</span></button>'
+        ? `<button class="hw-btn" type="button" data-transfer-open${workspaceContext?.active_workspace_id === 'ws_nas_01' ? '' : ' hidden'} aria-haspopup="dialog" aria-label="传输到工作区" title="把本机选择的文件显式传输到当前工作区"><i data-lucide="cloud-upload"></i><span>传输到工作区</span></button>`
         : '';
     return `<div class="content-toolbar registry-toolbar">
         ${options.hideHeading ? '' : (hideHeading ? '' : `<div class="content-heading"><strong>${escapeHtml(title)}</strong><span>${escapeHtml(subtitle)}</span></div>`)}
@@ -6471,7 +6466,6 @@ function renderRegistryToolbar(board, title, subtitle, options={}){
             ${renderRegistrySelectCapsule({kind:'group', icon:'layers', label:'分组'})}
             <button class="hw-btn" type="button" data-registry-aspect-toggle aria-pressed="${registryAspect === 'square'}" title="${registryAspect === 'square' ? '当前方格显示，点击恢复原始比例' : '当前原始比例，点击切换方格显示'}"><i data-lucide="square"></i><span>方格</span></button>
             <button class="hw-btn registry-toggle ${registrySimple ? 'is-active' : ''}" type="button" data-registry-simple-toggle aria-pressed="${registrySimple}"><i data-lucide="image"></i><span>简洁</span></button>
-            ${options.allowUrl ? '<button class="hw-btn" type="button" data-registry-add-url><i data-lucide="link"></i><span>添加 URL</span></button>' : ''}
             ${groupActions}
             ${(options.lutImport || activeTab === 'lut') ? `<button class="hw-btn" type="button" data-registry-recycle-bin-open><i data-lucide="trash-2"></i><span>回收站</span></button><button class="hw-btn hw-btn-gold registry-lut-import-btn" type="button" data-lut-import-trigger ${(options.lutImportBusy || lutImportBusy) ? 'disabled="disabled" aria-busy="true"' : ''}><i data-lucide="upload"></i><span>${(options.lutImportBusy || lutImportBusy) ? '正在导入…' : '导入 LUT'}</span></button><input type="file" accept=".cube" multiple data-lut-import-input hidden>` : ''}
         </div>
