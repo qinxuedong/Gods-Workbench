@@ -3361,7 +3361,8 @@ async function waitForIndexedAssetSnapshot(jobId, sourceName='素材库'){
                     if(status === 'succeeded') setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
                     return job;
                 }
-                setStatus(`素材库“${sourceName}”基础条目已入库，正在补齐视频元数据与哈希…（${Number(job.enrich?.done || 0)}/${Number(job.enrich?.total || 0)}）`);
+                // 顶尖栏单行约 230px（1440 实测），文案按此收短，避免被截断。
+                setStatus(`“${sourceName}”已入库，补齐中 ${Number(job.enrich?.done || 0)}/${Number(job.enrich?.total || 0)}`);
             }else if(terminal){
                 // 没有富化任务的单阶段 job：不重复刷新，直接交回既有终态处理。
                 return job;
