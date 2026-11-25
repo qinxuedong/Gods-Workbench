@@ -1569,8 +1569,7 @@ function renderDetailModelInspector(item, tags, rows, url){
         <div class="asset-detail-inspector-content">
             <div class="asset-detail-title asset-detail-model-title">
                 <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div>
-                <h2>${detailViewerNameHtml(item.name)}</h2>
-                <p>${escapeHtml(detailViewerSourceLabel(detailViewerState.source, item))}</p>
+                <!-- QIN-661：文件名下移至 facts 首行 -->
             </div>
             <dl class="asset-detail-model-summary">
                 <div><dt>格式</dt><dd>${escapeHtml(info?.format || assetFileExtension(item).toUpperCase() || '3D')}</dd></div>
@@ -1579,7 +1578,7 @@ function renderDetailModelInspector(item, tags, rows, url){
                 <div><dt>大小</dt><dd>${escapeHtml(formatFileSize(item.size || 0))}</dd></div>
             </dl>
             ${info?.preview_source_detail ? `<section class="asset-detail-model-source"><strong>${escapeHtml(info.preview_source_label || '静态预览')}</strong><p>${escapeHtml(info.preview_source_detail)}</p></section>` : ''}
-            <dl class="asset-detail-facts">${renderDetailViewerMetaRows(rows, item)}</dl>
+            <dl class="asset-detail-facts">${renderDetailViewerMetaRows([['文件名', String(item.name || '未命名素材')], ...rows], item)}</dl>
             ${registryMeta}
         </div>
     </aside>`;
@@ -1587,12 +1586,13 @@ function renderDetailModelInspector(item, tags, rows, url){
 function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraContent='', source=detailViewerState.source){
     const editableName = type === 'audio' && detailViewerCanRename(source);
     const inspectorRows = type === 'video' ? detailVideoRemainingRows(rows) : rows;
+    const factRows = editableName ? inspectorRows : [['文件名', String(item.name || '未命名素材')], ...inspectorRows];
     return `
-        <div class="asset-detail-title">${editableName
-            ? `<label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label>`
-            : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
+        ${editableName
+            ? `<div class="asset-detail-title"><label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label></div>`
+            : ''}
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
-        ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
+        ${factRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(factRows, item)}</dl>` : ''}
         ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
         ${extraContent}`;

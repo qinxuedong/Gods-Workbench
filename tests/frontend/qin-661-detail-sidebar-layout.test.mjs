@@ -94,3 +94,9 @@ test('QIN-661 AC3：多素材画布右侧面板折叠态保留触发属性并对
         host.dispose();
     }
 });
+
+test('QIN-661 AC5/AC6：文件名下移至文件格式同级首行，版本历史按钮左对齐且对齐黑金样式', () => {
+    const css = readFileSync(CSS_PATH, 'utf8');
+    assert.match(css, /\.registry-detail-image-version > button:first-child\s*\{[^}]*justify-items:start;/);
+    assert.match(css, /\.registry-detail-image-version\.is-selected\s*\{[^}]*border-color:var\(--gold-primary/);
+});
