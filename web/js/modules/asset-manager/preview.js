@@ -85,7 +85,7 @@ import {
     detailViewerFileParams,
     detailViewerFontExpandedPreference,
     detailViewerFontListCollapsed,
-    detailViewerInspectorCollapsed,
+    detailViewerInspectorCollapsed, setDetailViewerInspectorCollapsed,
     detailViewerItem,
     detailViewerMediaPreloads,
     detailViewerSourceLabel,
@@ -253,7 +253,7 @@ import {
     pushDetailMediaCanvasHistory,
     refreshDetailMediaCanvasLibraryGrid,
     refreshDetailMediaCanvasSidebarDetail,
-    renderDetailMediaCanvas,
+    renderDetailMediaCanvas, renderDetailMediaCanvasToolbar,
     renderDetailMediaCanvasLibrary,
     saveDetailReferenceCanvas,
     selectDetailMediaCanvasItem,
@@ -1845,7 +1845,7 @@ function renderDetailViewer(){
     const inspector = showMediaLibrary ? renderDetailMediaCanvasLibrary() : renderDetailViewerInspector(item, type, tags, rows, url);
     const originLabel = assetBoardById(detailViewerState.originTab)?.name || detailViewerTypeLabel(type);
     overlay.innerHTML = `<div class="asset-detail-viewer-page ${mediaCanvasMode ? 'is-media-canvas-mode' : ''}" data-floating-content role="dialog" aria-modal="true" aria-label="${escapeAttr(item.name || '素材详情')}">
-        ${mediaCanvasMode ? '' : `<header class="asset-detail-viewer-head">
+        ${mediaCanvasMode ? renderDetailMediaCanvasToolbar(detailViewerState.source, item) : `<header class="asset-detail-viewer-head">
             <nav class="asset-detail-breadcrumb" aria-label="详情路径"><button type="button" data-detail-breadcrumb="home">资产中心</button><i data-lucide="chevron-right"></i><button type="button" data-detail-breadcrumb="origin">${escapeHtml(originLabel)}</button><i data-lucide="chevron-right"></i><strong>${escapeHtml(item.name || '未命名素材')}</strong></nav>
             <div class="asset-detail-head-actions">
                 <span data-detail-position-label>${detailPositionLabel}</span>
@@ -1974,7 +1974,7 @@ function toggleDetailInspector(){
     const inspector = overlay?.querySelector?.('[data-detail-inspector]');
     const button = inspector?.querySelector?.('[data-detail-inspector-toggle]');
     if(!body || !inspector || !button) return;
-    detailViewerInspectorCollapsed = !detailViewerInspectorCollapsed;
+    const nextCollapsed = !detailViewerInspectorCollapsed; setDetailViewerInspectorCollapsed(nextCollapsed);
     try { localStorage.setItem(ASSET_DETAIL_INSPECTOR_COLLAPSED_KEY, String(detailViewerInspectorCollapsed)); } catch(_) {}
     body.classList.toggle('asset-detail-inspector-collapsed', detailViewerInspectorCollapsed);
     inspector.classList.toggle('is-collapsed', detailViewerInspectorCollapsed);
@@ -4065,7 +4065,7 @@ document.addEventListener('click', event => {
         renderDetailViewer();
         return;
     }
-    if(event.target.closest?.('[data-detail-inspector-toggle]')){ toggleDetailInspector(); return; }
+    if(event.target.closest?.('[data-detail-inspector-toggle], .asset-detail-inspector.is-collapsed .asset-detail-inspector-head')){ toggleDetailInspector(); return; }
     const officePdf = event.target.closest?.('[data-detail-office-pdf]');
     if(officePdf){ exportDetailOfficePdf(officePdf.dataset.detailOfficePdf || '', officePdf).catch(err => setStatus(err.message || 'PDF 转换失败')); return; }
     const officeOpen = event.target.closest?.('[data-detail-office-open]');
@@ -4459,5 +4459,6 @@ export {
     scheduleDetailMediaVideoDockPosition,
     showDetailPreview,
     switchDetailImageEditorAsset,
+    toggleDetailInspector,
     toggleRegistryDetailPanel,
 };

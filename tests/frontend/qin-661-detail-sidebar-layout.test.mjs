@@ -121,3 +121,27 @@ test('QIN-661 AC5/AC6：文件名下移至文件格式同级首行、单行中�
         host.dispose();
     }
 });
+
+test('QIN-661 补充：画布工具栏独立于分栏铺满顶部，非画布（音频/LUT等）详情折叠后可正常展开', async () => {
+    const css = readFileSync(CSS_PATH, 'utf8');
+    assert.match(css, /\.asset-detail-viewer-page\.is-media-canvas-mode\s*\{\s*grid-template-rows:auto minmax\(0,1fr\) !important;\s*\}/);
+    assert.match(css, /\.asset-detail-inspector\.is-collapsed \.asset-detail-inspector-head\s*\{[^}]*flex-direction:column;/);
+    assert.match(css, /\.asset-detail-inspector\.is-collapsed \.asset-detail-inspector-head > strong\s*\{[^}]*writing-mode:vertical-rl;/);
+
+    const host = await createAssetViewHost({ tab: null });
+    try {
+        const preview = await import(pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/preview.js')).href);
+        const main = await import(pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager.js')).href);
+        assert.equal(typeof main.setDetailViewerInspectorCollapsed, 'function', '必须导出 setDetailViewerInspectorCollapsed 避免只读绑定赋值报错');
+        main.setDetailViewerInspectorCollapsed(true);
+        const overlay = host.document.createElement('div');
+        overlay.className = 'asset-detail-viewer';
+        overlay.innerHTML = '<div class="asset-detail-viewer-body asset-detail-inspector-collapsed"><aside class="asset-detail-inspector is-collapsed" data-detail-inspector><header class="asset-detail-inspector-head"><button type="button" data-detail-inspector-toggle></button></header></aside></div>';
+        host.document.body.appendChild(overlay);
+        preview.toggleDetailInspector();
+        assert.equal(main.detailViewerInspectorCollapsed, false, '音频/LUT 等普通详情必须能正常展开');
+        assert.equal(overlay.querySelector('[data-detail-inspector]').classList.contains('is-collapsed'), false);
+    } finally {
+        host.dispose();
+    }
+});

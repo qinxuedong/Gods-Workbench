@@ -11953,6 +11953,7 @@ function setDetailViewerState(v){ detailViewerState = v; }
 function setDetailViewerFontExpandedPreference(v){ detailViewerFontExpandedPreference = v; }
 function setDetailViewerFontListCollapsed(v){ detailViewerFontListCollapsed = v; }
 function setDetailMediaCanvasLibraryCollapsed(v){ detailMediaCanvasLibraryCollapsed = v; }
+function setDetailViewerInspectorCollapsed(v){ detailViewerInspectorCollapsed = Boolean(v); }
 function setDetailMediaCanvasLibraryThumbSize(v){ detailMediaCanvasLibraryThumbSize = v; }
 function gwSetDetailMediaCanvasLibraryWidth(v){ detailMediaCanvasLibraryWidth = v; }
 function gwSetDetailMediaCanvasMinimapVisible(v){ detailMediaCanvasMinimapVisible = v; }
@@ -12363,6 +12364,7 @@ export {
     detailViewerFontExpandedPreference,
     detailViewerFontListCollapsed,
     detailViewerInspectorCollapsed,
+    setDetailViewerInspectorCollapsed,
     detailViewerItem,
     detailViewerMediaPreloads,
     detailViewerSourceLabel,

@@ -4301,6 +4301,80 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     margin-top:0;
     margin-bottom:1px;
 }
+/* 【QIN-661】画布模式顶部工具栏横跨全宽，右侧栏展开/折叠不影响顶部按钮布局，也不留顶部黑洞 */
+.asset-detail-viewer-page.is-media-canvas-mode {
+    grid-template-rows:auto minmax(0,1fr) !important;
+}
+.asset-detail-viewer-page.is-media-canvas-mode > .asset-detail-viewer-body.asset-detail-media-library-layout > .asset-detail-media-sidebar {
+    margin-top:0;
+    height:100%;
+}
+.asset-detail-viewer-page.is-media-canvas-mode .asset-detail-media-canvas-shell {
+    grid-template-rows:minmax(0,1fr);
+}
+.asset-detail-viewer-page.is-media-canvas-mode .asset-detail-media-canvas-shell.gw-coverflow-embedded-host {
+    grid-template-rows:minmax(0,1fr) 260px !important;
+}
+.asset-detail-viewer-page.is-media-canvas-mode .asset-detail-media-canvas-shell.gw-coverflow-embedded-host > .gw-coverflow--embedded {
+    grid-row:2;
+}
+/* 【QIN-661】非画布详情（音频/LUT/视频/模型/字体/文档）右侧详情栏头部与折叠态竖排整条可点 */
+.asset-detail-inspector-head {
+    height:44px;
+    min-height:44px;
+    padding:0 12px 0 0;
+    border-bottom:1px solid var(--line-2);
+    display:flex;
+    align-items:center;
+    gap:10px;
+}
+.asset-detail-inspector-head > strong {
+    flex:1 1 auto;
+    min-width:0;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    font-size:var(--gw-type-body-md);
+    font-weight:800;
+}
+.asset-detail-inspector-head > svg {
+    width:14px;
+    height:14px;
+    color:var(--muted);
+    flex:0 0 auto;
+}
+.asset-detail-inspector.is-collapsed {
+    grid-template-rows:minmax(0,1fr);
+}
+.asset-detail-inspector.is-collapsed .asset-detail-inspector-head {
+    height:100%;
+    padding:0 0 12px;
+    border-bottom:0;
+    flex-direction:column;
+    align-items:center;
+    justify-content:flex-start;
+    gap:12px;
+    cursor:pointer;
+}
+.asset-detail-inspector.is-collapsed .asset-detail-inspector-head:hover {
+    background:var(--gold-dim,var(--soft));
+}
+.asset-detail-inspector.is-collapsed .asset-detail-inspector-toggle {
+    width:100%;
+    height:44px;
+    border-right:0;
+    flex:0 0 auto;
+}
+.asset-detail-inspector.is-collapsed .asset-detail-inspector-head > strong {
+    flex:0 0 auto;
+    writing-mode:vertical-rl;
+    white-space:nowrap;
+    letter-spacing:.08em;
+    color:var(--gold-primary,var(--text));
+}
+.asset-detail-inspector.is-collapsed .asset-detail-inspector-head > svg {
+    display:none;
+}
 .asset-detail-media-version-history .registry-detail-image-version,
 .registry-detail-image-version {
     border:1px solid var(--line-2,rgba(223,195,132,.26));
