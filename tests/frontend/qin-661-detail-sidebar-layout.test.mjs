@@ -95,8 +95,28 @@ test('QIN-661 AC3：多素材画布右侧面板折叠态保留触发属性并对
     }
 });
 
-test('QIN-661 AC5/AC6：文件名下移至文件格式同级首行，版本历史按钮左对齐且对齐黑金样式', () => {
+test('QIN-661 AC5/AC6：文件名下移至文件格式同级首行、单行中间省略底部对齐，版本历史按钮左对齐且对齐黑金样式', async () => {
     const css = readFileSync(CSS_PATH, 'utf8');
     assert.match(css, /\.registry-detail-image-version > button:first-child\s*\{[^}]*justify-items:start;/);
     assert.match(css, /\.registry-detail-image-version\.is-selected\s*\{[^}]*border-color:var\(--gold-primary/);
+    assert.match(css, /\.asset-detail-media-sidebar-detail \.asset-detail-facts > div\s*\{[^}]*align-items:end;/);
+    assert.match(css, /\.asset-detail-media-sidebar-detail \.asset-detail-path span\s*\{[^}]*white-space:nowrap;/);
+
+    const host = await createAssetViewHost({ tab: null });
+    try {
+        const preview = await import(pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/preview.js')).href);
+        const longName = 'ComfyUI_Very_Long_Asset_Name_With_Many_Tokens_00012_.png';
+        const longPath = 'D:\\ComfyUI-Easy\\ComfyUI-Easy-Install\\ComfyUI\\output\\comfyui_00012_.png';
+        const html = preview.renderDetailViewerInspectorContent(
+            { id: 'ast_long', name: longName, size: 1363148, asset_type: 'image', absolute_path: longPath },
+            'image',
+            [],
+            [['文件格式', 'PNG'], ['存储位置', longPath, 'path']],
+            '/media',
+        );
+        assert.match(html, /D:\\ComfyUI.*\.\.\..*comfyui_00012_\.png/);
+        assert.match(html, /title="ComfyUI_Very_Long_Asset_Name_With_Many_Tokens_00012_\.png"/);
+    } finally {
+        host.dispose();
+    }
 });

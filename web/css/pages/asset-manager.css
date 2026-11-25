@@ -4267,7 +4267,39 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     letter-spacing:.08em;
 }
 .asset-detail-media-sidebar-detail .asset-detail-facts > div:first-child {
-    padding-top:2px;
+    padding-top:4px;
+}
+/* 【QIN-661】详情事实列表：统一单行紧凑高度、文字贴近底线、左右底部对齐 */
+.asset-detail-media-sidebar-detail .asset-detail-facts {
+    padding:4px 0 8px;
+}
+.asset-detail-media-sidebar-detail .asset-detail-facts > div {
+    min-height:28px;
+    padding:6px 0 3px;
+    align-items:end;
+}
+.asset-detail-media-sidebar-detail .asset-detail-facts dt,
+.asset-detail-media-sidebar-detail .asset-detail-facts dd {
+    line-height:1.2;
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+}
+.asset-detail-media-sidebar-detail .asset-detail-path-row {
+    align-items:end !important;
+}
+.asset-detail-media-sidebar-detail .asset-detail-path {
+    align-items:flex-end;
+}
+.asset-detail-media-sidebar-detail .asset-detail-path span {
+    white-space:nowrap;
+    overflow:hidden;
+    text-overflow:ellipsis;
+    word-break:normal;
+}
+.asset-detail-media-sidebar-detail .asset-detail-path svg {
+    margin-top:0;
+    margin-bottom:1px;
 }
 .asset-detail-media-version-history .registry-detail-image-version,
 .registry-detail-image-version {

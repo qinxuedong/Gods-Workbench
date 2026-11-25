@@ -1497,12 +1497,13 @@ function renderDetailViewerMedia(source, item, type){
 }
 function renderDetailViewerMetaRows(rows, item){
     return rows.map(([label,value,kind]) => {
-        if(kind !== 'path') return `<div><dt>${escapeHtml(label)}</dt><dd title="${escapeAttr(value)}">${escapeHtml(value)}</dd></div>`;
+        const display = detailTruncateMiddleText(value);
+        if(kind !== 'path') return `<div><dt>${escapeHtml(label)}</dt><dd title="${escapeAttr(value)}">${escapeHtml(display)}</dd></div>`;
         if(item.is_remote){
-            return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><a class="asset-detail-path" href="${escapeAttr(detailViewerUrl(detailViewerState.source, item))}" target="_blank" rel="noopener"><span>${escapeHtml(value)}</span><i data-lucide="external-link"></i></a></dd></div>`;
+            return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><a class="asset-detail-path" href="${escapeAttr(detailViewerUrl(detailViewerState.source, item))}" target="_blank" rel="noopener" title="${escapeAttr(value)}"><span>${escapeHtml(display)}</span><i data-lucide="external-link"></i></a></dd></div>`;
         }
         const canReveal = detailViewerFileParams(detailViewerState.source,item).toString().length > 0;
-        return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><button class="asset-detail-path" type="button" data-detail-file-reveal ${canReveal ? '' : 'disabled'} title="${canReveal ? '在文件夹中显示此文件' : '位置不可用'}"><span data-detail-path-value>${escapeHtml(value)}</span><i data-lucide="folder-search"></i></button></dd></div>`;
+        return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><button class="asset-detail-path" type="button" data-detail-file-reveal ${canReveal ? '' : 'disabled'} title="${canReveal ? escapeAttr(value) : '位置不可用'}"><span data-detail-path-value>${escapeHtml(display)}</span><i data-lucide="folder-search"></i></button></dd></div>`;
     }).join('');
 }
 function renderDetailAudioPlaylist(item){
@@ -1568,9 +1569,7 @@ function renderDetailModelInspector(item, tags, rows, url){
         ${renderDetailInspectorHeader()}
         <div class="asset-detail-inspector-content">
             <div class="asset-detail-title asset-detail-model-title">
-                <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div>
-                <!-- QIN-661：文件名下移至 facts 首行 -->
-            </div>
+                <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div></div>
             <dl class="asset-detail-model-summary">
                 <div><dt>格式</dt><dd>${escapeHtml(info?.format || assetFileExtension(item).toUpperCase() || '3D')}</dd></div>
                 <div><dt>面数</dt><dd>${escapeHtml(formatModelCount(geometry.faces))}</dd></div>
@@ -2194,9 +2193,10 @@ function updateDetailViewerPath(item, value='', error='', revealable=false){
     const button = document.querySelector('.asset-detail-viewer [data-detail-file-reveal]');
     const label = button?.querySelector?.('[data-detail-path-value]');
     if(!button || !label) return;
-    label.textContent = value || error || '位置不可用';
+    const fullText = value || error || '位置不可用';
+    label.textContent = detailTruncateMiddleText(fullText);
     button.disabled = !revealable;
-    button.title = revealable ? '在文件夹中显示此文件' : (error || '位置不可用');
+    button.title = revealable ? fullText : (error || '位置不可用');
     if(value && revealable) item.absolute_path = value;
 }
 /** 【QIN-653】file-info 只接受 path，asset_id/url 一律会被后端以「缺少必填参数：path」拒绝。 */
@@ -4409,6 +4409,13 @@ GW_DEFERRED['preview'] = {
     ungroupDetailImageEditorLayers,
 };
 
+function detailTruncateMiddleText(value, maxLen=34){
+    const text = String(value ?? '');
+    if(text.length <= maxLen) return text;
+    const headLen = Math.max(8, Math.floor((maxLen - 3) * 0.45));
+    const tailLen = Math.max(10, maxLen - 3 - headLen);
+    return `${text.slice(0, headLen)}...${text.slice(-tailLen)}`;
+}
 export {
     applyDetailImageEditorZoom,
     detailFileInfoParams,
