@@ -555,7 +555,7 @@ window.WorkbenchAssets = (() => {
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
-      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" data-floating-content role="dialog" aria-modal="true" aria-label="新建子文件夹">
         <header>
           <strong>新建子文件夹</strong>
           <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
@@ -583,6 +583,12 @@ window.WorkbenchAssets = (() => {
       activeShellDialogGen += 1;
       overlay.remove();
     };
+    window.FloatingDismissal?.mark?.(overlay, {
+      kind: 'modal',
+      content: '[data-floating-content], [role="dialog"]',
+      close: closeDialog,
+      removeOnClose: true,
+    });
     const confirm = async () => {
       if (isSubmitting) return;
       const name = String(input?.value || '').trim();

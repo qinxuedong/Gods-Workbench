@@ -1766,12 +1766,29 @@ function assetOrganizeInvalidateDiskFolders(rootId){
 }
 async function assetOrganizeRefresh(rootId=''){
     const id = String(rootId || '');
-    if(id) assetOrganizeInvalidateDiskFolders(id);
+    const expandedSubPaths = new Set();
+    if(id){
+        const prefix = `mine:root:${id}::`;
+        assetTreeExpanded.forEach(key => {
+            const text = String(key || '');
+            if(!text.startsWith(prefix)) return;
+            const rel = text.slice(prefix.length).replace(/^\/+|\/+$/g, '');
+            if(!rel) return;
+            const segs = rel.split('/').filter(Boolean);
+            for(let i = 1; i <= segs.length; i += 1){
+                expandedSubPaths.add(segs.slice(0, i).join('/'));
+            }
+        });
+        assetOrganizeInvalidateDiskFolders(id);
+    }
     resetAssetRackDirectoryIndex();
     try {
         if(id){
             assetTreeExpanded.add(`mine:root:${id}`);
             await loadAssetRackDiskFolders(id, '');
+            if(expandedSubPaths.size){
+                await Promise.all([...expandedSubPaths].map(sub => loadAssetRackDiskFolders(id, sub)));
+            }
         }
         await loadAssetRackRegisteredFolders(true);
     } catch(_) {}
@@ -1864,9 +1881,11 @@ async function assetOrganizeCreateFolder(state, rawName){
     const relPath = state.parentPath ? `${state.parentPath}/${name}` : name;
     const abs = assetOrganizeAbsPath(state.rootId, relPath);
     if(!abs) throw new Error('资源文件夹路径不可用，无法新建文件夹');
-    const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:state.rootId});
+    const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(state.rootId) : state.rootId;
+    const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:physicalRootId});
     assetOrganizePushUndo(data, `新建 ${name}`, state.rootId);
     setAssetTreeSelectedKey(`mine:root:${state.rootId}::${relPath}`);
+    if(typeof expandAssetTreeAncestors === 'function') expandAssetTreeAncestors(`mine:root:${state.rootId}::${relPath}`);
     showAssetOrganizeToast(`已新建文件夹「${name}」`, {undoable:true});
     setStatus(`已新建文件夹「${name}」`);
     await assetOrganizeRefresh(state.rootId);
@@ -1902,7 +1921,8 @@ async function commitAssetOrganizeRename(target, rawValue){
     try {
         const name = assetOrganizeValidateFolderName(next);
         const abs = assetOrganizeAbsPath(target.rootId, target.path);
-        const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, name, root_id:target.rootId}, {method:'PATCH'});
+        const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(target) : target.rootId;
+        const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, name, root_id:physicalRootId}, {method:'PATCH'});
         assetOrganizePushUndo(data, `重命名 ${current} → ${name}`, target.rootId);
         assetOrganizeInline = null;
         const renamed = `${assetOrganizeParentPath(target.path) ? `${assetOrganizeParentPath(target.path)}/` : ''}${name}`;
@@ -1928,7 +1948,8 @@ async function assetOrganizeDeleteFolder(target){
             void (async () => {
                 try {
                     const abs = assetOrganizeAbsPath(target.rootId, target.path);
-                    const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {path:abs, root_id:target.rootId});
+                    const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(target) : target.rootId;
+                    const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {path:abs, root_id:physicalRootId});
                     assetOrganizePushUndo(data, `删除 ${assetOrganizeFolderLabel(target)}`, target.rootId);
                     if(assetTreeSelectedKey === target.key) setAssetTreeSelectedKey('');
                     showAssetOrganizeToast(`已移入回收站：${assetOrganizeFolderLabel(target)}`, {undoable:true});

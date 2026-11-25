@@ -7237,13 +7237,21 @@ function assetRackFolderTotalCount(rootId, relPath){
     if(!registryRegisteredFoldersLoaded) return null;
     const cleanPath = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
     const rootKey = String(rootId || '');
-    const found = registryIndexedFolders.find(f => String(f.root_id || '') === rootKey && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+    const rootIds = new Set([rootKey].filter(Boolean));
+    const matchedFacet = (typeof registryFacets !== 'undefined' ? (registryFacets.roots || []) : []).find(r => (
+        String(r.id || '') === rootKey || (Array.isArray(r.aliases) && r.aliases.map(String).includes(rootKey))
+    ));
+    if(matchedFacet){
+        if(matchedFacet.id) rootIds.add(String(matchedFacet.id));
+        (matchedFacet.aliases || []).forEach(a => { if(a) rootIds.add(String(a)); });
+    }
+    const found = registryIndexedFolders.find(f => rootIds.has(String(f.root_id || '')) && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
     if(found && found.total_count != null) return Number(found.total_count);
     if(found && found.count != null) return Number(found.count);
     if(!cleanPath) return 0;
     const prefix = `${cleanPath}/`;
     return registryIndexedFolders.reduce((sum, f) => {
-        if(String(f.root_id || '') !== rootKey) return sum;
+        if(!rootIds.has(String(f.root_id || ''))) return sum;
         const p = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
         return p.startsWith(prefix) ? sum + Number(f.count || 0) : sum;
     }, 0);
@@ -11572,6 +11580,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
     gwCall('organize', 'showAssetOrganizeToast', `已新建文件夹「${name}」`, {undoable:true});
     setStatus(`已新建文件夹「${name}」`);
     assetTreeSelectedKey = `mine:root:${rootId}::${newPath}`;
+    expandAssetTreeAncestors(assetTreeSelectedKey);
     await gwCall('organize', 'assetOrganizeRefresh', rootId);
     return data;
 }

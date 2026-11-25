@@ -96,16 +96,21 @@ test('QIN-660 AC2: 系统目录精确段过滤不误伤含子串的普通目录'
   assert.match(settings, /excludedDirs\.has\(seg\.toLowerCase\(\)\)/);
 });
 
-test('QIN-660 AC3: 纯中间祖先目录递归汇总子孙素材总数', () => {
+test('QIN-660 AC3: 纯中间祖先目录递归汇总子孙素材总数（含 aliases 展开）', () => {
   const fnSource = extractFunction(manager, 'function assetRackFolderTotalCount(');
   const run = new Function(
     'registryRegisteredFoldersLoaded',
     'registryIndexedFolders',
+    'registryFacets',
     `${fnSource}; return assetRackFolderTotalCount;`,
-  )(true, [
-    { root_id: 'root_a', path: 'ep01/shots/sh001', count: 1, total_count: 1 },
-    { root_id: 'root_a', path: 'ep01/shots/sh002', count: 2, total_count: 2 },
-  ]);
+  )(
+    true,
+    [
+      { root_id: 'root_a', path: 'ep01/shots/sh001', count: 1, total_count: 1 },
+      { root_id: 'root_alias', path: 'ep01/shots/sh002', count: 2, total_count: 2 },
+    ],
+    { roots: [{ id: 'root_a', aliases: ['root_alias'] }] },
+  );
 
   assert.equal(run('root_a', 'ep01'), 3);
   assert.equal(run('root_a', 'ep01/shots'), 3);
@@ -196,8 +201,11 @@ test('QIN-660 AC4: openShellCreateDialog 兼容 qin-579 切片且支持确认、
   await Promise.resolve();
   assert.equal(toasts.length, 0);
 
-  // organize.js 确认失败时不提前关闭弹窗
+  // organize.js 确认失败时不提前关闭弹窗，且子目录新建展开祖先并重载已展开子路径
   assert.match(organize, /await assetOrganizeCreateFolder\(state, input\?\.value \|\| ''\);\s*if\(assetOrganizeDialog === state\) closeAssetOrganizeDialog\('created'\);/);
+  assert.match(controller, /FloatingDismissal\?\.mark\?\.\(overlay,/);
+  assert.match(manager, /expandAssetTreeAncestors\(assetTreeSelectedKey\);/);
+  assert.match(organize, /Promise\.all\(\[\.\.\.expandedSubPaths\]\.map\(sub => loadAssetRackDiskFolders\(id, sub\)\)\)/);
 });
 
 test('QIN-660 AC5: assetOrganizePhysicalRootId 解析物理 rootId 并用于文件夹操作请求', () => {
