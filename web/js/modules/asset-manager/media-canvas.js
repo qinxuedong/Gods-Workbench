@@ -765,38 +765,38 @@ function renderDetailMediaCanvas(source, currentItem){
     const activeId = detailViewerState.mediaCanvasActiveId || items[0]?.id || '';
     const activeItem = items.find(item => item.id === activeId) || items[0] || null;
     const activeVideo = activeItem && detailViewerType(source,activeItem) === 'video' ? activeItem : null;
-    const canPersist = items.length > 0 || Boolean(detailViewerState.referenceCanvasId);
     const minimapScale = Math.min(196 / Math.max(1, metrics.width), 106 / Math.max(1, metrics.height));
-    const item = currentItem || detailViewerState.items[detailViewerState.index] || detailViewerItem(source, detailViewerState.id) || activeItem || {};
+    const gridPos = `${x}px ${y}px,${x}px ${y}px,${x}px ${y}px,${x}px ${y}px`;
+    const gridSize = `${80*scale}px ${80*scale}px,${80*scale}px ${80*scale}px,${20*scale}px ${20*scale}px,${20*scale}px ${20*scale}px`;
+    const worldStyle = [
+        `width:${metrics.width}px`,
+        `height:${metrics.height}px`,
+        `--media-handle-size:${10/scale}px`,
+        `--media-handle-half:${-5/scale}px`,
+        `--media-outline-size:${2/scale}px`,
+        `transform:translate(${x}px,${y}px) scale(${scale})`,
+    ].join(';');
+    const helpBar = [
+        '<span>左键选择/框选</span>',
+        '<span><kbd>Shift</kbd> 加选</span>',
+        '<span><kbd>Space</kbd>/中键抓手</span>',
+        '<span><kbd>Ctrl+A</kbd> 全选</span>',
+        '<span><kbd>Ctrl+C/V</kbd> 复制/粘贴</span>',
+        '<span><kbd>Ctrl+Z</kbd> 撤销</span>',
+        `<b data-detail-media-canvas-scale>${Math.round(scale * 100)}%</b>`,
+    ].join('');
     return `<div class="asset-detail-media-canvas-shell ${activeVideo ? 'has-video-controls' : ''}" data-detail-media-canvas-shell>
-        <div class="asset-detail-media-canvas-toolbar">
-            <div class="asset-detail-media-toolbar-primary">
-                <label><i data-lucide="map"></i><input type="text" data-detail-reference-title value="${escapeAttr(detailViewerState.referenceCanvasTitle || '参考画布')}" maxlength="80" aria-label="参考画布"></label>
-                <span class="asset-detail-media-canvas-filename" title="${escapeAttr(item.name || '')}"><strong>${escapeHtml(item.name || '未命名素材')}</strong></span>
-                <span><b>${items.length}</b> 个素材</span>
-                <div>
-                <button class="hw-btn" type="button" data-detail-reference-add-selection title="将当前多选图片或视频加入画布"><i data-lucide="images"></i><span>加选</span></button>
-                <button class="hw-btn" type="button" data-detail-media-canvas-remove="${escapeAttr(activeId)}" ${!detailMediaCanvasSelectedIds().size ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>移除选中</span></button>
-                <button class="hw-btn" type="button" data-detail-media-canvas-zoom="0"><i data-lucide="scan"></i><span>自适应</span></button>
-                <button class="hw-btn asset-detail-media-coverflow-toggle ${detailViewerState.mediaCanvasCoverflowVisible ? 'is-active' : ''}" type="button" data-detail-media-coverflow-toggle aria-pressed="${Boolean(detailViewerState.mediaCanvasCoverflowVisible)}" title="${detailViewerState.mediaCanvasCoverflowVisible ? '隐藏 Coverflow 预览' : '显示 Coverflow 预览'}"><i data-lucide="gallery-horizontal"></i><span>Coverflow</span></button>
-                <button class="hw-btn asset-detail-media-minimap-toggle ${detailMediaCanvasMinimapVisible ? 'is-active' : ''}" type="button" data-detail-media-minimap-toggle aria-pressed="${detailMediaCanvasMinimapVisible}" title="${detailMediaCanvasMinimapVisible ? '隐藏小地图' : '显示小地图'}"><i class="asset-detail-minimap-visible" data-lucide="map"></i><i class="asset-detail-minimap-hidden" data-lucide="map-off"></i><span class="asset-detail-minimap-visible">小地图</span><span class="asset-detail-minimap-hidden">显示小地图</span></button>
-                <button class="hw-btn hw-btn-gold" type="button" data-detail-reference-save ${!canPersist || detailViewerState.referenceCanvasSaving ? 'disabled' : ''}><i data-lucide="${detailViewerState.referenceCanvasSaving ? 'loader-2' : 'save'}"></i><span>${detailViewerState.referenceCanvasId ? '更新参考画布' : '保存参考画布'}</span></button>
-                <button class="hw-btn" type="button" data-detail-reference-share title="分享素材 / 复制链接" aria-label="分享素材"><i data-lucide="share-2"></i><span>分享</span></button>
-                <button class="hw-btn" type="button" data-detail-viewer-close title="关闭 (Esc)" aria-label="关闭详情"><i data-lucide="x"></i><span>关闭</span></button>
-                </div>
-            </div>
-            <div class="asset-detail-media-toolbar-tools">${renderDetailMediaCanvasToolButtons()}</div>
-        </div>
-        <div class="asset-detail-media-canvas-viewport ${activeVideo ? 'has-video-dock' : ''}" data-detail-media-canvas-viewport tabindex="0" aria-label="无限画布，左键选择或框选，Shift 加选，空格/中键拖动画布，滚轮缩放">
-            <div class="asset-detail-media-canvas-grid ${detailViewerState.mediaCanvasSnap ? '' : 'is-snap-off'}" style="background-position:${x}px ${y}px,${x}px ${y}px,${x}px ${y}px,${x}px ${y}px;background-size:${80*scale}px ${80*scale}px,${80*scale}px ${80*scale}px,${20*scale}px ${20*scale}px,${20*scale}px ${20*scale}px" aria-hidden="true"></div>
-            <div class="asset-detail-media-canvas-world" data-detail-media-canvas-world style="width:${metrics.width}px;height:${metrics.height}px;--media-handle-size:${10/scale}px;--media-handle-half:${-5/scale}px;--media-outline-size:${2/scale}px;transform:translate(${x}px,${y}px) scale(${scale})">
+        <div
+            class="asset-detail-media-canvas-viewport ${activeVideo ? 'has-video-dock' : ''}" data-detail-media-canvas-viewport tabindex="0" aria-label="无限画布，左键选择或框选，Shift 加选，空格/中键拖动画布，滚轮缩放">
+            <div class="asset-detail-media-canvas-grid ${detailViewerState.mediaCanvasSnap ? '' : 'is-snap-off'}" style="background-position:${gridPos};background-size:${gridSize}" aria-hidden="true"></div>
+            <div class="asset-detail-media-canvas-world" data-detail-media-canvas-world style="${worldStyle}">
                 ${detailMediaCanvasGroups().map(renderDetailMediaCanvasGroup).join('')}
                 <svg class="asset-detail-media-drawings" width="${metrics.width}" height="${metrics.height}" viewBox="0 0 ${metrics.width} ${metrics.height}" overflow="visible" aria-hidden="true"></svg>
                 ${items.map(value => renderDetailMediaCanvasNode(source, value)).join('')}
                 ${detailMediaCanvasDrawings().map(renderDetailMediaCanvasDrawing).join('')}
                 ${(detailViewerState.mediaCanvasAnnotations || []).map(renderDetailMediaCanvasAnnotation).join('')}
             </div>
-            <div class="asset-detail-media-canvas-help"><span>左键选择/框选</span><span><kbd>Shift</kbd> 加选</span><span><kbd>Space</kbd>/中键抓手</span><span><kbd>Ctrl+A</kbd> 全选</span><span><kbd>Ctrl+C/V</kbd> 复制/粘贴</span><span><kbd>Ctrl+Z</kbd> 撤销</span><b data-detail-media-canvas-scale>${Math.round(scale * 100)}%</b></div>
+            <div class="asset-detail-media-canvas-help">${helpBar}</div>
             <aside class="asset-detail-media-minimap ${detailMediaCanvasMinimapVisible ? '' : 'is-hidden'}" aria-label="画布缩略图" aria-hidden="${!detailMediaCanvasMinimapVisible}">
                 <header><span>画布缩略图</span><b>${items.length}</b><button class="asset-detail-media-minimap-toggle is-active" type="button" data-detail-media-minimap-toggle aria-pressed="true" title="隐藏画布缩略图" aria-label="隐藏画布缩略图"><i data-lucide="eye-off"></i></button></header>
                 <div class="asset-detail-media-minimap-world" style="width:${Math.max(1,metrics.width * minimapScale)}px;height:${Math.max(1,metrics.height * minimapScale)}px">${items.map(value => {
@@ -1072,9 +1072,11 @@ function renderDetailMediaCanvasLibrary(){
     // 【QIN-653 AC2】删除「资产详情 + 文件名」整行标题，两个分页按钮直接置于面板顶部；
     // 折叠按钮并入同一行，保证折叠态仍可展开。
     const toggleButton = `<button type="button" class="asset-detail-media-sidebar-toggle" data-detail-media-library-toggle aria-expanded="${!collapsed}" aria-label="${toggleLabel}" title="${toggleLabel}"><i data-lucide="${collapsed ? 'panel-right-open' : 'panel-right-close'}"></i></button>`;
+    // 【QIN-661】折叠态保持与 LUT 页一致的窄条展开按钮结构（顶部图标 + 竖排标题），并保持相同触发属性。
+    const collapsedExpandButton = `<button type="button" class="asset-detail-media-sidebar-toggle asset-detail-media-sidebar-expand" data-detail-media-library-toggle aria-expanded="false" aria-label="${toggleLabel}" title="${toggleLabel}"><span class="asset-detail-media-sidebar-expand-icon"><i data-lucide="panel-right-open"></i></span><span class="asset-detail-media-sidebar-expand-label">资产详情</span></button>`;
     return `<aside class="asset-detail-media-library asset-detail-media-sidebar ${collapsed ? 'is-collapsed' : ''} ${view==='detail'?'is-detail-view':'is-library-view'}" style="--media-library-thumb-size:${thumbSize}px" aria-label="素材库和资产详情">
         ${collapsed ? '' : `<span class="asset-detail-media-library-resizer" data-detail-media-library-resizer role="separator" tabindex="0" aria-label="拖动调整图库宽度" aria-orientation="vertical" aria-valuemin="280" aria-valuemax="720" aria-valuenow="${detailMediaCanvasLibraryWidth}"></span>`}
-        ${collapsed ? toggleButton : `<nav class="asset-detail-media-sidebar-tabs" role="tablist" aria-label="右侧栏内容"><button type="button" role="tab" data-detail-media-sidebar-view="detail" aria-selected="${view==='detail'}" class="${view==='detail'?'is-active':''}"><i data-lucide="info"></i><span>资产详情</span></button><button type="button" role="tab" data-detail-media-sidebar-view="library" aria-selected="${view==='library'}" class="${view==='library'?'is-active':''}"><i data-lucide="library-big"></i><span>素材库</span></button>${toggleButton}</nav>${view==='library' ? renderDetailMediaCanvasLibraryContent(values,baseItems,options,thumbSize) : renderDetailMediaCanvasSidebarDetail()}`}
+        ${collapsed ? collapsedExpandButton : `<nav class="asset-detail-media-sidebar-tabs" role="tablist" aria-label="右侧栏内容"><button type="button" role="tab" data-detail-media-sidebar-view="detail" aria-selected="${view==='detail'}" class="${view==='detail'?'is-active':''}"><i data-lucide="info"></i><span>资产详情</span></button><button type="button" role="tab" data-detail-media-sidebar-view="library" aria-selected="${view==='library'}" class="${view==='library'?'is-active':''}"><i data-lucide="library-big"></i><span>素材库</span></button>${toggleButton}</nav>${view==='library' ? renderDetailMediaCanvasLibraryContent(values,baseItems,options,thumbSize) : renderDetailMediaCanvasSidebarDetail()}`}
     </aside>`;
 }
 function mergeResolvedReferenceAsset(item={},rawAsset={}){
@@ -2497,6 +2499,31 @@ GW_DEFERRED['media-canvas'] = {
     undoDetailMediaCanvas,
     ungroupDetailMediaCanvasSelection,
 };
+function renderDetailMediaCanvasToolbar(source, currentItem){
+    const items = detailMediaCanvasItems();
+    const activeId = detailViewerState.mediaCanvasActiveId || items[0]?.id || '';
+    const activeItem = items.find(item => item.id === activeId) || items[0] || null;
+    const canPersist = items.length > 0 || Boolean(detailViewerState.referenceCanvasId);
+    const item = currentItem || detailViewerState.items[detailViewerState.index] || detailViewerItem(source, detailViewerState.id) || activeItem || {};
+    return `<div class="asset-detail-media-canvas-toolbar">
+        <div class="asset-detail-media-toolbar-primary">
+            <label><i data-lucide="map"></i><input type="text" data-detail-reference-title value="${escapeAttr(detailViewerState.referenceCanvasTitle || '参考画布')}" maxlength="80" aria-label="参考画布"></label>
+            <span class="asset-detail-media-canvas-filename" title="${escapeAttr(item.name || '')}"><strong>${escapeHtml(item.name || '未命名素材')}</strong></span>
+            <span><b>${items.length}</b> 个素材</span>
+            <div>
+            <button class="hw-btn" type="button" data-detail-reference-add-selection title="将当前多选图片或视频加入画布"><i data-lucide="images"></i><span>加选</span></button>
+            <button class="hw-btn" type="button" data-detail-media-canvas-remove="${escapeAttr(activeId)}" ${!detailMediaCanvasSelectedIds().size ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>移除选中</span></button>
+            <button class="hw-btn" type="button" data-detail-media-canvas-zoom="0"><i data-lucide="scan"></i><span>自适应</span></button>
+            <button class="hw-btn asset-detail-media-coverflow-toggle ${detailViewerState.mediaCanvasCoverflowVisible ? 'is-active' : ''}" type="button" data-detail-media-coverflow-toggle aria-pressed="${Boolean(detailViewerState.mediaCanvasCoverflowVisible)}" title="${detailViewerState.mediaCanvasCoverflowVisible ? '隐藏 Coverflow 预览' : '显示 Coverflow 预览'}"><i data-lucide="gallery-horizontal"></i><span>Coverflow</span></button>
+            <button class="hw-btn asset-detail-media-minimap-toggle ${detailMediaCanvasMinimapVisible ? 'is-active' : ''}" type="button" data-detail-media-minimap-toggle aria-pressed="${detailMediaCanvasMinimapVisible}" title="${detailMediaCanvasMinimapVisible ? '隐藏小地图' : '显示小地图'}"><i class="asset-detail-minimap-visible" data-lucide="map"></i><i class="asset-detail-minimap-hidden" data-lucide="map-off"></i><span class="asset-detail-minimap-visible">小地图</span><span class="asset-detail-minimap-hidden">显示小地图</span></button>
+            <button class="hw-btn hw-btn-gold" type="button" data-detail-reference-save ${!canPersist || detailViewerState.referenceCanvasSaving ? 'disabled' : ''}><i data-lucide="${detailViewerState.referenceCanvasSaving ? 'loader-2' : 'save'}"></i><span>${detailViewerState.referenceCanvasId ? '更新参考画布' : '保存参考画布'}</span></button>
+            <button class="hw-btn" type="button" data-detail-reference-share title="分享素材 / 复制链接" aria-label="分享素材"><i data-lucide="share-2"></i><span>分享</span></button>
+            <button class="hw-btn" type="button" data-detail-viewer-close title="关闭 (Esc)" aria-label="关闭详情"><i data-lucide="x"></i><span>关闭</span></button>
+            </div>
+        </div>
+        <div class="asset-detail-media-toolbar-tools">${renderDetailMediaCanvasToolButtons()}</div>
+    </div>`;
+}
 
 export {
     activateDetailMediaCanvasItem,
@@ -2529,6 +2556,7 @@ export {
     refreshDetailMediaCanvasSidebarDetail,
     renderDetailMediaCanvas,
     renderDetailMediaCanvasLibrary,
+    renderDetailMediaCanvasToolbar,
     saveDetailReferenceCanvas,
     selectDetailMediaCanvasItem,
     selectDetailMediaCanvasLibraryItem,

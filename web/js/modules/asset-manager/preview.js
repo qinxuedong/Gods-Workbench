@@ -85,7 +85,7 @@ import {
     detailViewerFileParams,
     detailViewerFontExpandedPreference,
     detailViewerFontListCollapsed,
-    detailViewerInspectorCollapsed,
+    detailViewerInspectorCollapsed, setDetailViewerInspectorCollapsed,
     detailViewerItem,
     detailViewerMediaPreloads,
     detailViewerSourceLabel,
@@ -253,7 +253,7 @@ import {
     pushDetailMediaCanvasHistory,
     refreshDetailMediaCanvasLibraryGrid,
     refreshDetailMediaCanvasSidebarDetail,
-    renderDetailMediaCanvas,
+    renderDetailMediaCanvas, renderDetailMediaCanvasToolbar,
     renderDetailMediaCanvasLibrary,
     saveDetailReferenceCanvas,
     selectDetailMediaCanvasItem,
@@ -818,7 +818,7 @@ function refreshRegistryDetailPanelDom(keepScroll=false){
     const savedScrollTop = keepScroll && detailScroll ? detailScroll.scrollTop : 0;
     const template = document.createElement('template');
     template.innerHTML = renderRegistryDetailPanel().trim();
-    const next = template.content.firstElementChild;
+    const next = template.content?.firstElementChild;
     if(!next) return false;
     panel.replaceWith(next);
     if(savedScrollTop > 0) next.querySelector('.detail-scroll')?.scrollTo?.({top:savedScrollTop});
@@ -904,13 +904,13 @@ function toggleRegistryDetailPanel(){
     // 【修复滚动跳顶】折叠/展开只切换根类与详情面板局部节点：网格卡片节点保持不变，
     // 布局变化由 CSS 类（registry-detail-collapsed 列宽切换）与 masonry 重排承接，
     // 不整树 render()，避免锚点恢复失败导致的视口跳顶与缩略图回退。
-    root.classList.toggle('registry-detail-collapsed', assetBoardById(activeTab)?.system === false && registryDetailPanelCollapsed);
+    root.classList.toggle('registry-detail-collapsed', (assetBoardById(activeTab)?.system === false || activeTab === 'lut') && registryDetailPanelCollapsed);
     syncRegistryDetailGridWidth();
     const panel = root.querySelector('.registry-detail-panel');
     if(!panel){ render(); return; }
     const template = document.createElement('template');
     template.innerHTML = renderRegistryDetailPanel().trim();
-    const next = template.content.firstElementChild;
+    const next = template.content?.firstElementChild;
     if(next){
         panel.replaceWith(next);
         refreshIcons();
@@ -1497,12 +1497,13 @@ function renderDetailViewerMedia(source, item, type){
 }
 function renderDetailViewerMetaRows(rows, item){
     return rows.map(([label,value,kind]) => {
-        if(kind !== 'path') return `<div><dt>${escapeHtml(label)}</dt><dd title="${escapeAttr(value)}">${escapeHtml(value)}</dd></div>`;
+        const display = detailTruncateMiddleText(value);
+        if(kind !== 'path') return `<div><dt>${escapeHtml(label)}</dt><dd title="${escapeAttr(value)}">${escapeHtml(display)}</dd></div>`;
         if(item.is_remote){
-            return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><a class="asset-detail-path" href="${escapeAttr(detailViewerUrl(detailViewerState.source, item))}" target="_blank" rel="noopener"><span>${escapeHtml(value)}</span><i data-lucide="external-link"></i></a></dd></div>`;
+            return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><a class="asset-detail-path" href="${escapeAttr(detailViewerUrl(detailViewerState.source, item))}" target="_blank" rel="noopener" title="${escapeAttr(value)}"><span>${escapeHtml(display)}</span><i data-lucide="external-link"></i></a></dd></div>`;
         }
         const canReveal = detailViewerFileParams(detailViewerState.source,item).toString().length > 0;
-        return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><button class="asset-detail-path" type="button" data-detail-file-reveal ${canReveal ? '' : 'disabled'} title="${canReveal ? '在文件夹中显示此文件' : '位置不可用'}"><span data-detail-path-value>${escapeHtml(value)}</span><i data-lucide="folder-search"></i></button></dd></div>`;
+        return `<div class="asset-detail-path-row"><dt>${escapeHtml(label)}</dt><dd><button class="asset-detail-path" type="button" data-detail-file-reveal ${canReveal ? '' : 'disabled'} title="${canReveal ? escapeAttr(value) : '位置不可用'}"><span data-detail-path-value>${escapeHtml(display)}</span><i data-lucide="folder-search"></i></button></dd></div>`;
     }).join('');
 }
 function renderDetailAudioPlaylist(item){
@@ -1568,10 +1569,7 @@ function renderDetailModelInspector(item, tags, rows, url){
         ${renderDetailInspectorHeader()}
         <div class="asset-detail-inspector-content">
             <div class="asset-detail-title asset-detail-model-title">
-                <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div>
-                <h2>${detailViewerNameHtml(item.name)}</h2>
-                <p>${escapeHtml(detailViewerSourceLabel(detailViewerState.source, item))}</p>
-            </div>
+                <div><em class="${statusClass}">${escapeHtml(statusLabel)}</em></div></div>
             <dl class="asset-detail-model-summary">
                 <div><dt>格式</dt><dd>${escapeHtml(info?.format || assetFileExtension(item).toUpperCase() || '3D')}</dd></div>
                 <div><dt>面数</dt><dd>${escapeHtml(formatModelCount(geometry.faces))}</dd></div>
@@ -1579,7 +1577,7 @@ function renderDetailModelInspector(item, tags, rows, url){
                 <div><dt>大小</dt><dd>${escapeHtml(formatFileSize(item.size || 0))}</dd></div>
             </dl>
             ${info?.preview_source_detail ? `<section class="asset-detail-model-source"><strong>${escapeHtml(info.preview_source_label || '静态预览')}</strong><p>${escapeHtml(info.preview_source_detail)}</p></section>` : ''}
-            <dl class="asset-detail-facts">${renderDetailViewerMetaRows(rows, item)}</dl>
+            <dl class="asset-detail-facts">${renderDetailViewerMetaRows([['文件名', String(item.name || '未命名素材')], ...rows], item)}</dl>
             ${registryMeta}
         </div>
     </aside>`;
@@ -1587,12 +1585,13 @@ function renderDetailModelInspector(item, tags, rows, url){
 function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraContent='', source=detailViewerState.source){
     const editableName = type === 'audio' && detailViewerCanRename(source);
     const inspectorRows = type === 'video' ? detailVideoRemainingRows(rows) : rows;
+    const factRows = editableName ? inspectorRows : [['文件名', String(item.name || '未命名素材')], ...inspectorRows];
     return `
-        <div class="asset-detail-title">${editableName
-            ? `<label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label>`
-            : `<h2>${detailViewerNameHtml(item.name)}</h2>`}<p>${escapeHtml(detailViewerSourceLabel(source, item))}</p></div>
+        ${editableName
+            ? `<div class="asset-detail-title"><label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label></div>`
+            : ''}
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
-        ${inspectorRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(inspectorRows, item)}</dl>` : ''}
+        ${factRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(factRows, item)}</dl>` : ''}
         ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
         ${extraContent}`;
@@ -1846,7 +1845,7 @@ function renderDetailViewer(){
     const inspector = showMediaLibrary ? renderDetailMediaCanvasLibrary() : renderDetailViewerInspector(item, type, tags, rows, url);
     const originLabel = assetBoardById(detailViewerState.originTab)?.name || detailViewerTypeLabel(type);
     overlay.innerHTML = `<div class="asset-detail-viewer-page ${mediaCanvasMode ? 'is-media-canvas-mode' : ''}" data-floating-content role="dialog" aria-modal="true" aria-label="${escapeAttr(item.name || '素材详情')}">
-        ${mediaCanvasMode ? '' : `<header class="asset-detail-viewer-head">
+        ${mediaCanvasMode ? renderDetailMediaCanvasToolbar(detailViewerState.source, item) : `<header class="asset-detail-viewer-head">
             <nav class="asset-detail-breadcrumb" aria-label="详情路径"><button type="button" data-detail-breadcrumb="home">资产中心</button><i data-lucide="chevron-right"></i><button type="button" data-detail-breadcrumb="origin">${escapeHtml(originLabel)}</button><i data-lucide="chevron-right"></i><strong>${escapeHtml(item.name || '未命名素材')}</strong></nav>
             <div class="asset-detail-head-actions">
                 <span data-detail-position-label>${detailPositionLabel}</span>
@@ -1975,7 +1974,7 @@ function toggleDetailInspector(){
     const inspector = overlay?.querySelector?.('[data-detail-inspector]');
     const button = inspector?.querySelector?.('[data-detail-inspector-toggle]');
     if(!body || !inspector || !button) return;
-    detailViewerInspectorCollapsed = !detailViewerInspectorCollapsed;
+    const nextCollapsed = !detailViewerInspectorCollapsed; setDetailViewerInspectorCollapsed(nextCollapsed);
     try { localStorage.setItem(ASSET_DETAIL_INSPECTOR_COLLAPSED_KEY, String(detailViewerInspectorCollapsed)); } catch(_) {}
     body.classList.toggle('asset-detail-inspector-collapsed', detailViewerInspectorCollapsed);
     inspector.classList.toggle('is-collapsed', detailViewerInspectorCollapsed);
@@ -2194,9 +2193,10 @@ function updateDetailViewerPath(item, value='', error='', revealable=false){
     const button = document.querySelector('.asset-detail-viewer [data-detail-file-reveal]');
     const label = button?.querySelector?.('[data-detail-path-value]');
     if(!button || !label) return;
-    label.textContent = value || error || '位置不可用';
+    const fullText = value || error || '位置不可用';
+    label.textContent = detailTruncateMiddleText(fullText);
     button.disabled = !revealable;
-    button.title = revealable ? '在文件夹中显示此文件' : (error || '位置不可用');
+    button.title = revealable ? fullText : (error || '位置不可用');
     if(value && revealable) item.absolute_path = value;
 }
 /** 【QIN-653】file-info 只接受 path，asset_id/url 一律会被后端以「缺少必填参数：path」拒绝。 */
@@ -4065,7 +4065,7 @@ document.addEventListener('click', event => {
         renderDetailViewer();
         return;
     }
-    if(event.target.closest?.('[data-detail-inspector-toggle]')){ toggleDetailInspector(); return; }
+    if(event.target.closest?.('[data-detail-inspector-toggle], .asset-detail-inspector.is-collapsed .asset-detail-inspector-head')){ toggleDetailInspector(); return; }
     const officePdf = event.target.closest?.('[data-detail-office-pdf]');
     if(officePdf){ exportDetailOfficePdf(officePdf.dataset.detailOfficePdf || '', officePdf).catch(err => setStatus(err.message || 'PDF 转换失败')); return; }
     const officeOpen = event.target.closest?.('[data-detail-office-open]');
@@ -4409,6 +4409,13 @@ GW_DEFERRED['preview'] = {
     ungroupDetailImageEditorLayers,
 };
 
+function detailTruncateMiddleText(value, maxLen=34){
+    const text = String(value ?? '');
+    if(text.length <= maxLen) return text;
+    const headLen = Math.max(8, Math.floor((maxLen - 3) * 0.45));
+    const tailLen = Math.max(10, maxLen - 3 - headLen);
+    return `${text.slice(0, headLen)}...${text.slice(-tailLen)}`;
+}
 export {
     applyDetailImageEditorZoom,
     detailFileInfoParams,
@@ -4452,4 +4459,6 @@ export {
     scheduleDetailMediaVideoDockPosition,
     showDetailPreview,
     switchDetailImageEditorAsset,
+    toggleDetailInspector,
+    toggleRegistryDetailPanel,
 };

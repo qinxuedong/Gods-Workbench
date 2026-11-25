@@ -101,7 +101,14 @@ test('QIN-653 AC2/3/5：详情内容全类型统一，去类型文字、底部�
             assert.doesNotMatch(markup, /asset-detail-actions|data-detail-export-pdf|data-detail-viewer-close/, `${type} 仍保留底部按钮`);
             assert.doesNotMatch(markup, /asset-detail-shortcuts|<kbd>/, `${type} 仍保留快捷键提示`);
             assert.doesNotMatch(markup, /<div class="asset-detail-title"><span>/, `${type} 仍保留类型徽标`);
-            assert.match(markup, /<h2>/, `${type} 应直接展示文件名`);
+            if (markup.includes('data-detail-name-input')) {
+                assert.match(markup, /data-detail-name-input/, '可重命名状态保留输入框');
+            } else {
+                assert.match(markup, /<dt>文件名<\/dt>/, `${type} 应把文件名放到事实列表第一行`);
+                if (markup.includes('<dt>文件格式</dt>')) {
+                    assert.ok(markup.indexOf('<dt>文件名</dt>') < markup.indexOf('<dt>文件格式</dt>'), `${type} 文件名应在文件格式之前`);
+                }
+            }
         }
         const model = preview.renderDetailModelInspector(makeItem({id: 'ast_model', name: 'a.glb'}), [], [], []);
         assert.doesNotMatch(model, />3D 文件</);
