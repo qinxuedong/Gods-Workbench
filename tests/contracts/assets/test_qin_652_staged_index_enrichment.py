@@ -900,3 +900,71 @@ def test_ac2_enriched_video_writes_detail_fields(index_runtime, monkeypatch):
     assert (asset["width"], asset["height"]) == (320, 240)
     assert asset["frame_rate"] == 24.0
     assert asset["metadata"]["video_metadata"]["width"] == 320
+
+
+@pytest.mark.parametrize("name", ["doc.txt", "clip.mp4"])
+@pytest.mark.parametrize("hash_files", [True, False])
+def test_independent_old_snapshot_cannot_revert_newer_version(
+    index_runtime, monkeypatch, name, hash_files
+):
+    path = index_runtime / name
+    path.write_bytes(b"old")
+    old_scan_ready = threading.Event()
+    release_old_scan = threading.Event()
+    original_scan = jobs.IndexJobs._scan
+    seen = []
+
+    def interleaved(self, job_id, attempt, roots, request):
+        scanned = original_scan(self, job_id, attempt, roots, request)
+        if not seen:
+            seen.append(job_id)
+            old_scan_ready.set()
+            assert release_old_scan.wait(15)
+        return scanned
+
+    monkeypatch.setattr(jobs.IndexJobs, "_scan", interleaved)
+    monkeypatch.setattr(jobs, "_video_index_data", lambda _path: (
+        {"video_segments": [{"start_sec": 0, "end_sec": 7}],
+         "video_metadata": {"scene_detection_status": "complete", "width": 320,
+                            "height": 240, "frame_rate": 24.0}}, 7.0
+    ))
+    with TestClient(create_app()) as client:
+        a = _submit(client, "audit-old", hash_files=hash_files)
+        assert a.status_code == 202, a.text
+        assert old_scan_ready.wait(10)
+        try:
+            path.write_bytes(b"new-content-longer")
+            b = _submit(client, "audit-new", hash_files=hash_files)
+            assert b.status_code == 202, b.text
+            final_b = _wait_job(client, b.json()["job_id"])
+            assert final_b["status"] == "succeeded", final_b
+            newer_asset = _asset(name)
+            if hash_files:
+                assert newer_asset["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()
+        finally:
+            release_old_scan.set()
+        _wait_job(client, a.json()["job_id"])
+    observed = _asset(name)
+    assert observed["size_bytes"] == path.stat().st_size, observed
+    if hash_files:
+        assert observed.get("sha256") == hashlib.sha256(path.read_bytes()).hexdigest(), observed
+    assert observed["scan_version"] == newer_asset["scan_version"]
+    if name.endswith(".mp4"):
+        for key in ("duration", "width", "height", "frame_rate", "metadata"):
+            assert observed[key] == newer_asset[key]
+
+
+def test_reindex_accepts_current_file_with_older_mtime(index_runtime):
+    path = index_runtime / "doc.txt"
+    path.write_bytes(b"first")
+    initial_time = path.stat().st_mtime_ns
+    with TestClient(create_app()) as client:
+        first = _submit(client, "mtime-first", hash_files=True)
+        assert _wait_job(client, first.json()["job_id"])["status"] == "succeeded"
+        path.write_bytes(b"replacement-with-older-timestamp")
+        os.utime(path, ns=(initial_time - 5_000_000_000, initial_time - 5_000_000_000))
+        second = _submit(client, "mtime-second", hash_files=True)
+        assert _wait_job(client, second.json()["job_id"])["status"] == "succeeded"
+    asset = _asset("doc.txt")
+    assert asset["size_bytes"] == path.stat().st_size
+    assert asset["sha256"] == hashlib.sha256(path.read_bytes()).hexdigest()

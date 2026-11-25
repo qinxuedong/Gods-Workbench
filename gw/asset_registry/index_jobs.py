@@ -3022,6 +3022,7 @@ class IndexJobs:
         # 语义原样保留。富化任务清单挂在 _ScanFiles 上，绝不序列化进注册表。
         fast_scan = bool(request.get("_fast_scan"))
         enrich_tasks = []
+        scan_paths = {}
         # QIN-600：只在重建索引时读生成元数据；sync 只做差集统计，不碰文件内容。
         want_generation = request.get("kind") == "reindex"
         generation_stats = {
@@ -3233,6 +3234,8 @@ class IndexJobs:
                                     source="index_full",
                                 )
                         files.append(item)
+                        if fast_scan:
+                            scan_paths[(root_id, item["canonical_relpath"])] = path
                         want_video = path.suffix.lower() in VIDEO_SUFFIXES
                         want_hash = bool(request["hash_files"])
                         # 只有确实需要后台重活的文件才进富化清单：非哈希、
@@ -3286,6 +3289,7 @@ class IndexJobs:
         scanned = _ScanFiles(files)
         scanned.generation_stats = generation_stats
         scanned.enrich_tasks = enrich_tasks
+        scanned.scan_paths = scan_paths if fast_scan else None
         return scanned
 
     def _commit(self, job, files, generation_stats=None):
@@ -3313,6 +3317,7 @@ class IndexJobs:
         enrich_pending = bool(options.get("enrich_pending"))
         receipt_mode = options.get("receipt_mode", "write")
         update_only = bool(options.get("update_only"))
+        scan_paths = getattr(files, "scan_paths", None)
         receipt_id = f"{job['job_id']}:{job['attempt']}"
 
         def commit(raw):
@@ -3428,6 +3433,28 @@ class IndexJobs:
                         )
                         if update_only and version_changed:
                             continue
+                        if not update_only and version_changed and scan_paths is not None:
+                            # 指纹没有先后顺序。提交锁内复核磁盘当前版本，防止
+                            # 旧任务在新任务完成后迟到并清空新版本的富化结果。
+                            path = scan_paths.get(identity)
+                            try:
+                                current_stat = path.lstat() if path is not None else None
+                            except OSError:
+                                current_stat = None
+                            current_version = _file_version(current_stat) if current_stat else {}
+                            # Windows 的 DirEntry.stat 在无哈希扫描时可能不提供
+                            # ino/dev；保留扫描侧的未知值，只比较可得字段。
+                            if isinstance(item_version, dict):
+                                for field in ("ino", "dev"):
+                                    if item_version.get(field) == 0:
+                                        current_version[field] = 0
+                            if (
+                                current_stat is None
+                                or not stat.S_ISREG(current_stat.st_mode)
+                                or getattr(current_stat, "st_file_attributes", 0) & 0x400
+                                or not _same_file_version(current_version, item_version)
+                            ):
+                                continue
                         changed = False
                         cache_invalidated = False
                         was_lut = existing.get("kind") == "lut"
@@ -3637,7 +3664,7 @@ class _ScanFiles(list):
     因此统计与富化清单挂在列表子类的属性上，而不是把返回值改成元组。
     """
 
-    __slots__ = ("generation_stats", "enrich_tasks")
+    __slots__ = ("generation_stats", "enrich_tasks", "scan_paths")
 
 
 class _Stopped(Exception):
