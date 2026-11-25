@@ -243,6 +243,36 @@ def _owner(actor):
     return _digest([actor["mode"], actor["domain"], actor["subject"]])
 
 
+def _restore_matching_removed_root(candidate_path: str) -> bool:
+    """若目标目录命中已移除允许根（active=False），自动调用 restore_root 恢复。"""
+    from gw.settings.models import StorageAllowedRootDeleteRequest
+    from gw.settings.service import default_storage_allowed_roots_service
+
+    root_state = default_storage_allowed_roots_service._state.read()
+    candidate = Path(candidate_path)
+    matched = None
+    matched_depth = -1
+    for record in root_state.get("roots", []):
+        if record.get("active") or not record.get("path"):
+            continue
+        try:
+            candidate.relative_to(Path(record["path"]))
+        except ValueError:
+            continue
+        depth = len(Path(record["path"]).parts)
+        if depth > matched_depth:
+            matched = record
+            matched_depth = depth
+    if matched is None:
+        return False
+    root_snapshot = default_storage_allowed_roots_service.get_snapshot()
+    default_storage_allowed_roots_service.restore_root(
+        str(matched.get("id") or ""),
+        StorageAllowedRootDeleteRequest(expected_version=root_snapshot.revision),
+    )
+    return True
+
+
 def _runtime_path_configuration():
     return tuple(
         (name, os.environ.get(name))
@@ -1630,8 +1660,12 @@ class IndexJobs:
                 registrations.pop(operation_id, None)
                 job = raw_state.get("jobs", {}).get(str(operation.get("job_id") or ""))
                 if isinstance(job, dict) and isinstance(job.get("_resource_folder_registration"), dict):
+                    rolled_back_any = (
+                        (bool(operation.get("created_source")) and not source_used)
+                        or (bool(operation.get("created_root")) and not root_used)
+                    )
                     job["_resource_folder_registration"]["settled"] = (
-                        "committed" if committed else "preserved" if source_used or root_used else "rolled_back"
+                        "committed" if committed else "rolled_back" if rolled_back_any else "preserved"
                     )
 
             self.store.mutate(finish)
@@ -1746,6 +1780,7 @@ class IndexJobs:
                     if conflicting_id:
                         _error(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
 
+                created_root = False
                 try:
                     root, prefix = storage.resolve_asset_registration_root(normalized_path)
                 except CleanroomException as exc:
@@ -1753,47 +1788,62 @@ class IndexJobs:
                         raise
                     if str(actor.get("role") or "").lower() != "admin":
                         _error(403, "FORBIDDEN", "仅管理员可授权新的资源文件夹根")
-                    root_state = default_storage_allowed_roots_service._state.read()
-                    candidate = Path(normalized_path)
-                    for record in root_state.get("roots", []):
-                        if record.get("active") or not record.get("path"):
-                            continue
-                        try:
-                            candidate.relative_to(Path(record["path"]))
-                        except ValueError:
-                            continue
-                        _error(409, "MOUNT_ROOT_REMOVED", "已移除的允许根须先单独确认恢复")
-                    planned_root_id = storage.root_identity_id(Path(normalized_path))
-                    planned_job_id = f"job_index_{int(current['sequence']) + 1:08d}"
-                    operation = {
-                        "operation_id": op_id,
-                        "job_id": planned_job_id,
-                        "attempt": 1,
-                        "owner": owner,
-                        "source_id": source_id,
-                        "source_name": source_name,
-                        "path": normalized_path,
-                        "root_path": normalized_path,
-                        "path_key": path_key,
-                        "root_id": planned_root_id,
-                        "created_root": True,
-                        "created_source": existing_source is None,
-                        "phase": "prepared",
-                    }
-                    self.store.mutate(
-                        lambda state: state.setdefault("registration_ops", {}).__setitem__(op_id, operation)
-                    )
-                    try:
-                        root_snapshot = default_storage_allowed_roots_service.get_snapshot()
-                        default_storage_allowed_roots_service.add_root(
-                            StorageAllowedRootRequest(path=normalized_path, expected_version=root_snapshot.revision),
-                            registration_operation_id=op_id,
-                        )
+                    if existing_source is None and expected_version != settings_snapshot.revision:
+                        _error(409, "VERSION_CONFLICT", "存储设置版本已改变，请重试")
+                    if _restore_matching_removed_root(normalized_path):
                         root, prefix = storage.resolve_asset_registration_root(normalized_path)
-                    except Exception:
-                        self._settle_resource_folder_registration(op_id)
-                        raise
-                else:
+                        settings_snapshot = default_storage_settings_service.get_snapshot()
+                        existing_source = next(
+                            (
+                                item for item in settings_snapshot.local_libraries
+                                if item.get("path")
+                                and storage.directory_path_key(str(item["path"])) == path_key
+                            ),
+                            None,
+                        )
+                        if existing_source:
+                            source_id = str(existing_source["id"])
+                            source_name = str(existing_source.get("name") or source_name)
+                            normalized_path = str(existing_source.get("path") or normalized_path)
+                            path_key = storage.directory_path_key(normalized_path)
+                        else:
+                            expected_version = settings_snapshot.revision
+                            if any(str(item.get("id")) == source_id for item in settings_snapshot.local_libraries):
+                                _error(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
+                    else:
+                        created_root = True
+                        planned_root_id = storage.root_identity_id(Path(normalized_path))
+                        planned_job_id = f"job_index_{int(current['sequence']) + 1:08d}"
+                        operation = {
+                            "operation_id": op_id,
+                            "job_id": planned_job_id,
+                            "attempt": 1,
+                            "owner": owner,
+                            "source_id": source_id,
+                            "source_name": source_name,
+                            "path": normalized_path,
+                            "root_path": normalized_path,
+                            "path_key": path_key,
+                            "root_id": planned_root_id,
+                            "created_root": True,
+                            "created_source": existing_source is None,
+                            "phase": "prepared",
+                        }
+                        self.store.mutate(
+                            lambda state: state.setdefault("registration_ops", {}).__setitem__(op_id, operation)
+                        )
+                        try:
+                            root_snapshot = default_storage_allowed_roots_service.get_snapshot()
+                            default_storage_allowed_roots_service.add_root(
+                                StorageAllowedRootRequest(path=normalized_path, expected_version=root_snapshot.revision),
+                                registration_operation_id=op_id,
+                            )
+                            root, prefix = storage.resolve_asset_registration_root(normalized_path)
+                        except Exception:
+                            self._settle_resource_folder_registration(op_id)
+                            raise
+
+                if not created_root:
                     planned_root_id = storage.root_identity_id(root)
                     planned_job_id = f"job_index_{int(current['sequence']) + 1:08d}"
                     operation = {
@@ -2094,18 +2144,32 @@ class IndexJobs:
             actor = _actor(auth)
             if str(actor.get("role") or "").lower() != "admin":
                 _error(403, "FORBIDDEN", "仅管理员可授权新的资源文件夹根")
-            candidate = Path(path)
-            for record in default_storage_allowed_roots_service._state.read().get("roots", []):
-                if record.get("active") or not record.get("path"):
-                    continue
-                try:
-                    candidate.relative_to(Path(record["path"]))
-                except ValueError:
-                    continue
-                _error(409, "MOUNT_ROOT_REMOVED", "已移除的允许根须先单独确认恢复")
-            root = Path(path)
-            prefix = ""
-            created_root = True
+            if _restore_matching_removed_root(path):
+                root, prefix = storage.resolve_asset_registration_root(path)
+                created_root = False
+                settings_snapshot = default_storage_settings_service.get_snapshot()
+                existing_source = next(
+                    (
+                        item for item in settings_snapshot.local_libraries
+                        if item.get("path")
+                        and storage.directory_path_key(str(item["path"])) == path_key
+                    ),
+                    None,
+                )
+                if existing_source:
+                    source_id = str(existing_source["id"])
+                    source_name = str(existing_source.get("name") or source_name)
+                    path = str(existing_source.get("path") or path)
+                    path_key = storage.directory_path_key(path)
+                elif any(
+                    str(item.get("id") or "") == source_id
+                    for item in settings_snapshot.local_libraries
+                ):
+                    _error(409, "ASSET_ROOT_ID_CONFLICT", "素材来源标识已用于其他目录")
+            else:
+                root = Path(path)
+                prefix = ""
+                created_root = True
 
         attempt = int(job.get("attempt") or 0) + 1
         previous_operation_id = str(registration.get("operation_id") or "")

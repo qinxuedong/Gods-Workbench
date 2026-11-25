@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 828,
+  "authorization_basis": "GitHub Issue #828 (QIN-663)",
+  "files": [
+    "tests/contracts/assets/test_qin663_mount_root_auto_restore.py"
+  ]
+}
