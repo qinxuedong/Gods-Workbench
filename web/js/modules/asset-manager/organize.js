@@ -3341,6 +3341,7 @@ export {
 async function waitForIndexedAssetSnapshot(jobId, sourceName='素材库'){
     if(!jobId) return null;
     const deadline = Date.now() + 120000;
+    let snapshotRefreshed = false;
     while(Date.now() < deadline){
         try {
             const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
@@ -3350,13 +3351,21 @@ async function waitForIndexedAssetSnapshot(jobId, sourceName='素材库'){
             const terminal = status === 'succeeded' || ['failed','cancelled','interrupted'].includes(status);
             const snapshotReady = Boolean(job.enrich) || phase === 'indexed' || phase === 'enriching';
             if(snapshotReady){
-                await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                if(!snapshotRefreshed){
+                    await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+                    if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                    snapshotRefreshed = true;
+                }
+                if(terminal){
+                    // 终态后不再写「正在补齐」：避免晚到的轮询把完成文案覆盖回进行中。
+                    if(status === 'succeeded') setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+                    return job;
+                }
                 setStatus(`素材库“${sourceName}”基础条目已入库，正在补齐视频元数据与哈希…（${Number(job.enrich?.done || 0)}/${Number(job.enrich?.total || 0)}）`);
+            }else if(terminal){
+                // 没有富化任务的单阶段 job：不重复刷新，直接交回既有终态处理。
                 return job;
             }
-            // 没有富化任务的单阶段 job：不重复刷新，直接交回既有终态处理。
-            if(terminal) return job;
         } catch(_) {}
         await new Promise(resolve => setTimeout(resolve, 500));
     }

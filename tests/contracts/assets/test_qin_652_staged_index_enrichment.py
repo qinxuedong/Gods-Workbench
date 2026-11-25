@@ -363,7 +363,67 @@ def test_ac2_cancel_during_enrichment_keeps_indexed_entries(index_runtime, monke
         gate.set()
         final = _wait_job(client, job_id)
         assert final["status"] == "cancelled", final
+        # 收尾窗口过后再回读：避免只在 _enrich 返回前采到 cancelled 的时序假绿。
+        time.sleep(1.0)
+        assert _read_job(client, job_id)["status"] == "cancelled"
         assert len(_assets()) == 2, "快照提交后的基础条目不得被取消回滚"
+
+
+def test_ac2_cancelled_enrichment_is_not_projected_back_to_success(
+    index_runtime, monkeypatch
+):
+    """B-1 回归：取消后跨过富化收尾 / 收据投影窗口，多次回读仍为 cancelled。
+
+    审核官与 QA 在 head `c603705c` 上实测：`POST /cancel` 返回 cancelled 后
+    约 0.21s 再读变成 `succeeded/completed`，原因是 `_enrich` 无条件
+    `_finalize_enrich_result` 清除收据 `enrich_pending` 并写终态收据，
+    `_committed_truth` 随即投影成功。本用例要求：收据保持快照态、
+    `_Stopped` 不计入 `enrich.failed`、快照条目保留。
+    """
+    gate = threading.Event()
+    entered = threading.Event()
+    original = jobs.IndexJobs._enrich_hash_value
+
+    def blocked(self, task, job_id, attempt):
+        entered.set()
+        gate.wait(8)
+        return original(self, task, job_id, attempt)
+
+    monkeypatch.setattr(jobs.IndexJobs, "_enrich_hash_value", blocked)
+    _make_files(index_runtime, 2)
+    with TestClient(create_app()) as client:
+        created = _submit(client, "qin-652-cancel-projection", hash_files=True)
+        assert created.status_code == 202, created.text
+        job_id = created.json()["job_id"]
+        assert entered.wait(8), "富化未启动"
+        running = _read_job(client, job_id)
+        assert running.get("enrich")
+        cancelled = client.post(
+            f"{BASE}/workspace-jobs/{job_id}/cancel",
+            headers=AUTH,
+            json={"expected_version": running["version"]},
+        )
+        assert cancelled.status_code == 200, cancelled.text
+        assert cancelled.json()["job"]["status"] == "cancelled"
+        gate.set()
+        observed = []
+        for _ in range(8):
+            time.sleep(0.25)
+            observed.append(_read_job(client, job_id))
+        statuses = {job["status"] for job in observed}
+        assert statuses == {"cancelled"}, [
+            (job["status"], job.get("progress", {}).get("phase")) for job in observed
+        ]
+        assert all(
+            job.get("progress", {}).get("phase") != "completed" for job in observed
+        )
+        # 取消不是条目失败：_Stopped 只停池，不得计入 enrich.failed。
+        assert observed[-1]["enrich"]["failed"] == 0, observed[-1]["enrich"]
+        receipt = repo.state().read()["index_job_receipts"][
+            f"{job_id}:{observed[-1]['attempt']}"
+        ]
+        assert receipt.get("enrich_pending") is True, "取消后收据必须保持快照态"
+    assert len(_assets()) == 2, "取消不得回滚已入库快照条目"
 
 
 def test_ac2_video_failure_keeps_asset_and_job_succeeds(index_runtime, monkeypatch):

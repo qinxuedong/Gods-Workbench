@@ -89,6 +89,8 @@ ENRICH_HASH_CONCURRENCY_MAX = 4
 ENRICH_HASH_CHUNK_BYTES = 8 * 1024 * 1024
 ENRICH_BATCH_SIZE = 20
 ENRICH_BATCH_INTERVAL_SECONDS = 1.5
+# 单条目长时间无结果才视为卡死；暂停时长不计入，取消另有 _checkpoint 即时生效。
+ENRICH_STALL_SECONDS = 600
 
 
 def _enrich_hash_concurrency() -> int:
@@ -1028,6 +1030,10 @@ class IndexJobs:
             for job in raw["jobs"].values():
                 receipt = receipts.get(f"{job['job_id']}:{job['attempt']}")
                 if receipt:
+                    if job["status"] == "cancelled":
+                        # 已取消任务不得因残留收据在重启时被恢复成成功；
+                        # 快照条目本身保留，取消语义优先。
+                        continue
                     if isinstance(receipt, dict) and receipt.get("enrich_pending"):
                         # QIN-652：进程在富化阶段退出时仍按既有「有收据即成功」
                         # 口径恢复，但如实标注富化未完成，retry 按跳过条件补齐。
@@ -1250,7 +1256,7 @@ class IndexJobs:
         # 富化，pause/cancel 也会被终态拒绝；只有终态收据才沿用既有投影。
         if (
             receipt is not None
-            and job["status"] != "succeeded"
+            and job["status"] not in ("succeeded", "cancelled")
             and not (isinstance(receipt, dict) and receipt.get("enrich_pending"))
         ):
             job.update(
@@ -2192,6 +2198,10 @@ class IndexJobs:
                         else self._enrich_hash_value(task, job_id, attempt)
                     )
                     completed.put((index, kind, value, None))
+                except _Stopped:
+                    # 取消/新尝试/停机：不是条目失败，不得计入 enrich.failed。
+                    stop.set()
+                    return
                 except Exception as exc:  # 单条目失败：保留条目，计入 enrich.failed
                     completed.put((index, kind, None, str(exc)))
             finally:
@@ -2277,6 +2287,35 @@ class IndexJobs:
             result.pop("hash_sampled_oversize", None)
         result["enrich"] = dict(summary)
         self._write_receipt_result(job, result)
+        return result
+
+    def _enrich_abort_reason(self, job_id, attempt):
+        """富化中断归因：只读任务当前状态，供取消/接管/停机分支如实收尾。
+
+        返回 None 表示任务仍在 running（仅 watchdog 停池，可按已批准口径
+        写终态并标注 interrupted）；返回 cancelled/superseded/failed/closed
+        表示任务已离开运行态，必须保留 enrich_pending、不得写终态收据。
+        """
+        if self.closed:
+            return "closed"
+        try:
+            with self.condition:
+                current = self.store.read()["jobs"].get(job_id)
+        except Exception:
+            return "closed"
+        if current is None or current["attempt"] != attempt:
+            return "superseded"
+        status = str(current.get("status") or "")
+        if status == "cancelled":
+            return "cancelled"
+        if status in ("failed", "interrupted"):
+            return "failed"
+        return None
+
+    def _pending_enrich_result(self, snapshot_result, summary):
+        """取消/接管/停机：收据保持快照态（含 enrich_pending），不写终态收据。"""
+        result = dict(snapshot_result)
+        result["enrich"] = dict(summary)
         return result
 
     def _enrich(self, job, files, tasks, snapshot_result, summary, pre_commit_existing):
@@ -2399,6 +2438,7 @@ class IndexJobs:
         last_flush = time.monotonic()
         last_progress = last_flush
         last_progress_save = last_flush
+        abort_reason = None
         try:
             while received < total and not stop.is_set():
                 try:
@@ -2413,10 +2453,16 @@ class IndexJobs:
                             or current_job["status"] in TERMINAL
                         ):
                             stop.set()
+                            abort_reason = self._enrich_abort_reason(job_id, attempt)
                             break
+                        # paused 时 worker 在 _checkpoint 阻塞等恢复，暂停时长
+                        # 不计入「无进展」，避免 600s 看门狗误停并翻转终态。
+                        if current_job["status"] == "paused":
+                            last_progress = time.monotonic()
                     now = time.monotonic()
-                    if now - last_progress > 600:
+                    if now - last_progress > ENRICH_STALL_SECONDS:
                         stop.set()
+                        abort_reason = "stalled"
                         break
                     if ready and now - last_flush >= ENRICH_BATCH_INTERVAL_SECONDS:
                         self._flush_enrich_batch(
@@ -2460,8 +2506,28 @@ class IndexJobs:
             for future in futures:
                 with suppress(Exception):
                     future.exception()
-        # 取消/暂停/异常导致未收齐时，如实留下 pending，不伪造完成。
+        # 取消/接管/停机导致未收齐时，如实留下 pending，不伪造完成。
         summary["pending"] = max(0, total - received)
+        if received < total:
+            reason = abort_reason or self._enrich_abort_reason(job_id, attempt)
+            if reason is None:
+                # 任务仍在 running：仅看门狗停池，按已批准口径写终态并标注中断。
+                summary["interrupted"] = True
+                summary["interrupt_reason"] = "stalled"
+                return self._finalize_enrich_result(
+                    job, files, snapshot_result, summary
+                )
+            summary["interrupted"] = True
+            summary["interrupt_reason"] = reason
+            # 取消/新尝试/停机：收据保留 enrich_pending，绝不写终态收据，
+            # 否则 _committed_truth 会把 cancelled 投影回 succeeded。
+            return self._pending_enrich_result(snapshot_result, summary)
+        # 收齐也要复核：取消可能恰在最后一个结果之后、收据写入之前到达。
+        reason = self._enrich_abort_reason(job_id, attempt)
+        if reason is not None:
+            summary["interrupted"] = True
+            summary["interrupt_reason"] = reason
+            return self._pending_enrich_result(snapshot_result, summary)
         return self._finalize_enrich_result(job, files, snapshot_result, summary)
 
     def _run(self, job_id, attempt):
