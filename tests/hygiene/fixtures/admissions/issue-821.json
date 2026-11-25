@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 821,
+  "authorization_basis": "GitHub Issue #821 QIN-659, 2026-11-25",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-659-mount-tree-ux.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-821.json",
+    "web/css/base/workspace-pages.css",
+    "web/css/pages/asset-manager.css",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-659-mount-tree-ux.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #821 QIN-659, 2026-11-25",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-659: 资产库左侧挂载文件夹树黑金三层视觉重构（去常态亮框、拉开图标/名称/统计数字权重）并在根文件夹右键菜单新增「显示/隐藏空文件夹」开关及持久化；只写本票分片，基础卫生账本与硬计数保持不变。"
+}

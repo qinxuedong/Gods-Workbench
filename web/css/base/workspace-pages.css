@@ -809,3 +809,57 @@ body:has(.observability-content) { background: var(--paper); }
   .task-progress-track:focus-visible,.asset-volume-track:focus-visible { outline-color: Highlight; }
 }
 
+/* QIN-659: 资产库左侧「挂载资源」目录树黑金三层视觉重构 */
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub {
+  border: 1px solid transparent !important;
+  background: transparent !important;
+  box-shadow: none !important;
+  color: #e2e8f0 !important;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:hover,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:hover {
+  border-color: transparent !important;
+  background: rgba(255, 255, 255, 0.04) !important;
+  box-shadow: none !important;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active),
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active),
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active):hover,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active):hover {
+  border: 1px solid rgba(223, 195, 132, 0.45) !important;
+  background: rgba(223, 195, 132, 0.12) !important;
+  box-shadow: none !important;
+  color: #dfc384 !important;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub > svg {
+  width: 14px !important;
+  height: 14px !important;
+  color: #94a3b8 !important;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button .asset-shell-nav-label,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub .asset-shell-nav-label {
+  font-size: var(--gw-type-label-lg) !important;
+  font-weight: 400 !important;
+  color: #e2e8f0 !important;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button .asset-shell-nav-count,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub .asset-shell-nav-count {
+  font-size: var(--gw-type-label-md) !important;
+  font-family: var(--gw-font-mono) !important;
+  color: #64748b !important;
+  margin-left: auto !important;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active) > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active) :is(.asset-shell-nav-label, .asset-shell-nav-count),
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) :is(.asset-shell-nav-label, .asset-shell-nav-count) {
+  color: #dfc384 !important;
+}
+
