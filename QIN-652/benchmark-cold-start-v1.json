@@ -1,0 +1,69 @@
+{
+  "schema": "qin652/index-first-visible-benchmark/v1",
+  "method": "同一 worker 脚本 / 同一素材目录 / 同一数据指纹；before 去掉 request._fast_scan 复现单阶段实现，after 为 QIN-652 三阶段。首屏可见 = 前端实际会刷新列表的时刻：before 为 status=succeeded，after 为 job 顶层 enrich 出现（快照提交）。",
+  "fixture": {
+    "image_count": 448,
+    "video_count": 261,
+    "total_files": 709,
+    "png_bytes_each": 70,
+    "mp4_placeholder_bytes_each": 28,
+    "data_fingerprint_sha256": "79f9777caab39fcb087ac726343501fec8378eecbb9ed9b8b0a1d50eee158f5d",
+    "video_probe": "两侧同一夹具：模块级 _video_index_data 替换为固定 0.02s 延迟 + unavailable 返回，避免真机 ffprobe/ffmpeg 成为不可控变量。本基准证明的是『拆分后首屏不再等待视频探测与哈希』这一范围内结论，不等于真实端到端 165s 场景达标；真实 ffprobe 冷启动与磁盘 IO 仍需真机复核，此处不宣称。",
+    "no_fixture_control": "未做（真实 ffmpeg 探测耗时不可控），如实标注"
+  },
+  "worker_script_sha256": "87b21287407d608ed7fe5d9de84892600ebfdbf1305f097e007cc2d92a027817",
+  "cases": {
+    "before": {
+      "label": "before",
+      "job_id": "job_index_00000001",
+      "first_visible_ms": 24049.47,
+      "first_visible_phase": "completed",
+      "job_terminal_ms": 24049.47,
+      "terminal_status": "succeeded",
+      "final_asset_count": 709,
+      "result_indexed": 709,
+      "result_hashed": 709,
+      "result_enrich": null,
+      "video_probe_fixture_seconds": 0.02,
+      "python_version": "3.11.9",
+      "worker_exit_code": 0,
+      "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+    },
+    "after": {
+      "label": "after",
+      "job_id": "job_index_00000001",
+      "first_visible_ms": 6101.65,
+      "first_visible_phase": "indexed",
+      "job_terminal_ms": 30518.15,
+      "terminal_status": "succeeded",
+      "final_asset_count": 709,
+      "result_indexed": 709,
+      "result_hashed": 709,
+      "result_enrich": {
+        "done": 970,
+        "failed": 0,
+        "hash_concurrency": 2,
+        "pending": 0,
+        "skipped": 0,
+        "total": 970,
+        "video_concurrency": 1
+      },
+      "video_probe_fixture_seconds": 0.02,
+      "python_version": "3.11.9",
+      "worker_exit_code": 0,
+      "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+    }
+  },
+  "gate": {
+    "after_first_visible_seconds": 6.102,
+    "threshold_seconds": 5.0,
+    "passed": false
+  },
+  "derived": {
+    "speedup_ratio": 3.94,
+    "after_enrichment_total_ms": 30518.15,
+    "note": "after 富化总时长如实并列，不承诺缩短，只承诺不阻塞首屏。"
+  },
+  "worktree": "<worktree>",
+  "note": "首版原始数值未改动；仅将本机绝对路径替换为占位符以符合证据脱敏要求。"
+}

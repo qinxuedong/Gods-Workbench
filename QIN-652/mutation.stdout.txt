@@ -1,0 +1,52 @@
+{
+  "all_passed": true,
+  "worktree_clean": true,
+  "source_byte_identical": true,
+  "anchors": [
+    {
+      "id": "A_snapshot_hash_not_deferred",
+      "anchor": "if request[\"hash_files\"] and not fast_scan:",
+      "occurrences": 1,
+      "unique": true
+    },
+    {
+      "id": "B_enrich_skips_video_metadata",
+      "anchor": "            if video is not None:",
+      "occurrences": 1,
+      "unique": true
+    },
+    {
+      "id": "C_video_concurrency_cap_broken",
+      "anchor": "ENRICH_VIDEO_CONCURRENCY = 1",
+      "occurrences": 1,
+      "unique": true
+    }
+  ],
+  "mutations": [
+    {
+      "id": "A_snapshot_hash_not_deferred",
+      "red_exit": 1,
+      "red_assertion_errors": 1,
+      "red_hit": true,
+      "green_exit": 0,
+      "passed": true
+    },
+    {
+      "id": "B_enrich_skips_video_metadata",
+      "red_exit": 1,
+      "red_assertion_errors": 1,
+      "red_hit": true,
+      "green_exit": 0,
+      "passed": true
+    },
+    {
+      "id": "C_video_concurrency_cap_broken",
+      "red_exit": 1,
+      "red_assertion_errors": 2,
+      "red_hit": true,
+      "green_exit": 0,
+      "passed": true
+    }
+  ]
+}
+MUTATION_EXIT=0

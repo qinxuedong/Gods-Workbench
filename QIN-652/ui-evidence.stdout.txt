@@ -1,0 +1,9 @@
+{"viewport": 724, "theme": "dark", "passed": true, "contrast": 14.57, "copy": "“本地素材”已入库，补齐中 7/12", "failed": []}
+{"viewport": 724, "theme": "light", "passed": true, "contrast": 14.57, "copy": "“本地素材”已入库，补齐中 7/12", "failed": []}
+{"viewport": 900, "theme": "dark", "passed": true, "contrast": 14.57, "copy": "“QIN652 UI 素材库”已入库，补齐中 7/12", "failed": []}
+{"viewport": 900, "theme": "light", "passed": true, "contrast": 14.57, "copy": "“本地素材”已入库，补齐中 7/12", "failed": []}
+{"viewport": 1440, "theme": "dark", "passed": true, "contrast": 14.57, "copy": "“本地素材”已入库，补齐中 7/12", "failed": []}
+{"viewport": 1440, "theme": "light", "passed": true, "contrast": 14.57, "copy": "“本地素材”已入库，补齐中 7/12", "failed": []}
+{"viewport": 1920, "theme": "dark", "passed": true, "contrast": 14.57, "copy": "“QIN652 UI 素材库”已入库，补齐中 7/12", "failed": []}
+{"viewport": 1920, "theme": "light", "passed": true, "contrast": 14.57, "copy": "“QIN652 UI 素材库”已入库，补齐中 7/12", "failed": []}
+ALL_PASSED True CELLS 8

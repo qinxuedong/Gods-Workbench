@@ -1,0 +1,324 @@
+TAP version 13
+# Subtest: 新建资源入口移入左栏页头（QIN-566 恢复外壳侧栏）并沿用独立标准硬件按钮
+ok 1 - 新建资源入口移入左栏页头（QIN-566 恢复外壳侧栏）并沿用独立标准硬件按钮
+  ---
+  duration_ms: 0.781
+  type: 'test'
+  ...
+# Subtest: 新增资源库弹窗已移除并统一收敛到「+ 添加资源文件夹」标准弹窗（QIN-599 AC2）
+ok 2 - 新增资源库弹窗已移除并统一收敛到「+ 添加资源文件夹」标准弹窗（QIN-599 AC2）
+  ---
+  duration_ms: 2.1695
+  type: 'test'
+  ...
+# Subtest: 添加资源文件夹取消旧版 boardCreatePath 表单，统一走资源文件夹来源弹窗与目录输入（QIN-599 AC2）
+ok 3 - 添加资源文件夹取消旧版 boardCreatePath 表单，统一走资源文件夹来源弹窗与目录输入（QIN-599 AC2）
+  ---
+  duration_ms: 1.0643
+  type: 'test'
+  ...
+# Subtest: 新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列
+ok 4 - 新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列
+  ---
+  duration_ms: 1.3298
+  type: 'test'
+  ...
+# Subtest: 管理员添加资源文件夹时将未登记路径加入允许根，非管理员沿用现有权限校验
+ok 5 - 管理员添加资源文件夹时将未登记路径加入允许根，非管理员沿用现有权限校验
+  ---
+  duration_ms: 0.2507
+  type: 'test'
+  ...
+# Subtest: 添加资源文件夹命中已移除旧根时确认恢复并继续添加
+ok 6 - 添加资源文件夹命中已移除旧根时确认恢复并继续添加
+  ---
+  duration_ms: 2.2358
+  type: 'test'
+  ...
+# Subtest: 旧根确认后只恢复最具体祖先，取消不写入允许根
+ok 7 - 旧根确认后只恢复最具体祖先，取消不写入允许根
+  ---
+  duration_ms: 2.9665
+  type: 'test'
+  ...
+# Subtest: 资源文件夹弹窗模板包含错误回显容器与状态图标
+ok 8 - 资源文件夹弹窗模板包含错误回显容器与状态图标
+  ---
+  duration_ms: 0.9008
+  type: 'test'
+  ...
+# Subtest: 资源文件夹确认与关闭按钮在 saving 状态下禁用防重并展示 loading
+ok 9 - 资源文件夹确认与关闭按钮在 saving 状态下禁用防重并展示 loading
+  ---
+  duration_ms: 0.2912
+  type: 'test'
+  ...
+# Subtest: confirmBoardSource 捕获异常后将错误同步到 boardSourceState.error 并重新渲染弹窗
+ok 10 - confirmBoardSource 捕获异常后将错误同步到 boardSourceState.error 并重新渲染弹窗
+  ---
+  duration_ms: 0.2991
+  type: 'test'
+  ...
+# Subtest: attachPathToAssetBoard 对别名建议查询具备容错保护
+ok 11 - attachPathToAssetBoard 对别名建议查询具备容错保护
+  ---
+  duration_ms: 0.5131
+  type: 'test'
+  ...
+# Subtest: asset-manager.css 中包含 .board-create-error 样式规则
+ok 12 - asset-manager.css 中包含 .board-create-error 样式规则
+  ---
+  duration_ms: 0.2814
+  type: 'test'
+  ...
+# Subtest: 资源文件夹追加不生成自定义看板，直接刷新分面与目录并异步跟踪索引 (QIN-599 AC2)
+ok 13 - 资源文件夹追加不生成自定义看板，直接刷新分面与目录并异步跟踪索引 (QIN-599 AC2)
+  ---
+  duration_ms: 1.4038
+  type: 'test'
+  ...
+# Subtest: waitForAssetIndexJob 超时友好提示且不抛出阻断异常 (QIN-487)
+ok 14 - waitForAssetIndexJob 超时友好提示且不抛出阻断异常 (QIN-487)
+  ---
+  duration_ms: 0.3569
+  type: 'test'
+  ...
+# Subtest: attachPathToAssetBoard 返回带有 job_id 的 source 且不阻塞等待 (QIN-487)
+ok 15 - attachPathToAssetBoard 返回带有 job_id 的 source 且不阻塞等待 (QIN-487)
+  ---
+  duration_ms: 0.7011
+  type: 'test'
+  ...
+# Subtest: AC1: 右键菜单提供新建/重命名/删除/在系统中打开，双击改名与分组「+」入口
+ok 16 - AC1: 右键菜单提供新建/重命名/删除/在系统中打开，双击改名与分组「+」入口
+  ---
+  duration_ms: 2.2945
+  type: 'test'
+  ...
+# Subtest: AC2: 拖拽移动——卡片多选、文件夹整树移动、落点区分放进去与插到中间
+ok 17 - AC2: 拖拽移动——卡片多选、文件夹整树移动、落点区分放进去与插到中间
+  ---
+  duration_ms: 1.4399
+  type: 'test'
+  ...
+# Subtest: AC3: 重名弹窗提供跳过/改名/覆盖，文件占用有明确提示
+ok 18 - AC3: 重名弹窗提供跳过/改名/覆盖，文件占用有明确提示
+  ---
+  duration_ms: 0.9073
+  type: 'test'
+  ...
+# Subtest: AC4: Ctrl+Z 撤销最近操作并给出 toast 提示
+ok 19 - AC4: Ctrl+Z 撤销最近操作并给出 toast 提示
+  ---
+  duration_ms: 0.7286
+  type: 'test'
+  ...
+# Subtest: AC5: 系统资源与聚合根不响应任何整理操作
+ok 20 - AC5: 系统资源与聚合根不响应任何整理操作
+  ---
+  duration_ms: 3.7778
+  type: 'test'
+  ...
+# Subtest: AC6: 路径拼接与落点语义自洽
+ok 21 - AC6: 路径拼接与落点语义自洽
+  ---
+  duration_ms: 1.2654
+  type: 'test'
+  ...
+# Subtest: AC1/AC2 回归：浏览器验收暴露的三处实现缺陷已修复
+ok 22 - AC1/AC2 回归：浏览器验收暴露的三处实现缺陷已修复
+  ---
+  duration_ms: 1.9283
+  type: 'test'
+  ...
+# Subtest: AC1: 侧栏结构统一为资源库树（收集箱、挂载资源）与子目录树结构，排除系统预置占位根
+ok 23 - AC1: 侧栏结构统一为资源库树（收集箱、挂载资源）与子目录树结构，排除系统预置占位根
+  ---
+  duration_ms: 0.8706
+  type: 'test'
+  ...
+# Subtest: AC2: 右键菜单提供新建/重命名/在系统中打开/删除，双击支持内联改名
+ok 24 - AC2: 右键菜单提供新建/重命名/在系统中打开/删除，双击支持内联改名
+  ---
+  duration_ms: 0.4398
+  type: 'test'
+  ...
+# Subtest: QIN-597: shell 根菜单显示根动作并转发到共享资源文件夹入口
+ok 25 - QIN-597: shell 根菜单显示根动作并转发到共享资源文件夹入口
+  ---
+  duration_ms: 0.9906
+  type: 'test'
+  ...
+# Subtest: AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片拖拽移动
+ok 26 - AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片拖拽移动
+  ---
+  duration_ms: 0.3188
+  type: 'test'
+  ...
+# Subtest: AC4: 整理弹窗事件委托、重名冲突与 Ctrl+Z 撤销 Toast
+ok 27 - AC4: 整理弹窗事件委托、重名冲突与 Ctrl+Z 撤销 Toast
+  ---
+  duration_ms: 0.6093
+  type: 'test'
+  ...
+# Subtest: AC5: 收集箱与自建看板不响应整理菜单
+ok 28 - AC5: 收集箱与自建看板不响应整理菜单
+  ---
+  duration_ms: 0.1829
+  type: 'test'
+  ...
+# Subtest: AC6: 桥接对象 GWAssetOrganizeBridge 接口完整导出与清单登记
+ok 29 - AC6: 桥接对象 GWAssetOrganizeBridge 接口完整导出与清单登记
+  ---
+  duration_ms: 2.7611
+  type: 'test'
+  ...
+# Subtest: 服务端目录可达性预检只读，并采用服务端规范化路径
+ok 30 - 服务端目录可达性预检只读，并采用服务端规范化路径
+  ---
+  duration_ms: 1.2743
+  type: 'test'
+  ...
+# Subtest: 取消选择不发预检或登记请求
+ok 31 - 取消选择不发预检或登记请求
+  ---
+  duration_ms: 0.263
+  type: 'test'
+  ...
+# Subtest: 1500ms 与 5000ms 慢预检期间显示检查状态，完成前不提交
+ok 32 - 1500ms 与 5000ms 慢预检期间显示检查状态，完成前不提交
+  ---
+  duration_ms: 6529.3735
+  type: 'test'
+  ...
+# Subtest: 关闭弹窗后丢弃迟到的可达性响应
+ok 33 - 关闭弹窗后丢弃迟到的可达性响应
+  ---
+  duration_ms: 0.2681
+  type: 'test'
+  ...
+# Subtest: 后端不可达提示不触发登记；受理文案保持 pending 语义
+ok 34 - 后端不可达提示不触发登记；受理文案保持 pending 语义
+  ---
+  duration_ms: 0.2396
+  type: 'test'
+  ...
+# Subtest: 已有来源索引启动失败或缺少 job_id 时保留选择并显示错误
+ok 35 - 已有来源索引启动失败或缺少 job_id 时保留选择并显示错误
+  ---
+  duration_ms: 1.1509
+  type: 'test'
+  ...
+# Subtest: 重复添加已登记路径的索引启动失败不伪报受理
+ok 36 - 重复添加已登记路径的索引启动失败不伪报受理
+  ---
+  duration_ms: 0.6174
+  type: 'test'
+  ...
+# Subtest: 已有来源的 202 任务后续失败会轮询并显示终态错误
+ok 37 - 已有来源的 202 任务后续失败会轮询并显示终态错误
+  ---
+  duration_ms: 0.5565
+  type: 'test'
+  ...
+# Subtest: 选择按钮与状态说明可见，焦点态仍保留
+ok 38 - 选择按钮与状态说明可见，焦点态仍保留
+  ---
+  duration_ms: 0.3213
+  type: 'test'
+  ...
+# Subtest: QIN-631 原生公共下拉组件最小试点契约测试
+    # Subtest: AC1: 公共原生组件文件、契约文档与 Token 映射健全
+    ok 1 - AC1: 公共原生组件文件、契约文档与 Token 映射健全
+      ---
+      duration_ms: 2.4095
+      type: 'test'
+      ...
+    # Subtest: AC2 & AC4: 两页试点控件真实复用且声明式接入 (实测通过验证)
+    ok 2 - AC2 & AC4: 两页试点控件真实复用且声明式接入 (实测通过验证)
+      ---
+      duration_ms: 1.4821
+      type: 'test'
+      ...
+    # Subtest: AC3 & P1阻断整改: 智能体页非模态 Provider 控件 Escape 焦点回归实测（拒绝丢失至 BODY）
+    ok 3 - AC3 & P1阻断整改: 智能体页非模态 Provider 控件 Escape 焦点回归实测（拒绝丢失至 BODY）
+      ---
+      duration_ms: 3.5374
+      type: 'test'
+      ...
+    # Subtest: AC3 & 必改2: 预包装结构事件绑定补齐、幂等标记与自初始化机制
+    ok 4 - AC3 & 必改2: 预包装结构事件绑定补齐、幂等标记与自初始化机制
+      ---
+      duration_ms: 0.3086
+      type: 'test'
+      ...
+    # Subtest: AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 65 处历史存量节点实例）
+    ok 5 - AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 65 处历史存量节点实例）
+      ---
+      duration_ms: 60.2921
+      type: 'test'
+      ...
+    # Subtest: AC5 & 必改1反证: “同一行追加未授权裸 select”必须被真实扫描器拦截（阻断1反证闭环）
+    ok 6 - AC5 & 必改1反证: “同一行追加未授权裸 select”必须被真实扫描器拦截（阻断1反证闭环）
+      ---
+      duration_ms: 0.3658
+      type: 'test'
+      ...
+    # Subtest: AC6 & 必改2反证: 旧基线行号被篡改（如改成 99999）或移位必被拦截（精确行号门禁反证）
+    ok 7 - AC6 & 必改2反证: 旧基线行号被篡改（如改成 99999）或移位必被拦截（精确行号门禁反证）
+      ---
+      duration_ms: 18.7745
+      type: 'test'
+      ...
+    # Subtest: AC5 & 必改1反证: “删一旧加一新”偷换违规必被拦截（精确白名单门禁反证）
+    ok 8 - AC5 & 必改1反证: “删一旧加一新”偷换违规必被拦截（精确白名单门禁反证）
+      ---
+      duration_ms: 0.349
+      type: 'test'
+      ...
+    # Subtest: AC5 & 必改1: 产品 UI 范围下拉样式颜色门禁与全库扫描（全库零新增裸 hex 色）
+    ok 9 - AC5 & 必改1: 产品 UI 范围下拉样式颜色门禁与全库扫描（全库零新增裸 hex 色）
+      ---
+      duration_ms: 23.3772
+      type: 'test'
+      ...
+    # Subtest: AC5 & 必改1反证: 页面 CSS 新增下拉硬编码色必被拦截（R3 阻断1反证闭环）
+    ok 10 - AC5 & 必改1反证: 页面 CSS 新增下拉硬编码色必被拦截（R3 阻断1反证闭环）
+      ---
+      duration_ms: 0.3304
+      type: 'test'
+      ...
+    # Subtest: AC5 & 必改1反证: 在已冻结存量规则内新增违规裸 hex 色必被拦截（R3 阻断1反证闭环）
+    ok 11 - AC5 & 必改1反证: 在已冻结存量规则内新增违规裸 hex 色必被拦截（R3 阻断1反证闭环）
+      ---
+      duration_ms: 0.109
+      type: 'test'
+      ...
+    # Subtest: AC7: 反向违规样本绝不落盘在 web/ 目录
+    ok 12 - AC7: 反向违规样本绝不落盘在 web/ 目录
+      ---
+      duration_ms: 2.7374
+      type: 'test'
+      ...
+    # Subtest: GW-DoD-v1 & AC3: 真实两页四宽度双主题、浅底深字契约与时序代际保护
+    ok 13 - GW-DoD-v1 & AC3: 真实两页四宽度双主题、浅底深字契约与时序代际保护
+      ---
+      duration_ms: 1508.2272
+      type: 'test'
+      ...
+    1..13
+ok 39 - QIN-631 原生公共下拉组件最小试点契约测试
+  ---
+  duration_ms: 1623.5403
+  type: 'suite'
+  ...
+1..39
+# tests 51
+# suites 1
+# pass 51
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6615.6391
+NODE_EXIT=0

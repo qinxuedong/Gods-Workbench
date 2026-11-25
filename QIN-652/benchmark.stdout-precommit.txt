@@ -1,0 +1,257 @@
+{
+  "schema": "qin652/index-first-visible-benchmark/v3",
+  "method": "同一 worker 脚本 / 同一素材目录 / 同一数据指纹；before 去掉 request._fast_scan 复现单阶段实现，after 为 QIN-652 三阶段。首屏可见 = 前端实际会刷新列表的服务端时刻：before 为 status=succeeded，after 为 job 顶层 enrich 出现（快照提交）。两种计时口径并列：cold_start 从进程启动计（含应用 lifespan 与 FFmpeg 自检），steady_service 从 POST /reindex 提交计（贴合长驻服务）。",
+  "ticket_criteria": {
+    "AC1": "700+ 文件级别目录首屏入库应在数秒内完成，不再等全部 ffprobe 与全量哈希结束才显示资产",
+    "AC3": "补充并发/分阶段索引单测与基准对比记录（700+ 含大量 .mp4 目录的入库耗时对比），确保不引入数据竞争或重复索引",
+    "threshold_5s": "5s 是本次自设的内部观察目标，不是票面硬阈值；票面 AC1 只表述为『数秒内』。两种口径的达标情况均如实列出，不因未达标而调整测法或隐藏数据。"
+  },
+  "fixture": {
+    "image_count": 448,
+    "video_count": 261,
+    "total_files": 709,
+    "png_bytes_each": 70,
+    "mp4_placeholder_bytes_each": 28,
+    "data_fingerprint_sha256": "79f9777caab39fcb087ac726343501fec8378eecbb9ed9b8b0a1d50eee158f5d",
+    "frontend_poll_interval_ms": 500,
+    "frontend_note": "first_visible 是服务端快照可查询时刻；前端 waitForIndexedAssetSnapshot 以 500ms 间隔轮询，用户实际看到列表最坏另有约 500ms 延迟，此处不抵扣。",
+    "video_probe": "两侧同一夹具：模块级 _video_index_data 替换为固定 0.02s 延迟 + unavailable 返回，避免真机 ffprobe/ffmpeg 成为不可控变量。本基准证明的是『拆分后首屏不再等待视频探测与哈希』这一范围内结论，不等于真实端到端 165s 场景达标；真实 ffprobe 冷启动与磁盘 IO 仍需真机复核，此处不宣称。",
+    "no_fixture_control": "未做（真实 ffmpeg 探测耗时不可控），如实标注"
+  },
+  "worker_script_sha256": "3ac3fab3a1b1c3eeee2d7409b8da2a06a55ea15a76709f548887591114393f5e",
+  "bench_script_sha256": "a3ea1109c48d8c0992d17ec8941472c65ec1788ce495a8a9570a6d88e20c62a3",
+  "rounds": 3,
+  "implementation_ref": "qin-652@04e46dac5af9",
+  "prior_measurement": {
+    "file": ".local/qa/QIN-652/benchmark-cold-start-v1.json",
+    "after_cold_start_ms": 6101.65,
+    "note": "首版（v1 worker，仅 cold_start 口径）内部 5s 闸门未通过：after 6.102s，before 24.049s。作为不利样本原样保留并纳入本版最差值，不覆盖、不删除。早期 v2 单轮另有 after 4.464s 样本，数值见 .local/qa/QIN-652/benchmark.stdout-v2.txt。"
+  },
+  "runs": [
+    {
+      "round": 1,
+      "before": {
+        "label": "before",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 971.82,
+        "first_visible_ms": 22005.18,
+        "first_visible_from_submit_ms": 20720.15,
+        "first_visible_phase": "completed",
+        "job_terminal_ms": 22005.18,
+        "job_terminal_from_submit_ms": 20720.15,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": null,
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      },
+      "after": {
+        "label": "after",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 980.77,
+        "first_visible_ms": 5988.26,
+        "first_visible_from_submit_ms": 4712.51,
+        "first_visible_phase": "enriching",
+        "job_terminal_ms": 30894.86,
+        "job_terminal_from_submit_ms": 29619.11,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": {
+          "done": 970,
+          "failed": 0,
+          "hash_concurrency": 2,
+          "pending": 0,
+          "skipped": 0,
+          "total": 970,
+          "video_concurrency": 1
+        },
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      }
+    },
+    {
+      "round": 2,
+      "before": {
+        "label": "before",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 996.36,
+        "first_visible_ms": 23318.0,
+        "first_visible_from_submit_ms": 22001.86,
+        "first_visible_phase": "completed",
+        "job_terminal_ms": 23318.0,
+        "job_terminal_from_submit_ms": 22001.86,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": null,
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      },
+      "after": {
+        "label": "after",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 980.91,
+        "first_visible_ms": 6234.33,
+        "first_visible_from_submit_ms": 4930.87,
+        "first_visible_phase": "enriching",
+        "job_terminal_ms": 29020.66,
+        "job_terminal_from_submit_ms": 27717.2,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": {
+          "done": 970,
+          "failed": 0,
+          "hash_concurrency": 2,
+          "pending": 0,
+          "skipped": 0,
+          "total": 970,
+          "video_concurrency": 1
+        },
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      }
+    },
+    {
+      "round": 3,
+      "before": {
+        "label": "before",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 980.35,
+        "first_visible_ms": 23757.82,
+        "first_visible_from_submit_ms": 22476.76,
+        "first_visible_phase": "completed",
+        "job_terminal_ms": 23757.82,
+        "job_terminal_from_submit_ms": 22476.76,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": null,
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      },
+      "after": {
+        "label": "after",
+        "job_id": "job_index_00000001",
+        "app_bootstrap_ms": 1048.85,
+        "first_visible_ms": 6243.38,
+        "first_visible_from_submit_ms": 4873.55,
+        "first_visible_phase": "enriching",
+        "job_terminal_ms": 30978.21,
+        "job_terminal_from_submit_ms": 29608.38,
+        "terminal_status": "succeeded",
+        "final_asset_count": 709,
+        "result_indexed": 709,
+        "result_hashed": 709,
+        "result_enrich": {
+          "done": 970,
+          "failed": 0,
+          "hash_concurrency": 2,
+          "pending": 0,
+          "skipped": 0,
+          "total": 970,
+          "video_concurrency": 1
+        },
+        "video_probe_fixture_seconds": 0.02,
+        "python_version": "3.11.9",
+        "worker_exit_code": 0,
+        "worker_stderr_tail": "INFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n"
+      }
+    }
+  ],
+  "aggregate": {
+    "before_cold_ms": [
+      22005.18,
+      23318.0,
+      23757.82
+    ],
+    "after_cold_ms": [
+      5988.26,
+      6234.33,
+      6243.38
+    ],
+    "before_steady_ms": [
+      20720.15,
+      22001.86,
+      22476.76
+    ],
+    "after_steady_ms": [
+      4712.51,
+      4930.87,
+      4873.55
+    ],
+    "after_cold_worst_ms_including_v1": 6243.38,
+    "after_steady_median_ms": 4873.55,
+    "steady_speedup_ratios": [
+      4.4,
+      4.46,
+      4.61
+    ]
+  },
+  "internal_5s_target": {
+    "cold_start": {
+      "after_seconds_all": [
+        5.988,
+        6.234,
+        6.243
+      ],
+      "worst_seconds_including_v1": 6.243,
+      "passed_all_rounds_including_v1": false,
+      "note": "含应用冷启动与 FFmpeg 自检，双侧同一固定成本，不贴合长驻服务；首版 6.102s 未达内部 5s 目标，此处如实标注为『未稳定达标』，不因后续轮次变好而回溯删除。"
+    },
+    "steady_service": {
+      "before_seconds_all": [
+        20.72,
+        22.002,
+        22.477
+      ],
+      "after_seconds_all": [
+        4.713,
+        4.931,
+        4.874
+      ],
+      "passed_all_rounds": true
+    }
+  },
+  "gate": {
+    "criterion": "票面 AC1 + AC3：夹具对照证明首屏不再等待视频/哈希（每轮 after 在 indexed/enriching 即快照已提交、before 无 enrich）、700+ 文件双侧成功、无重复索引、串行多轮对比记录齐备；不以自设 5s 冒充票面判据。",
+    "both_succeeded": true,
+    "no_duplicate_index": true,
+    "staged_evidence": true,
+    "every_round_after_under_half_before": true,
+    "passed": true
+  },
+  "derived": {
+    "steady_speedup_ratio_min": 4.4,
+    "steady_speedup_ratio_max": 4.61,
+    "before_terminal_from_submit_ms": [
+      20720.15,
+      22001.86,
+      22476.76
+    ],
+    "after_terminal_from_submit_ms": [
+      29619.11,
+      27717.2,
+      29608.38
+    ],
+    "note": "after 富化总时长逐轮如实并列，不承诺缩短、也不隐藏变长；本票只承诺首屏不阻塞，总时长受 PM 裁决的视频 1 / 哈希 2 双通道限流约束。轮询读数本身与任务竞争状态锁，两侧同一测法同样承受，未做抵扣。"
+  }
+}
+BENCH_EXIT=0

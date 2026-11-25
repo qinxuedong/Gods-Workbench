@@ -1,0 +1,81 @@
+{
+  "schema": "qin652/rework-mutation/v1",
+  "test_node": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success",
+  "source_file": "gw/asset_registry/index_jobs.py",
+  "source_sha256": "58b32c331f1acfb97517ab1b31f4f53a501044c776a2167d8a44993cd51fa116",
+  "mutations": [
+    {
+      "id": "M1",
+      "intent": "取消后仍无条件 finalize：收据清掉 enrich_pending 并写终态",
+      "anchor_counts": [
+        1,
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E           AssertionError: 取消后收据必须保持快照态",
+        "E           assert None is True",
+        "E            +  where None = <built-in method get of dict object at 0x0000020DFEB00440>('enrich_pending')",
+        "E            +    where <built-in method get of dict object at 0x0000020DFEB00440> = {'enrich': {'done': 0, 'failed': 0, 'hash_concurrency': 2, 'pending': 2, ...}, 'generation': {'comfyui_tagged': 0, 'scanned_images': 0, 'truncated': 0, 'warnings': 0, ...}, 'hash_sampled_oversize': 0, 'hashed': 0, ...}.get",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success"
+      ],
+      "red_tail": "fmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success\n1 failed in 3.81s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 3.67s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    },
+    {
+      "id": "M2",
+      "intent": "M1 + 去掉 cancelled 投影护栏：任务被翻回 succeeded",
+      "anchor_counts": [
+        1,
+        1,
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E           AssertionError: [('succeeded', 'completed'), ('succeeded', 'completed'), ('succeeded', 'completed'), ('succeeded', 'completed'), ('succeeded', 'completed'), ('succeeded', 'completed'), ...]",
+        "E           assert {'succeeded'} == {'cancelled'}",
+        "E             Extra items in the left set:",
+        "E             'succeeded'",
+        "E             Extra items in the right set:",
+        "E             'cancelled'",
+        "E             Use -v to get more diff",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success"
+      ],
+      "red_tail": "fmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success\n1 failed in 3.84s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 3.65s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    },
+    {
+      "id": "M3",
+      "intent": "中断归因不再识别 cancelled：取消被当作看门狗中断并写终态收据",
+      "anchor_counts": [
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E           AssertionError: 取消后收据必须保持快照态",
+        "E           assert None is True",
+        "E            +  where None = <built-in method get of dict object at 0x00000218E9E039C0>('enrich_pending')",
+        "E            +    where <built-in method get of dict object at 0x00000218E9E039C0> = {'enrich': {'done': 0, 'failed': 0, 'hash_concurrency': 2, 'interrupt_reason': 'stalled', ...}, 'generation': {'comfyui_tagged': 0, 'scanned_images': 0, 'truncated': 0, 'warnings': 0, ...}, 'hash_sampled_oversize': 0, 'hashed': 0, ...}.get",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success"
+      ],
+      "red_tail": "fmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_cancelled_enrichment_is_not_projected_back_to_success\n1 failed in 3.90s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 3.68s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

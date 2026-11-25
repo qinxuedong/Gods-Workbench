@@ -1,0 +1,93 @@
+{
+  "schema": "qin652/rework2-mutation/v1",
+  "review_comment": "7154305645",
+  "source_file": "gw/asset_registry/index_jobs.py",
+  "source_sha256": "8aa76932c4bd65c5f9c93e38ed6cdff790066322f44de23c5b1fd371b2e69163",
+  "mutations": [
+    {
+      "id": "M1-same-second-skip",
+      "issue": "R-1 同秒等长改写误判未变化",
+      "test_node": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_same_second_same_size_rewrite_refreshes_enrichment",
+      "intent": "把版本指纹判定退回「大小 + 秒级 modified_at」",
+      "anchor_counts": [
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E   AssertionError: {'done': 3, 'failed': 0, 'hash_concurrency': 2, 'pending': 0, ...}",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_same_second_same_size_rewrite_refreshes_enrichment"
+      ],
+      "red_tail": "-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n<repo>\\tests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:577: AssertionError: {'done': 3, 'failed': 0, 'hash_concurrency': 2, 'pending': 0, ...}\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_same_second_same_size_rewrite_refreshes_enrichment\n1 failed in 1.70s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 1.74s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    },
+    {
+      "id": "M2-no-invalidate",
+      "issue": "R-2 版本变化后旧富化结果未失效",
+      "test_node": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_changed_version_retries_after_enrich_failure",
+      "intent": "去掉扫描提交时的旧结果失效块",
+      "anchor_counts": [
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E   AssertionError: 832864603d3905eb60f8fe19557fe7fb467e3bc9fb486dae28d838a209288106",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_changed_version_retries_after_enrich_failure"
+      ],
+      "red_tail": "ll_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n<repo>\\tests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:644: AssertionError: 832864603d3905eb60f8fe19557fe7fb467e3bc9fb486dae28d838a209288106\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_changed_version_retries_after_enrich_failure\n1 failed in 1.84s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 2.03s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    },
+    {
+      "id": "M3-no-batch-version-guard",
+      "issue": "R-3 旧富化批次覆盖新版本",
+      "test_node": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_late_enrich_batch_cannot_overwrite_newer_version",
+      "intent": "去掉富化批次的版本校验（保留字段收窄）",
+      "anchor_counts": [
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E   AssertionError: 旧批次的哈希覆盖了新版本",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_late_enrich_batch_cannot_overwrite_newer_version"
+      ],
+      "red_tail": "g 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n<repo>\\tests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:717: AssertionError: 旧批次的哈希覆盖了新版本\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_late_enrich_batch_cannot_overwrite_newer_version\n1 failed in 1.59s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 1.53s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    },
+    {
+      "id": "M4-no-global-gate",
+      "issue": "R-4 并发上限按任务而非全局",
+      "test_node": "tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_enrich_concurrency_is_global_across_jobs",
+      "intent": "闸门直接放行，退回「每任务各建池」",
+      "anchor_counts": [
+        1
+      ],
+      "red_exit_code": 1,
+      "red_ok": true,
+      "red_failed_lines": [
+        "E   AssertionError: {'video': 0, 'video_max': 2, 'hash': 0, 'hash_max': 4}",
+        "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_enrich_concurrency_is_global_across_jobs"
+      ],
+      "red_tail": "rsion 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n<repo>\\tests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:796: AssertionError: {'video': 0, 'video_max': 2, 'hash': 0, 'hash_max': 4}\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_review_enrich_concurrency_is_global_across_jobs\n1 failed in 2.56s\n",
+      "green_exit_code": 0,
+      "green_tail": ".                                                                        [100%]\n1 passed in 3.24s\n",
+      "restored_bytes_equal": true,
+      "worktree_clean": true,
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

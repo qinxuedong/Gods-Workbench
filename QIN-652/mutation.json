@@ -1,0 +1,110 @@
+{
+  "schema": "qin652/mutation-evidence/v1",
+  "method": "实现提交 c603705c 后逐组变异；只改契约可观测行为，不改测试；必红要求 pytest 非零且命中 AssertionError（排除实例锁等环境性假红）；每组 git checkout -- 单文件还原后同用例复跑必绿；末尾 git diff --quiet 与源码 sha256 双向硬校验。",
+  "source_file": "gw/asset_registry/index_jobs.py",
+  "source_sha256_before": "319d69bba8624bf2940a5cd1e27e15787098764378496a3dad8225f709d0a824",
+  "source_sha256_after": "319d69bba8624bf2940a5cd1e27e15787098764378496a3dad8225f709d0a824",
+  "source_byte_identical": true,
+  "worktree_clean": true,
+  "git_status_porcelain": "",
+  "anchors": [
+    {
+      "id": "A_snapshot_hash_not_deferred",
+      "anchor": "if request[\"hash_files\"] and not fast_scan:",
+      "occurrences": 1,
+      "unique": true
+    },
+    {
+      "id": "B_enrich_skips_video_metadata",
+      "anchor": "            if video is not None:",
+      "occurrences": 1,
+      "unique": true
+    },
+    {
+      "id": "C_video_concurrency_cap_broken",
+      "anchor": "ENRICH_VIDEO_CONCURRENCY = 1",
+      "occurrences": 1,
+      "unique": true
+    }
+  ],
+  "mutations": [
+    {
+      "id": "A_snapshot_hash_not_deferred",
+      "intent": "让快扫/快照阶段重新做全量哈希（退回单阶段行为），破坏 AC1",
+      "mutation": {
+        "from": "if request[\"hash_files\"] and not fast_scan:",
+        "to": "if request[\"hash_files\"]:"
+      },
+      "tests": [
+        "test_ac1_snapshot_is_queryable_while_enrichment_is_still_running"
+      ],
+      "red": {
+        "exit_code": 1,
+        "failed_lines": [
+          "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac1_snapshot_is_queryable_while_enrichment_is_still_running"
+        ],
+        "assertion_errors": 1,
+        "hit_target_assertion": true,
+        "tail": "in snapshot.values())\nE           assert False\nE            +  where False = all(<generator object test_ac1_snapshot_is_queryable_while_enrichment_is_still_running.<locals>.<genexpr> at 0x000002404F7D4860>)\n\ntests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:146: AssertionError\n---------------------------- Captured stderr call -----------------------------\nINFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac1_snapshot_is_queryable_while_enrichment_is_still_running\n1 failed in 9.90s\n"
+      },
+      "green": {
+        "exit_code": 0,
+        "tail": ".                                                                        [100%]\n1 passed in 1.72s\n"
+      },
+      "passed": true
+    },
+    {
+      "id": "B_enrich_skips_video_metadata",
+      "intent": "富化批次跳过写镜头行/视频元数据，破坏 AC2 视频补齐",
+      "mutation": {
+        "from": "            if video is not None:",
+        "to": "            if False:  # mutation: 跳过视频结果合并"
+      },
+      "tests": [
+        "test_ac2_video_channel_is_serial_and_hash_channel_is_bounded",
+        "test_ac2_video_failure_keeps_asset_and_job_succeeds"
+      ],
+      "red": {
+        "exit_code": 1,
+        "failed_lines": [
+          "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_channel_is_serial_and_hash_channel_is_bounded",
+          "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_failure_keeps_asset_and_job_succeeds"
+        ],
+        "assertion_errors": 1,
+        "hit_target_assertion": true,
+        "tail": "^^^^^^^^^^^\n            \"SCENE_DETECTION_FAILED\"\n        )\nE       KeyError: 'video_metadata'\n\ntests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:398: KeyError\n---------------------------- Captured stderr call -----------------------------\nINFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_channel_is_serial_and_hash_channel_is_bounded\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_failure_keeps_asset_and_job_succeeds\n2 failed in 3.02s\n"
+      },
+      "green": {
+        "exit_code": 0,
+        "tail": "..                                                                       [100%]\n2 passed in 2.76s\n"
+      },
+      "passed": true
+    },
+    {
+      "id": "C_video_concurrency_cap_broken",
+      "intent": "把 PM 裁决的视频通道并发上限从 1 破坏为 4",
+      "mutation": {
+        "from": "ENRICH_VIDEO_CONCURRENCY = 1",
+        "to": "ENRICH_VIDEO_CONCURRENCY = 4"
+      },
+      "tests": [
+        "test_ac2_video_channel_is_serial_and_hash_channel_is_bounded"
+      ],
+      "red": {
+        "exit_code": 1,
+        "failed_lines": [
+          "FAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_channel_is_serial_and_hash_channel_is_bounded"
+        ],
+        "assertion_errors": 2,
+        "hit_target_assertion": true,
+        "tail": "_id\"])\n        assert final[\"status\"] == \"succeeded\", final\n>       assert counter[\"video_max\"] == 1, counter\nE       AssertionError: {'video': 0, 'video_max': 4, 'hash': 0, 'hash_max': 2}\nE       assert 4 == 1\n\ntests\\contracts\\assets\\test_qin_652_staged_index_enrichment.py:254: AssertionError\n---------------------------- Captured stderr call -----------------------------\nINFO:gw.api.app:FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n------------------------------ Captured log call ------------------------------\nINFO     gw.api.app:app.py:214 FFmpeg 自检：ffmpeg=有 来源=path 版本=ffmpeg version 9.0.1-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers；ffprobe=有 来源=path 版本=ffprobe version 9.0.1-full_build-www.gyan.dev Copyright (c) 2007-2026 the FFmpeg developers\n=========================== short test summary info ===========================\nFAILED tests/contracts/assets/test_qin_652_staged_index_enrichment.py::test_ac2_video_channel_is_serial_and_hash_channel_is_bounded\n1 failed in 1.97s\n"
+      },
+      "green": {
+        "exit_code": 0,
+        "tail": ".                                                                        [100%]\n1 passed in 1.97s\n"
+      },
+      "passed": true
+    }
+  ],
+  "all_passed": true
+}

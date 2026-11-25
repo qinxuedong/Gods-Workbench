@@ -1,0 +1,582 @@
+{
+  "schema": "qin652/ui-evidence/v2",
+  "source_file": "web/js/modules/asset-manager/organize.js",
+  "entry": "真实外壳 /static/pages/assets.html + iframe asset-manager.html?embedded=1&vault=1 + 真实按钮 [data-board-create] + 真实 confirmBoardSource",
+  "measured_surface": "#assetVaultStatus（外壳顶栏，setStatus 真实落点）",
+  "injected": [
+    "POST /api/asset-registry/reindex -> 202 {job_id}",
+    "GET /api/asset-registry/workspace-jobs/* -> 固定 enriching/complete 序列"
+  ],
+  "cells": [
+    {
+      "viewport": {
+        "width": 724,
+        "height": 900
+      },
+      "theme": "dark",
+      "used_existing_source": true,
+      "observed_copy": "“本地素材”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“本地素材”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“本地素材”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 318.203125,
+          "y": 118.703125,
+          "width": 183.15625,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 318.203125,
+          "y": 118.703125,
+          "width": 183.15625,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 318.203125,
+          "y": 117.703125,
+          "width": 183.15625,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          183,
+          21
+        ],
+        "scroll": [
+          183,
+          21
+        ]
+      },
+      "screenshot": "ui-724-dark.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 724,
+        "height": 900
+      },
+      "theme": "light",
+      "used_existing_source": true,
+      "observed_copy": "“本地素材”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“本地素材”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“本地素材”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 318.203125,
+          "y": 118.703125,
+          "width": 183.15625,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 318.203125,
+          "y": 118.703125,
+          "width": 183.15625,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 318.203125,
+          "y": 117.703125,
+          "width": 183.15625,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          183,
+          21
+        ],
+        "scroll": [
+          183,
+          21
+        ]
+      },
+      "screenshot": "ui-724-light.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "theme": "dark",
+      "used_existing_source": false,
+      "observed_copy": "“QIN652 UI 素材库”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“QIN652 UI 素材库”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“QIN652 UI 素材库”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 383.1875,
+          "y": 72.703125,
+          "width": 229.203125,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 383.1875,
+          "y": 72.703125,
+          "width": 229.203125,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 383.1875,
+          "y": 71.703125,
+          "width": 229.203125,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          229,
+          21
+        ],
+        "scroll": [
+          229,
+          21
+        ]
+      },
+      "screenshot": "ui-900-dark.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 900,
+        "height": 900
+      },
+      "theme": "light",
+      "used_existing_source": true,
+      "observed_copy": "“本地素材”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“本地素材”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“本地素材”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 406.203125,
+          "y": 72.703125,
+          "width": 183.15625,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 406.203125,
+          "y": 72.703125,
+          "width": 183.15625,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 406.203125,
+          "y": 71.703125,
+          "width": 183.15625,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          183,
+          21
+        ],
+        "scroll": [
+          183,
+          21
+        ]
+      },
+      "screenshot": "ui-900-light.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "dark",
+      "used_existing_source": true,
+      "observed_copy": "“本地素材”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“本地素材”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“本地素材”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 676.2109375,
+          "y": 22.703125,
+          "width": 183.15625,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 676.2109375,
+          "y": 22.703125,
+          "width": 183.15625,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 676.2109375,
+          "y": 21.703125,
+          "width": 183.15625,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          183,
+          21
+        ],
+        "scroll": [
+          183,
+          21
+        ]
+      },
+      "screenshot": "ui-1440-dark.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 1440,
+        "height": 900
+      },
+      "theme": "light",
+      "used_existing_source": true,
+      "observed_copy": "“本地素材”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“本地素材”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“本地素材”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 676.2109375,
+          "y": 22.703125,
+          "width": 183.15625,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 676.2109375,
+          "y": 22.703125,
+          "width": 183.15625,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 676.2109375,
+          "y": 21.703125,
+          "width": 183.15625,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          183,
+          21
+        ],
+        "scroll": [
+          183,
+          21
+        ]
+      },
+      "screenshot": "ui-1440-light.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 1920,
+        "height": 900
+      },
+      "theme": "dark",
+      "used_existing_source": false,
+      "observed_copy": "“QIN652 UI 素材库”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“QIN652 UI 素材库”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“QIN652 UI 素材库”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 893.1875,
+          "y": 22.703125,
+          "width": 229.203125,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 893.1875,
+          "y": 22.703125,
+          "width": 229.203125,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 893.1875,
+          "y": 21.703125,
+          "width": 229.203125,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          229,
+          21
+        ],
+        "scroll": [
+          229,
+          21
+        ]
+      },
+      "screenshot": "ui-1920-dark.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    },
+    {
+      "viewport": {
+        "width": 1920,
+        "height": 900
+      },
+      "theme": "light",
+      "used_existing_source": false,
+      "observed_copy": "“QIN652 UI 素材库”已入库，补齐中 7/12",
+      "terminal_copy": "素材库“QIN652 UI 素材库”索引完成，已扫描 12 项",
+      "copy_sequence": [
+        "“QIN652 UI 素材库”已入库，补齐中 7/12"
+      ],
+      "iframe_status_text": "",
+      "style": {
+        "color": "rgb(237, 218, 179)",
+        "backgroundColor": "rgba(0, 0, 0, 0)",
+        "fontSize": "12px",
+        "lineHeight": "16.8px",
+        "fontWeight": "400",
+        "visibility": "visible",
+        "opacity": "1",
+        "whiteSpace": "nowrap",
+        "overflow": "hidden",
+        "textOverflow": "ellipsis",
+        "fontFamily": "\"Source Han Sans CN\", -apple-system, BlinkMacSystemFont, \"Segoe UI\", sans-serif"
+      },
+      "effective_background": "rgb(7, 8, 11)",
+      "contrast_ratio": 14.57,
+      "geometry": {
+        "rect": {
+          "x": 893.1875,
+          "y": 22.703125,
+          "width": 229.203125,
+          "height": 20.59375
+        },
+        "runner_rect": {
+          "x": 893.1875,
+          "y": 22.703125,
+          "width": 229.203125,
+          "height": 16.796875
+        },
+        "text_rect": {
+          "x": 893.1875,
+          "y": 21.703125,
+          "width": 229.203125,
+          "height": 17
+        },
+        "overflow_px": 0,
+        "client": [
+          229,
+          21
+        ],
+        "scroll": [
+          229,
+          21
+        ]
+      },
+      "screenshot": "ui-1920-light.png",
+      "checks": {
+        "copy_matches": true,
+        "copy_stable_after_screenshot": true,
+        "visible_geometry": true,
+        "not_hidden": true,
+        "no_horizontal_overflow": true,
+        "rect_covers_client_width": true,
+        "theme_applied": true,
+        "terminal_copy_reached": true,
+        "contrast_at_least_4_5": true
+      },
+      "passed": true
+    }
+  ],
+  "auth": "setup-409-login-200",
+  "all_passed": true
+}

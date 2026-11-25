@@ -1,0 +1,89 @@
+{
+  "schema": "qin652/organize-stage-probe/v1",
+  "source_file": "web/js/modules/asset-manager/organize.js",
+  "source_function_sha256": "2fcea710bc90aabbc0c2ec37055690e66a2b5e91ea3470f05de6dc220324935e",
+  "derived_module_sha256": "78bc761a731813082be917d8eab7d95b9aea10082a201650f348361032399d47",
+  "function_body_bytes": 1918,
+  "scenarios": {
+    "missed_indexed_phase": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 1,
+        "refreshRegistryFacetData": 1,
+        "render": 1,
+        "statuses": [
+          "“测试素材库”已入库，补齐中 2/6",
+          "“测试素材库”已入库，补齐中 5/6",
+          "素材库“测试素材库”索引完成，已扫描 6 项"
+        ],
+        "polls": 4
+      },
+      "elapsed_ms": 1538,
+      "returned_phase": "completed"
+    },
+    "indexed_captured": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 1,
+        "refreshRegistryFacetData": 1,
+        "render": 1,
+        "statuses": [
+          "“测试素材库”已入库，补齐中 0/3"
+        ],
+        "polls": 2
+      },
+      "returned_phase": "failed"
+    },
+    "terminal_without_snapshot": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 0,
+        "refreshRegistryFacetData": 0,
+        "render": 0,
+        "statuses": [],
+        "polls": 1
+      },
+      "returned_status": "failed"
+    },
+    "poll_error_tolerant": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 1,
+        "refreshRegistryFacetData": 1,
+        "render": 1,
+        "statuses": [
+          "“测试素材库”已入库，补齐中 1/2",
+          "素材库“测试素材库”索引完成，已扫描 2 项"
+        ],
+        "polls": 3
+      },
+      "threw": false,
+      "returned_phase": "completed"
+    },
+    "terminal_late_poll_no_rewind": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 1,
+        "refreshRegistryFacetData": 1,
+        "render": 1,
+        "statuses": [
+          "素材库“测试素材库”索引完成，已扫描 4 项"
+        ],
+        "polls": 1
+      },
+      "returned_status": "succeeded"
+    },
+    "cancelled_terminal_no_rewind": {
+      "passed": true,
+      "calls": {
+        "refreshRegistryAssets": 1,
+        "refreshRegistryFacetData": 1,
+        "render": 1,
+        "statuses": [],
+        "polls": 1
+      },
+      "returned_status": "cancelled"
+    }
+  },
+  "all_passed": true
+}

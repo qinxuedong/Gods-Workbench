@@ -1,0 +1,24 @@
+........................................................................ [ 57%]
+.....................................................                    [100%]
+============================== warnings summary ===============================
+tests/contracts/assets/test_phase12_index_jobs.py::test_local_account_revocation_at_commit
+  C:\Users\qinxuedong\AppData\Local\Programs\Python\Python311\Lib\site-packages\_pytest\threadexception.py:58: PytestUnhandledThreadExceptionWarning: Exception in thread Thread-116 (_readerthread)
+  
+  Traceback (most recent call last):
+    File "C:\Users\qinxuedong\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 1045, in _bootstrap_inner
+      self.run()
+    File "C:\Users\qinxuedong\AppData\Local\Programs\Python\Python311\Lib\threading.py", line 982, in run
+      self._target(*self._args, **self._kwargs)
+    File "C:\Users\qinxuedong\AppData\Local\Programs\Python\Python311\Lib\subprocess.py", line 1599, in _readerthread
+      buffer.append(fh.read())
+                    ^^^^^^^^^
+    File "<frozen codecs>", line 322, in decode
+  UnicodeDecodeError: 'utf-8' codec can't decode byte 0xd2 in position 0: invalid continuation byte
+  
+  Enable tracemalloc to get traceback where the object was allocated.
+  See https://docs.pytest.org/en/stable/how-to/capture-warnings.html#resource-warnings for more info.
+    warnings.warn(pytest.PytestUnhandledThreadExceptionWarning(msg))
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+125 passed, 1 warning in 58.74s
+PYTEST_EXIT=0
