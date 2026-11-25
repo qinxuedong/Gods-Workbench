@@ -7247,6 +7247,11 @@ function assetRackFolderTotalCount(rootId, relPath){
         if(matchedFacet.id) rootIds.add(String(matchedFacet.id));
         (matchedFacet.aliases || []).forEach(a => { if(a) rootIds.add(String(a)); });
     }
+    if(rootIds.size <= 1){
+        const found = registryIndexedFolders.find(f => String(f.root_id || '') === rootKey && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+        if(found && found.total_count != null) return Number(found.total_count);
+        if(found && found.count != null) return Number(found.count);
+    }
     let total = 0;
     const prefix = cleanPath ? `${cleanPath}/` : '';
     rootIds.forEach(rid => {
@@ -7260,7 +7265,8 @@ function assetRackFolderTotalCount(rootId, relPath){
             if(p.startsWith(prefix)) total += Number(f.count || 0);
         });
     });
-    return total;
+    if(total > 0) return total;
+    return 0;
 }
 function assetRackGlobalFolderTree(rootId){
     const root = String(rootId || '');
