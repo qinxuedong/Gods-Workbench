@@ -6794,36 +6794,38 @@ function isSystemExcludedAssetFolderPath(relPath=''){
 function assetRackFolderTree(rootId){
     const root = String(rootId || '');
     const board = assetRackBoard();
+    const notExcludedItem = item => !isSystemExcludedAssetFolderPath(registryAssetFolderPath(item));
+    const notExcludedFolder = folder => !isSystemExcludedAssetFolderPath(folder?.path || '');
     if(board){
         if(root === '__automatic__'){
             // 【QIN-527 修复】自动归档同样要下钻真实物理子目录：生产库 900+ 条素材都落在
             // 未显式登记的根上，早先返回空树会让用户只看到一行「自动归档」而误判没有层级。
-            const items = assetRackAutomaticItems(board);
+            const items = assetRackAutomaticItems(board).filter(notExcludedItem);
             const known = new Set([...(board.sources || []).map(source => String(source.id || '')), ...(board.excludedSourceIds || []).map(String)]);
             const directories = [
                 ...registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || ''))).map(folder => folder.path),
                 ...assetRackAutomaticDirectories(items),
                 ...assetRackDiskDirectoriesForItems(items),
             ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
-            const summary = registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || '')));
+            const summary = registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || '')) && notExcludedFolder(folder));
             return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
         }
-        const items = assetRackBoardPool(board).filter(item => String(item.storage_root_id || '') === root);
+        const items = assetRackBoardPool(board).filter(item => String(item.storage_root_id || '') === root && notExcludedItem(item));
         const directories = [
             ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
             ...(registryRootFolders.get(root) || []).map(folder => String(folder?.path || '')).filter(Boolean),
             ...assetRackDiskDirectories(root),
         ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
-        const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
+        const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root && notExcludedFolder(folder));
         return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
     }
-    const items = registryAssets.filter(item => String(item.storage_root_id || '') === root);
+    const items = registryAssets.filter(item => String(item.storage_root_id || '') === root && notExcludedItem(item));
     const directories = [
         ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
         ...(assetRackRegisteredFoldersByRoot().get(root) || []),
         ...assetRackDiskDirectories(root),
     ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
-    const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
+    const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root && notExcludedFolder(folder));
     return customBoardFolderTree(items, directories, summary);
 }
 /* ---------------------------------------------------------------------------
@@ -7245,16 +7247,20 @@ function assetRackFolderTotalCount(rootId, relPath){
         if(matchedFacet.id) rootIds.add(String(matchedFacet.id));
         (matchedFacet.aliases || []).forEach(a => { if(a) rootIds.add(String(a)); });
     }
-    const found = registryIndexedFolders.find(f => rootIds.has(String(f.root_id || '')) && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
-    if(found && found.total_count != null) return Number(found.total_count);
-    if(found && found.count != null) return Number(found.count);
-    if(!cleanPath) return 0;
-    const prefix = `${cleanPath}/`;
-    return registryIndexedFolders.reduce((sum, f) => {
-        if(!rootIds.has(String(f.root_id || ''))) return sum;
-        const p = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-        return p.startsWith(prefix) ? sum + Number(f.count || 0) : sum;
-    }, 0);
+    let total = 0;
+    const prefix = cleanPath ? `${cleanPath}/` : '';
+    rootIds.forEach(rid => {
+        const entries = registryIndexedFolders.filter(f => String(f.root_id || '') === rid);
+        const found = entries.find(f => String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+        if(found && found.total_count != null){ total += Number(found.total_count); return; }
+        if(found && found.count != null){ total += Number(found.count); return; }
+        if(!cleanPath) return;
+        entries.forEach(f => {
+            const p = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            if(p.startsWith(prefix)) total += Number(f.count || 0);
+        });
+    });
+    return total;
 }
 function assetRackGlobalFolderTree(rootId){
     const root = String(rootId || '');
@@ -11558,7 +11564,7 @@ async function gwAssetTreeOpenInSystem(key){
     if(!target) return {status:'failed', message:'目标不可整理'};
     return assetOrganizeOpenFolderInSystem(target);
 }
-async function gwAssetTreeCreateFolder(parentKey, folderName){
+async function gwAssetTreeCreateFolder(parentKey, folderName, options={}){
     await loadAssetAllowedRootPaths?.();
     let target = parentKey ? assetOrganizeTargetFromKey(parentKey) : null;
     let rootId = target?.rootId || '';
@@ -11576,6 +11582,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
         path: abs,
         root_id: physicalRootId,
     });
+    if(options?.isCancelled?.()) return {cancelled:true, ...data};
     gwCall('organize', 'assetOrganizePushUndo', data, `新建文件夹「${name}」`, rootId);
     gwCall('organize', 'showAssetOrganizeToast', `已新建文件夹「${name}」`, {undoable:true});
     setStatus(`已新建文件夹「${name}」`);
@@ -12315,6 +12322,7 @@ export {
     assetOrganizeMenu,
     assetOrganizeOpenFolderInSystem,
     assetOrganizeParentPath,
+    assetOrganizePhysicalRootId,
     assetOrganizeRequest,
     assetOrganizeUndoLast,
     assetOrganizeUndoStack,
@@ -12411,6 +12419,7 @@ export {
     detailMediaLutDraw,
     detailMediaLutListCache,
     detailMediaLutSamples,
+    expandAssetTreeAncestors,
     detailMediaLutSplitDragEndedAt,
     detailReferenceFromTarget,
     detailVideoStoryboardEnabled,

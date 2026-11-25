@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
@@ -72,8 +72,40 @@ def _is_loopback_request(request: Request) -> bool:
     return host in {"127.0.0.1", "::1", "localhost"}
 
 
+def _match_allowed_root_id(raw_path: str) -> str | None:
+    """将来源路径（含嵌套子目录）解析为最深匹配的物理允许根 root_id。"""
+    cleaned = str(raw_path or "").strip()
+    if not cleaned:
+        return None
+    roots = storage.allowed_roots()
+    target_key = storage.directory_path_key(cleaned)
+    for root in roots:
+        try:
+            if storage.directory_path_key(str(root)) == target_key:
+                return storage.root_identity_id(root)
+        except Exception:
+            continue
+    try:
+        target_path = Path(storage.normalize_directory_path(cleaned)).resolve(strict=False)
+    except Exception:
+        return None
+    best_root = None
+    best_depth = -1
+    for root in roots:
+        try:
+            root_path = root.resolve(strict=False)
+            if target_path == root_path or target_path.is_relative_to(root_path):
+                depth = len(root_path.parts)
+                if depth > best_depth:
+                    best_depth = depth
+                    best_root = root
+        except Exception:
+            continue
+    return storage.root_identity_id(best_root) if best_root is not None else None
+
+
 def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
-    """可选的来源根身份；兼容 storage_root_id / 别名映射为物理允许根 root_id。"""
+    """可选的来源根身份；兼容 storage_root_id / 别名 / 嵌套素材库映射为物理允许根 root_id。"""
     value = payload.get(key)
     text = str(value).strip() if value is not None else ""
     if not text:
@@ -85,7 +117,10 @@ def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
         from gw.asset_registry import index_jobs
 
         facets = index_jobs.root_facets()
-        for facet in facets.get("roots") or []:
+        facet_list = facets if isinstance(facets, list) else (facets.get("roots") or [])
+        for facet in facet_list:
+            if not isinstance(facet, dict):
+                continue
             candidates = {
                 str(facet.get("id") or "").strip(),
                 str(facet.get("storage_root_id") or "").strip(),
@@ -101,14 +136,9 @@ def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
             ):
                 if cand in physical_ids:
                     return cand
-            raw_path = str(facet.get("path") or "").strip()
-            if raw_path:
-                for root in storage.allowed_roots():
-                    try:
-                        if storage.directory_path_key(str(root)) == storage.directory_path_key(raw_path):
-                            return storage.root_identity_id(root)
-                    except Exception:
-                        continue
+            matched = _match_allowed_root_id(str(facet.get("path") or ""))
+            if matched:
+                return matched
     except Exception:
         pass
     try:
@@ -124,12 +154,9 @@ def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
                 entry_path = str(getattr(entry, "path", "") or "").strip()
             if entry_id != text or not entry_path:
                 continue
-            for root in storage.allowed_roots():
-                try:
-                    if storage.directory_path_key(str(root)) == storage.directory_path_key(entry_path):
-                        return storage.root_identity_id(root)
-                except Exception:
-                    continue
+            matched = _match_allowed_root_id(entry_path)
+            if matched:
+                return matched
     except Exception:
         pass
     return text

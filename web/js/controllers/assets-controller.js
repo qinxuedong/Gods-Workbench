@@ -607,7 +607,9 @@ window.WorkbenchAssets = (() => {
       try {
         const bridge = organizeBridge();
         if (!bridge?.createFolder) throw new Error('资产库尚未就绪，请稍后重试');
-        await bridge.createFolder(parentKey, name);
+        await bridge.createFolder(parentKey, name, {
+          isCancelled: () => submitGen !== activeShellDialogGen || !overlay.isConnected,
+        });
         if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
         closeDialog();
         showShellOrganizeToast(`已新建文件夹「${name}」`, true);

@@ -226,3 +226,37 @@ def test_rename_and_delete_folder_accepts_storage_root_id(tmp_path: Path, monkey
         )
         assert bad_resp.status_code == 404
         assert bad_resp.json()["detail"]["code"] == "ROOT_NOT_FOUND"
+
+        # 嵌套素材库（登记来源路径为允许根的子目录）传入 storage_root_id 同样映射为外层物理 root_id
+        nested_lib = mount / "nested_lib"
+        nested_sub = nested_lib / "sub_dir"
+        nested_sub.mkdir(parents=True)
+        cur_settings = client.get("/api/storage-settings", headers=ADMIN).json()
+        nested_id = "lib_nested_qin660"
+        assert (
+            client.patch(
+                "/api/storage-settings",
+                headers=ADMIN,
+                json={
+                    "expected_version": cur_settings["revision"],
+                    "extra_local_entries": [
+                        {"id": storage_root_id, "name": "自定义来源", "path": str(mount)},
+                        {"id": nested_id, "name": "嵌套来源", "path": str(nested_lib)},
+                    ],
+                },
+            ).status_code
+            == 200
+        )
+        cur_ver = client.get("/api/local-assets/organize/version", headers=ADMIN).json()["version"]
+        nested_rename = client.patch(
+            "/api/local-assets/folders",
+            headers=ADMIN,
+            json={
+                "path": str(nested_sub),
+                "name": "sub_renamed",
+                "root_id": nested_id,
+                "expected_version": cur_ver,
+            },
+        )
+        assert nested_rename.status_code == 200, nested_rename.text
+        assert (nested_lib / "sub_renamed").is_dir()
