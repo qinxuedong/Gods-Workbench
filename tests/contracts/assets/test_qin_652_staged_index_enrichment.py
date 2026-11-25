@@ -609,6 +609,9 @@ def test_review_changed_version_retries_after_enrich_failure(index_runtime, monk
             {
                 "video_segments": [{"start_sec": 0.0, "end_sec": 7.0}],
                 "video_metadata": {
+                    "width": 640,
+                    "height": 360,
+                    "frame_rate": 25.0,
                     "scene_detection_status": "complete",
                     "keyframe_status": "decoded_in_memory",
                     "duration_sec": 7.0,
@@ -626,6 +629,7 @@ def test_review_changed_version_retries_after_enrich_failure(index_runtime, monk
         assert _wait_job(client, first.json()["job_id"])["status"] == "succeeded"
         assert _asset("doc.txt")["sha256"] == hashlib.sha256(b"version-one").hexdigest()
         assert _asset("clip.mp4")["duration"] == 7.0
+        assert _asset("clip.mp4")["frame_rate"] == 25.0
 
         # 两个文件都改写（长度变化 → 版本指纹必然不同），随后富化全线失败。
         text.write_bytes(b"version-two-longer")
@@ -646,6 +650,9 @@ def test_review_changed_version_retries_after_enrich_failure(index_runtime, monk
         assert "sha256" not in stale_video
         assert "duration" not in stale_video
         assert "video_metadata" not in (stale_video.get("metadata") or {})
+        # 顶层详情字段同属「上一份内容」的结论，必须一并失效。
+        for stale_field in ("width", "height", "frame_rate"):
+            assert stale_field not in stale_video, stale_video.get(stale_field)
         assert stale_text["scan_version"]["size_bytes"] == len(b"version-two-longer")
 
         fail["on"] = False
@@ -796,3 +803,100 @@ def test_review_enrich_concurrency_is_global_across_jobs(index_runtime, monkeypa
     assert counter["video_max"] == 1, counter
     assert counter["hash_max"] == 2, counter
     assert counter["video"] == 0 and counter["hash"] == 0
+
+
+def test_video_detail_fields_project_nested_metadata_for_ui():
+    """详情面板读顶层字段：投影口径对缺字段/异常值保持安全。"""
+    assert jobs.video_detail_fields(
+        {
+            "video_metadata": {
+                "width": 1920,
+                "height": 1080,
+                "frame_rate": 30000 / 1001,
+            }
+        }
+    ) == {"width": 1920, "height": 1080, "frame_rate": round(30000 / 1001, 6)}
+    assert jobs.video_detail_fields({"video_metadata": {"width": 0, "height": 1080}}) == {}
+    assert jobs.video_detail_fields({"video_metadata": {"width": "wide"}}) == {}
+    assert jobs.video_detail_fields({"video_metadata": {"frame_rate": float("inf")}}) == {}
+    assert jobs.video_detail_fields({"video_metadata": {}}) == {}
+    assert jobs.video_detail_fields({}) == {}
+    assert jobs.video_detail_fields(None) == {}
+
+
+def test_video_index_data_records_real_frame_rate(monkeypatch):
+    """帧率由 ffprobe 补齐；探测失败只缺该键，不影响其余元数据。"""
+    from gw.asset_registry import media_probe
+    from gw.media import scene_detector
+
+    scenes = [
+        {
+            "start_sec": 0.0,
+            "end_sec": 1.0,
+            "width": 640,
+            "height": 360,
+            "codec": "h264",
+            "bit_rate": 1000,
+            "container": "mp4",
+            "source_url": None,
+            "tags": [],
+            "thumbnail": None,
+        }
+    ]
+    monkeypatch.setattr(scene_detector, "detect_scenes", lambda _path: scenes)
+    monkeypatch.setattr(
+        "gw.media.keyframe_extractor.decode_keyframe_to_memory",
+        lambda *_args: b"frame",
+    )
+
+    def probed(_path):
+        return {"width": 640, "height": 360, "duration_seconds": 1.0, "fps": 29.97}
+
+    monkeypatch.setattr(media_probe, "probe", probed)
+    metadata, _ = jobs._video_index_data(Path("clip.mp4"))
+    assert metadata["video_metadata"]["frame_rate"] == 29.97
+    assert jobs.video_detail_fields(metadata) == {
+        "width": 640,
+        "height": 360,
+        "frame_rate": 29.97,
+    }
+
+    def offline(_path):
+        raise RuntimeError("ffprobe not available")
+
+    monkeypatch.setattr(media_probe, "probe", offline)
+    metadata, _ = jobs._video_index_data(Path("clip.mp4"))
+    assert "frame_rate" not in metadata["video_metadata"]
+    assert metadata["video_metadata"]["width"] == 640
+
+
+def test_ac2_enriched_video_writes_detail_fields(index_runtime, monkeypatch):
+    """富化完成后资产顶层带分辨率/帧率，详情面板不再显示「读取中」。"""
+    (index_runtime / "clip.mp4").write_bytes(b"clip")
+
+    def fake_video(_path):
+        return (
+            {
+                "video_segments": [{"start_sec": 0.0, "end_sec": 2.0}],
+                "video_metadata": {
+                    "width": 320,
+                    "height": 240,
+                    "frame_rate": 24.0,
+                    "scene_detection_status": "complete",
+                    "keyframe_status": "decoded_in_memory",
+                    "duration_sec": 2.0,
+                },
+            },
+            2.0,
+        )
+
+    monkeypatch.setattr(jobs, "_video_index_data", fake_video)
+    with TestClient(create_app()) as client:
+        created = _submit(client, "qin-652-detail-fields", hash_files=False)
+        assert created.status_code == 202, created.text
+        final = _wait_job(client, created.json()["job_id"])
+    assert final["status"] == "succeeded", final
+    asset = _asset("clip.mp4")
+    assert (asset["width"], asset["height"]) == (320, 240)
+    assert asset["frame_rate"] == 24.0
+    assert asset["metadata"]["video_metadata"]["width"] == 320

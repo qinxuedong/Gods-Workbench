@@ -366,10 +366,12 @@ def store_content(data: bytes, name: str, source_url: str = "", title: str = "",
                 else "unknown")
         metadata = {"collect_sha256": digest, "collect_sources": [source]}
         duration = None
+        detail_fields: dict = {}
         if kind == "video":
-            from gw.asset_registry.index_jobs import _video_index_data
+            from gw.asset_registry.index_jobs import _video_index_data, video_detail_fields
             video_metadata, duration = _video_index_data(path)
             metadata.update(video_metadata)
+            detail_fields = video_detail_fields(metadata)
         elif kind == "image" and suffix == ".jxl":
             from gw.asset_registry.media_probe import probe_jxl_metadata
 
@@ -382,7 +384,7 @@ def store_content(data: bytes, name: str, source_url: str = "", title: str = "",
             item = repository._plain_asset(
                 asset_id, name or path.name, kind, size_bytes=len(data),
                 display_path=relative, workflow_owner=owner,
-                metadata=metadata, duration=duration,
+                metadata=metadata, duration=duration, **detail_fields,
             )
             state["assets"][asset_id] = item
             state["sequences"][asset_id] = True

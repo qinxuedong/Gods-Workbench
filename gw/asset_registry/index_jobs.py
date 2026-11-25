@@ -19,6 +19,7 @@ from __future__ import annotations
 import hashlib
 import importlib
 import json
+import math
 import os
 import re
 import stat
@@ -255,6 +256,52 @@ def _runtime_path_configuration():
     )
 
 
+def _video_frame_rate(path: Path) -> float | None:
+    """读取真实帧率，供详情面板显示；探测失败返回 None（不阻断入库）。
+
+    复用 ``gw.asset_registry.media_probe.probe`` 既有 ffprobe 口径，不新增
+    ``gw/media/*`` 依赖，也不整片解码。
+    """
+    try:
+        media_probe = importlib.import_module("gw.asset_registry.media_probe")
+        probed = media_probe.probe(path)
+    except Exception:  # noqa: BLE001 - 任何探测失败都不影响该条目入库
+        return None
+    try:
+        value = float((probed or {}).get("fps") or 0)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) and value > 0 else None
+
+
+def video_detail_fields(metadata: dict | None) -> dict:
+    """把 ``metadata.video_metadata`` 的技术字段投影成详情面板读的扁平字段。
+
+    前端详情面板读取的是资产顶层 ``width``/``height``/``frame_rate``（与
+    ``import_assets`` 既有口径一致），而索引把技术元数据写在
+    ``metadata.video_metadata``。这里给出唯一的投影口径，扫描与富化共用。
+    """
+    video = (metadata or {}).get("video_metadata")
+    if not isinstance(video, dict):
+        return {}
+    fields: dict[str, float | int] = {}
+    try:
+        width = int(video.get("width") or 0)
+        height = int(video.get("height") or 0)
+    except (TypeError, ValueError):
+        width = height = 0
+    if width > 0 and height > 0:
+        fields["width"] = width
+        fields["height"] = height
+    try:
+        frame_rate = float(video.get("frame_rate") or 0)
+    except (TypeError, ValueError):
+        frame_rate = 0.0
+    if math.isfinite(frame_rate) and frame_rate > 0:
+        fields["frame_rate"] = round(frame_rate, 6)
+    return fields
+
+
 def _video_index_data(path: Path) -> tuple[dict, float | None]:
     """为本地视频登记镜头与技术元数据，关键帧逐张解码后立即释放。"""
     decode_keyframe_to_memory = importlib.import_module(
@@ -306,6 +353,10 @@ def _video_index_data(path: Path) -> tuple[dict, float | None]:
         "scene_detection_status": "complete",
         "keyframe_status": "pending",
     }
+    # 详情面板要显示分辨率与帧率：帧率只能由 ffprobe 拿到，探测失败按缺省处理。
+    frame_rate = _video_frame_rate(path)
+    if frame_rate is not None:
+        video_metadata["frame_rate"] = frame_rate
     try:
         for scene in scenes:
             midpoint = scene["start_sec"] + (
@@ -2346,6 +2397,8 @@ class IndexJobs:
                 item["metadata"] = metadata
                 if video["duration"] is not None:
                     item["duration"] = video["duration"]
+                # 详情面板读顶层技术字段；口径与扫描期一致，统一走同一投影。
+                item.update(video_detail_fields(metadata))
             if hashed is not None:
                 item.update(hashed)
             batch.append(item)
@@ -3137,6 +3190,8 @@ class IndexJobs:
                             item["metadata"] = video_metadata
                             if duration is not None:
                                 item["duration"] = duration
+                            # 详情面板读顶层字段；与富化批次同一投影口径。
+                            item.update(video_detail_fields(video_metadata))
                         if want_generation and generation_metadata.is_supported_image(
                             path
                         ):
@@ -3386,6 +3441,9 @@ class IndexJobs:
                                 "hash_mode",
                                 "full_sha256_cache",
                                 "duration",
+                                "width",
+                                "height",
+                                "frame_rate",
                             ):
                                 existing.pop(stale, None)
                             stale_metadata = existing.get("metadata")
@@ -3446,6 +3504,14 @@ class IndexJobs:
                                         current_metadata[field] = scanned_metadata.get(
                                             field
                                         )
+                                        changed = True
+                                # 与前端详情面板的读取口径对齐：顶层投影必须与
+                                # metadata 同源，避免出现「元数据补齐了、详情仍读取中」。
+                                for detail_field, detail_value in video_detail_fields(
+                                    scanned_metadata
+                                ).items():
+                                    if existing.get(detail_field) != detail_value:
+                                        existing[detail_field] = detail_value
                                         changed = True
                             if "lut" in scanned_metadata:
                                 if current_metadata.get("lut") != scanned_metadata["lut"]:

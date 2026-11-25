@@ -854,16 +854,22 @@ function invalidateResourceFolderAction(){
 function resolveResourceFolderIdentity(rootTarget={}){
     const candidates = [rootTarget.id, rootTarget.rootId, ...(Array.isArray(rootTarget.aliases) ? rootTarget.aliases : [])]
         .map(value => String(value || '').trim()).filter(Boolean);
-    const allowedRootId = candidates.find(value => /^root_[a-f0-9]{24}$/i.test(value)) || '';
-    let sourceId = candidates.find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+    const isAllowedRootId = value => /^root_[a-f0-9]{24}$/i.test(value);
+    const isSourceId = value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value);
     const normalizePath = value => String(value || '').split(String.fromCharCode(92)).join('/').replace(/\/+$/, '').toLocaleLowerCase();
+    const facetFor = (ids) => (registryFacets.roots || []).find(item =>
+        [item.id, ...(item.aliases || [])].map(String).some(value => ids.includes(value)));
+    // 外壳侧栏的树节点可能只带登记来源身份（local_extra_*）——facet 组的别名里才有
+    // 允许根身份（root_*）。按 id/别名命中同组后再取，避免误报「无法识别资源文件夹身份」。
+    const groupIds = (facet) => facet ? [facet.id, ...(facet.aliases || [])].map(String).filter(Boolean) : [];
+    const pool = [...new Set([...candidates, ...groupIds(facetFor(candidates))])];
+    const allowedRootId = pool.find(isAllowedRootId) || '';
+    let sourceId = pool.find(isSourceId) || '';
     if(allowedRootId && !sourceId){
         const targetPath = normalizePath(rootTarget.path);
-        const facet = (registryFacets.roots || []).find(item =>
-            [item.id, ...(item.aliases || [])].map(String).includes(allowedRootId) ||
-            (targetPath && normalizePath(item.path) === targetPath));
-        sourceId = [facet?.id, ...(facet?.aliases || [])].map(String)
-            .find(value => /^local_extra_[a-z0-9]+(?:_[a-z0-9]+)?$/i.test(value)) || '';
+        const facet = facetFor([allowedRootId]) || (targetPath ? (registryFacets.roots || []).find(item =>
+            normalizePath(item.path) === targetPath) : null);
+        sourceId = groupIds(facet).find(isSourceId) || '';
     }
     return allowedRootId ? {allowedRootId, sourceId} : null;
 }
