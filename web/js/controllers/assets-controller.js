@@ -309,11 +309,12 @@ window.WorkbenchAssets = (() => {
       const filteredChildren = filterEmptyTreeNodes(node.children, true);
       const isLoading = Boolean(node.loading);
       const hasSelfCount = node.count !== '' && node.count !== undefined && node.count !== null && Number(node.count) > 0;
-      if (isLoading || hasSelfCount || filteredChildren.length > 0) {
+      const hasDescendantAssets = Boolean(node.hasNonEmptyDescendant);
+      if (isLoading || hasSelfCount || hasDescendantAssets || filteredChildren.length > 0) {
         result.push({
           ...node,
           children: filteredChildren,
-          hasChildren: filteredChildren.length > 0,
+          hasChildren: node.expanded ? filteredChildren.length > 0 : Boolean(node.hasChildren),
         });
       }
     }
@@ -999,10 +1000,13 @@ window.WorkbenchAssets = (() => {
     const knownRootIds = new Set(dedupedRoots.map(r => String(r.id || '')));
     const displayRoots = dedupedRoots.map(root => {
       const filteredChildren = filterEmptyTreeNodes(root.children, hideEmpty);
+      const hasChildren = root.expanded
+        ? filteredChildren.length > 0
+        : Boolean(root.hasChildren);
       return {
         ...root,
         children: filteredChildren,
-        hasChildren: Array.isArray(root.children) ? filteredChildren.length > 0 : Boolean(root.hasChildren),
+        hasChildren,
       };
     });
     const rawBoards = Array.isArray(snapshot.boards) ? snapshot.boards : [];

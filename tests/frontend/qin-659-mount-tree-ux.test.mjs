@@ -243,7 +243,7 @@ test('AC1: 挂载目录树样式去除常态亮框并建立三层黑金视觉权
     /#assetVaultSidebar\s+#assetCategories\s+\.asset-shell-mount-section\s+\.asset-shell-nav-button:is\(\.is-active,\s*\.active\)[\s\S]*?border:\s*1px solid rgba\(223,\s*195,\s*132,\s*0\.45\) !important;[\s\S]*?background:\s*rgba\(223,\s*195,\s*132,\s*0\.12\) !important;/,
     '选中态应显示暗金底与金色细边框',
   );
-  assert.match(workspaceCss, /\.asset-shell-nav-button\s+svg[\s\S]*?width:\s*14px !important;[\s\S]*?color:\s*#94a3b8 !important;/);
+  assert.match(workspaceCss, /\.asset-shell-nav-button\s*>\s*svg[\s\S]*?width:\s*14px !important;[\s\S]*?color:\s*#94a3b8 !important;/);
   assert.match(workspaceCss, /\.asset-shell-nav-label[\s\S]*?font-size:\s*var\(--gw-type-label-lg\) !important;[\s\S]*?font-weight:\s*400 !important;[\s\S]*?color:\s*#e2e8f0 !important;[\s\S]*?text-overflow:\s*ellipsis;/);
   assert.match(workspaceCss, /\.asset-shell-nav-count[\s\S]*?font-size:\s*var\(--gw-type-label-md\) !important;[\s\S]*?font-family:\s*var\(--gw-font-mono\) !important;[\s\S]*?color:\s*#64748b !important;/);
 
@@ -387,4 +387,114 @@ test('AC2: 根文件夹右键菜单提供「显示/隐藏空文件夹」并持�
   sandbox2.windowObj.GWAssetTreeHost.onTreeSnapshot(snapshot);
   const persistedKeys = collectButtons(sandbox2.categoriesEl).map(b => b.dataset.assetTreeEntry);
   assert.equal(persistedKeys.includes('mine:root:root_a::empty_dir'), false, '新会话应从 localStorage 恢复隐藏空文件夹偏好');
+
+  // 折叠态回归：根未展开保留箭头；折叠且含非空后代的中间目录（count=0, hasNonEmptyDescendant=true）保留且带箭头；纯空折叠目录隐藏
+  const collapsedSnapshot = {
+    selected_key: 'mine:root:root_a',
+    inbox_badge: 0,
+    roots: [
+      {
+        id: 'root_collapsed',
+        name: '未展开根',
+        count: 1,
+        isRoot: true,
+        expanded: false,
+        hasChildren: true,
+        children: [],
+      },
+      {
+        id: 'root_a',
+        name: '素材盘A',
+        count: 1,
+        isRoot: true,
+        expanded: true,
+        hasChildren: true,
+        children: [
+          {
+            key: 'mine:root:root_a::collapsed_empty',
+            name: 'collapsed_empty',
+            count: 0,
+            isRoot: false,
+            expanded: false,
+            hasNonEmptyDescendant: false,
+            hasChildren: true,
+            children: [],
+          },
+          {
+            key: 'mine:root:root_a::parent_mixed',
+            name: 'parent_mixed',
+            count: 0,
+            isRoot: false,
+            expanded: false,
+            hasNonEmptyDescendant: true,
+            hasChildren: true,
+            children: [],
+          },
+        ],
+      },
+    ],
+    boards: [],
+  };
+  sandbox2.windowObj.GWAssetTreeHost.onTreeSnapshot(collapsedSnapshot);
+  const collapsedBtns = collectButtons(sandbox2.categoriesEl);
+  const collapsedKeys = collapsedBtns.map(b => b.dataset.assetTreeEntry);
+  assert.equal(collapsedKeys.includes('mine:root:root_a::collapsed_empty'), false, '折叠态纯空目录应隐藏');
+  assert.ok(collapsedKeys.includes('mine:root:root_a::parent_mixed'), '折叠态含非空后代的中间目录（自身 count=0）必须保留');
+  const rootCollapsedBtn = collapsedBtns.find(b => b.dataset.assetTreeEntry === 'mine:root:root_collapsed');
+  assert.ok(rootCollapsedBtn.querySelector('[data-asset-tree-toggle]'), '未展开的根目录应保留展开箭头');
+  const parentMixedBtn = collapsedBtns.find(b => b.dataset.assetTreeEntry === 'mine:root:root_a::parent_mixed');
+  assert.ok(parentMixedBtn.querySelector('[data-asset-tree-toggle]'), '折叠态含非空后代的中间目录应保留展开箭头');
+});
+
+test('AC2: asset-manager.js serializeAssetRackFolderNode 对仅索引叶子的折叠中间目录算出 hasNonEmptyDescendant=true', () => {
+  const managerSource = readText('web/js/modules/asset-manager.js');
+  const fnStart = managerSource.indexOf('function assetRackFolderTotalCount(rootId, relPath){');
+  const fnEnd = managerSource.indexOf('function gwAssetTreeSnapshot(){', fnStart);
+  assert.ok(fnStart >= 0 && fnEnd > fnStart, '定位 assetRackNodeHasAssets 与 serializeAssetRackFolderNode');
+  const snippet = managerSource.slice(fnStart, fnEnd);
+
+  const factory = new Function(
+    'registryRegisteredFoldersLoaded',
+    'registryIndexedFolders',
+    'assetTreeExpanded',
+    'assetTreeGlobalRootsList',
+    'assetRackRegisteredFoldersByRoot',
+    'assetRackDiskDirectories',
+    'customBoardFolderTree',
+    `${snippet}; return { serializeAssetRackFolderNode, assetRackNodeHasAssets };`,
+  );
+
+  const indexed = [
+    { root_id: 'r1', path: 'parent_mixed/sub_non_empty', count: 1, total_count: 1 },
+  ];
+  const { serializeAssetRackFolderNode } = factory(
+    true,
+    indexed,
+    new Set(), // 全部未展开
+    () => [],
+    () => new Map(),
+    () => [],
+    () => [],
+  );
+
+  const serializedParent = serializeAssetRackFolderNode('r1', {
+    name: 'parent_mixed',
+    path: 'parent_mixed',
+    children: [
+      { name: 'sub_empty', path: 'parent_mixed/sub_empty', children: [] },
+      { name: 'sub_non_empty', path: 'parent_mixed/sub_non_empty', children: [] },
+    ],
+  }, 1);
+  assert.equal(serializedParent.count, 0, '中间目录自身未在索引登记时 count 为 0');
+  assert.equal(serializedParent.expanded, false, '中间目录处于折叠态');
+  assert.equal(serializedParent.hasNonEmptyDescendant, true, '有已索引非空后代时 hasNonEmptyDescendant 必须为 true');
+  assert.deepEqual(serializedParent.children, [], '折叠态 children 仍保持空数组');
+
+  const serializedEmpty = serializeAssetRackFolderNode('r1', {
+    name: 'empty_dir',
+    path: 'empty_dir',
+    children: [],
+  }, 1);
+  assert.equal(serializedEmpty.count, 0);
+  assert.equal(serializedEmpty.hasNonEmptyDescendant, false, '无非空后代时 hasNonEmptyDescendant 为 false');
 });

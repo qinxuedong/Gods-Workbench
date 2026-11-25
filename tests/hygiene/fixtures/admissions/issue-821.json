@@ -8,7 +8,8 @@
     "tests/hygiene/fixtures/admissions/issue-821.json",
     "web/css/base/workspace-pages.css",
     "web/css/pages/asset-manager.css",
-    "web/js/controllers/assets-controller.js"
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js"
   ],
   "admitted_files": [],
   "accepted_test_files": [

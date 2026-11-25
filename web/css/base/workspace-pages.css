@@ -832,8 +832,8 @@ body:has(.observability-content) { background: var(--paper); }
   box-shadow: none !important;
   color: #dfc384 !important;
 }
-#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button svg,
-#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub svg {
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub > svg {
   width: 14px !important;
   height: 14px !important;
   color: #94a3b8 !important;
@@ -856,9 +856,10 @@ body:has(.observability-content) { background: var(--paper); }
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
-#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count),
-#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) :is(svg, .asset-shell-nav-label, .asset-shell-nav-count) {
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active) > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) > svg,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button:is(.is-active, .active) :is(.asset-shell-nav-label, .asset-shell-nav-count),
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) :is(.asset-shell-nav-label, .asset-shell-nav-count) {
   color: #dfc384 !important;
 }
-
 
