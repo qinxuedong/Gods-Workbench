@@ -75,7 +75,7 @@ import {
     assetOrganizeLeafName,
     assetOrganizeMenu,
     assetOrganizeOpenFolderInSystem,
-    assetOrganizeParentPath,
+    assetOrganizeParentPath, assetOrganizePhysicalRootId,
     assetOrganizeRequest,
     assetOrganizeUndoLast,
     assetOrganizeUndoStack,
@@ -111,7 +111,7 @@ import {
     detailMediaLibraryDragId,
     detailViewerFontListCollapsed,
     detailViewerState,
-    detailViewerVideo,
+    detailViewerVideo, expandAssetTreeAncestors,
     directorySettingsPage,
     ensureAssetTreeProjectData,
     ensureBoardNavigationState,
@@ -1766,12 +1766,29 @@ function assetOrganizeInvalidateDiskFolders(rootId){
 }
 async function assetOrganizeRefresh(rootId=''){
     const id = String(rootId || '');
-    if(id) assetOrganizeInvalidateDiskFolders(id);
+    const expandedSubPaths = new Set();
+    if(id){
+        const prefix = `mine:root:${id}::`;
+        assetTreeExpanded.forEach(key => {
+            const text = String(key || '');
+            if(!text.startsWith(prefix)) return;
+            const rel = text.slice(prefix.length).replace(/^\/+|\/+$/g, '');
+            if(!rel) return;
+            const segs = rel.split('/').filter(Boolean);
+            for(let i = 1; i <= segs.length; i += 1){
+                expandedSubPaths.add(segs.slice(0, i).join('/'));
+            }
+        });
+        assetOrganizeInvalidateDiskFolders(id);
+    }
     resetAssetRackDirectoryIndex();
     try {
         if(id){
             assetTreeExpanded.add(`mine:root:${id}`);
             await loadAssetRackDiskFolders(id, '');
+            if(expandedSubPaths.size){
+                await Promise.all([...expandedSubPaths].map(sub => loadAssetRackDiskFolders(id, sub)));
+            }
         }
         await loadAssetRackRegisteredFolders(true);
     } catch(_) {}
@@ -1783,7 +1800,7 @@ function renderAssetOrganizeDialog(){
     const state = assetOrganizeDialog;
     if(!state) return '';
     if(state.kind === 'create'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="新建子文件夹">
             <header><strong>新建子文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">位置：${escapeHtml(state.locationLabel)}</p>
             <input class="asset-organize-dialog-input" data-asset-organize-dialog-input value="${escapeAttr(state.value || '')}" placeholder="文件夹名称" maxlength="120" aria-label="新文件夹名称">
@@ -1792,14 +1809,14 @@ function renderAssetOrganizeDialog(){
         </div>`;
     }
     if(state.kind === 'delete'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="删除确认">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="删除确认">
             <header><strong>删除文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">「${escapeHtml(state.label)}」将移入应用回收站，不会永久删除；删除后可用 Ctrl+Z 撤销。</p>
             <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-danger" type="button" data-asset-organize-dialog-confirm>删除</button></footer>
         </div>`;
     }
     if(state.kind === 'conflict'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="重名处理">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="重名处理">
             <header><strong>目标位置已存在同名项</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">「${escapeHtml(state.name)}」在目标文件夹中已存在，请选择处理方式。</p>
             <footer class="asset-organize-dialog-choices">
@@ -1820,7 +1837,7 @@ function syncAssetOrganizeDialog(){
     host.className = 'storage-settings-overlay asset-organize-dialog-overlay';
     host.innerHTML = renderAssetOrganizeDialog();
     document.body.appendChild(host);
-    window.FloatingDismissal?.mark?.(host, {kind:'modal', content:'self', close:() => closeAssetOrganizeDialog('cancel')});
+    window.FloatingDismissal?.mark?.(host, {kind:'modal', content:'[data-floating-content], [role="dialog"]', close:() => closeAssetOrganizeDialog('cancel'), removeOnClose:true});
     refreshIcons();
     const input = host.querySelector('[data-asset-organize-dialog-input]');
     if(input){
@@ -1864,9 +1881,11 @@ async function assetOrganizeCreateFolder(state, rawName){
     const relPath = state.parentPath ? `${state.parentPath}/${name}` : name;
     const abs = assetOrganizeAbsPath(state.rootId, relPath);
     if(!abs) throw new Error('资源文件夹路径不可用，无法新建文件夹');
-    const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:state.rootId});
+    const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(state.rootId) : state.rootId;
+    const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, root_id:physicalRootId});
     assetOrganizePushUndo(data, `新建 ${name}`, state.rootId);
     setAssetTreeSelectedKey(`mine:root:${state.rootId}::${relPath}`);
+    if(typeof expandAssetTreeAncestors === 'function') expandAssetTreeAncestors(`mine:root:${state.rootId}::${relPath}`);
     showAssetOrganizeToast(`已新建文件夹「${name}」`, {undoable:true});
     setStatus(`已新建文件夹「${name}」`);
     await assetOrganizeRefresh(state.rootId);
@@ -1902,7 +1921,8 @@ async function commitAssetOrganizeRename(target, rawValue){
     try {
         const name = assetOrganizeValidateFolderName(next);
         const abs = assetOrganizeAbsPath(target.rootId, target.path);
-        const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, name, root_id:target.rootId}, {method:'PATCH'});
+        const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(target) : target.rootId;
+        const data = await assetOrganizeRequest('/api/local-assets/folders', {path:abs, name, root_id:physicalRootId}, {method:'PATCH'});
         assetOrganizePushUndo(data, `重命名 ${current} → ${name}`, target.rootId);
         assetOrganizeInline = null;
         const renamed = `${assetOrganizeParentPath(target.path) ? `${assetOrganizeParentPath(target.path)}/` : ''}${name}`;
@@ -1928,7 +1948,8 @@ async function assetOrganizeDeleteFolder(target){
             void (async () => {
                 try {
                     const abs = assetOrganizeAbsPath(target.rootId, target.path);
-                    const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {path:abs, root_id:target.rootId});
+                    const physicalRootId = typeof assetOrganizePhysicalRootId === 'function' ? assetOrganizePhysicalRootId(target) : target.rootId;
+                    const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {path:abs, root_id:physicalRootId});
                     assetOrganizePushUndo(data, `删除 ${assetOrganizeFolderLabel(target)}`, target.rootId);
                     if(assetTreeSelectedKey === target.key) setAssetTreeSelectedKey('');
                     showAssetOrganizeToast(`已移入回收站：${assetOrganizeFolderLabel(target)}`, {undoable:true});
@@ -2098,11 +2119,18 @@ async function handleAssetOrganizeOverlayClick(event){
         if(state.kind === 'delete'){ closeAssetOrganizeDialog('confirm'); return true; }
         if(state.kind === 'create'){
             const input = document.querySelector('#assetOrganizeDialog [data-asset-organize-dialog-input]');
+            const confirmBtn = document.querySelector('#assetOrganizeDialog [data-asset-organize-dialog-confirm]');
+            if(confirmBtn?.disabled) return true;
             try {
                 setAssetOrganizeDialogError('');
-                closeAssetOrganizeDialog('created');
+                if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = '创建中...'; }
                 await assetOrganizeCreateFolder(state, input?.value || '');
+                if(assetOrganizeDialog === state) closeAssetOrganizeDialog('created');
             } catch(err) {
+                if(assetOrganizeDialog === state){
+                    setAssetOrganizeDialogError(err?.message || '新建文件夹失败');
+                    if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '创建'; }
+                }
                 setStatus(err?.message || '新建文件夹失败');
                 showAssetOrganizeToast(err?.message || '新建文件夹失败');
             }

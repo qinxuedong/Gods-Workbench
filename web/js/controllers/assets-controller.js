@@ -545,13 +545,17 @@ window.WorkbenchAssets = (() => {
     window.lucide?.createIcons();
   }
 
+  let activeShellDialogGen = 0;
+
   function openShellCreateDialog(parentKey) {
+    activeShellDialogGen += 1;
+    const dialogGen = activeShellDialogGen;
     document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
-      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" data-floating-content role="dialog" aria-modal="true" aria-label="新建子文件夹">
         <header>
           <strong>新建子文件夹</strong>
           <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
@@ -575,6 +579,16 @@ window.WorkbenchAssets = (() => {
     input?.focus();
 
     let isSubmitting = false;
+    const closeDialog = () => {
+      activeShellDialogGen += 1;
+      overlay.remove();
+    };
+    window.FloatingDismissal?.mark?.(overlay, {
+      kind: 'modal',
+      content: '[data-floating-content], [role="dialog"]',
+      close: closeDialog,
+      removeOnClose: true,
+    });
     const confirm = async () => {
       if (isSubmitting) return;
       const name = String(input?.value || '').trim();
@@ -584,6 +598,7 @@ window.WorkbenchAssets = (() => {
         return;
       }
       isSubmitting = true;
+      const submitGen = dialogGen;
       if (confirmBtn) {
         confirmBtn.disabled = true;
         confirmBtn.textContent = '创建中...';
@@ -592,10 +607,14 @@ window.WorkbenchAssets = (() => {
       try {
         const bridge = organizeBridge();
         if (!bridge?.createFolder) throw new Error('资产库尚未就绪，请稍后重试');
-        await bridge.createFolder(parentKey, name);
-        overlay.remove();
+        await bridge.createFolder(parentKey, name, {
+          isCancelled: () => submitGen !== activeShellDialogGen || !overlay.isConnected,
+        });
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
+        closeDialog();
         showShellOrganizeToast(`已新建文件夹「${name}」`, true);
       } catch (err) {
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
         if (errorEl) errorEl.textContent = err.message || '创建文件夹失败';
         isSubmitting = false;
         if (confirmBtn) {
@@ -610,7 +629,7 @@ window.WorkbenchAssets = (() => {
       if (cancelEl || e.target === overlay) {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
         return;
       }
       const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
@@ -622,26 +641,29 @@ window.WorkbenchAssets = (() => {
       }
     });
 
-    input?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    const handleKeydown = (e) => {
+      if (e.key === 'Enter' && e.target === input) {
         e.preventDefault();
         e.stopPropagation();
         void confirm();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
       }
-    });
+    };
+    overlay.addEventListener('keydown', handleKeydown);
   }
 
   function openShellDeleteDialog(key, name) {
+    activeShellDialogGen += 1;
+    const dialogGen = activeShellDialogGen;
     document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
-      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="删除文件夹">
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" data-floating-content role="dialog" aria-modal="true" aria-label="删除文件夹">
         <header>
           <strong>删除文件夹</strong>
           <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
@@ -663,20 +685,36 @@ window.WorkbenchAssets = (() => {
     const confirmBtn = overlay.querySelector('[data-asset-organize-dialog-confirm]');
 
     let isSubmitting = false;
+    const closeDialog = () => {
+      activeShellDialogGen += 1;
+      overlay.remove();
+    };
+    window.FloatingDismissal?.mark?.(overlay, {
+      kind: 'modal',
+      content: '[data-floating-content], [role="dialog"]',
+      close: closeDialog,
+      removeOnClose: true,
+    });
+    confirmBtn?.focus?.({ preventScroll: true });
+
     const confirm = async () => {
       if (isSubmitting) return;
       isSubmitting = true;
+      const submitGen = dialogGen;
       if (confirmBtn) {
         confirmBtn.disabled = true;
         confirmBtn.textContent = '删除中...';
       }
+      if (errorEl) errorEl.textContent = '';
       try {
         const bridge = organizeBridge();
         if (!bridge?.deleteFolder) throw new Error('资产库尚未就绪，请稍后重试');
         await bridge.deleteFolder(key);
-        overlay.remove();
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
+        closeDialog();
         showShellOrganizeToast(`已移入回收站：${name}`, true);
       } catch (err) {
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
         if (errorEl) errorEl.textContent = err.message || '删除文件夹失败';
         isSubmitting = false;
         if (confirmBtn) {
@@ -691,7 +729,7 @@ window.WorkbenchAssets = (() => {
       if (cancelEl || e.target === overlay) {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
         return;
       }
       const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
@@ -707,7 +745,11 @@ window.WorkbenchAssets = (() => {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
+      } else if (e.key === 'Enter' && !e.target?.closest?.('[data-asset-organize-dialog-cancel]')) {
+        e.preventDefault();
+        e.stopPropagation();
+        void confirm();
       }
     });
   }
@@ -1331,6 +1373,7 @@ window.WorkbenchAssets = (() => {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeShellOrganizeMenu();
+        activeShellDialogGen += 1;
         document.getElementById('assetOrganizeDialogOverlay')?.remove();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {

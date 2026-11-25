@@ -3539,14 +3539,14 @@ function registryQueryString({offset=0, limit=null, cursor=''}={}){
     params.set('dynamic_limit', String(Math.min(pageLimit, viewportLimit)));
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
-    if(registryKind) params.set('kind', registryKind);
-    if(registryStatCategory) params.set('category', registryStatCategory);
-    else if(activeTab === 'registry' && !registryKind) params.set('category', 'image,video');
-    if(registryCollectionId) params.set('collection_id', registryCollectionId);
     const board = assetBoardById(activeTab);
     const folderRoot = board?.system === false ? (board.sourceBoard ? board.rootId : boardSourceSelection[board.id]) : registryNavFolder.rootId;
     const folderPath = board?.system === false ? boardFolderSelection[board.id] : registryNavFolder.path;
     const selectedRoot = folderRoot && folderRoot !== '__automatic__' ? folderRoot : registryRootId;
+    if(registryKind) params.set('kind', registryKind);
+    if(registryStatCategory) params.set('category', registryStatCategory);
+    else if(activeTab === 'registry' && !registryKind && !(selectedRoot || folderPath)) params.set('category', 'image,video');
+    if(registryCollectionId) params.set('collection_id', registryCollectionId);
     if(selectedRoot) params.set('root_id', selectedRoot);
     if(board?.system === false && !board.sourceBoard){
         const sources = Array.isArray(board.sources) ? board.sources : [];
@@ -6784,39 +6784,48 @@ function assetRackDiskDirectoriesForItems(items=[]){
     });
     return merged;
 }
+function isSystemExcludedAssetFolderPath(relPath=''){
+    const cacheFolder = String(typeof thumbnailGeneratorState !== 'undefined' ? (thumbnailGeneratorState?.cacheFolder || '') : '').trim().toLowerCase();
+    const excluded = new Set(['god-recycler', 'god-cache', '.gods-workbench']);
+    if(cacheFolder) excluded.add(cacheFolder);
+    const segments = String(relPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    return segments.some(seg => excluded.has(seg.toLowerCase()));
+}
 function assetRackFolderTree(rootId){
     const root = String(rootId || '');
     const board = assetRackBoard();
+    const notExcludedItem = item => !isSystemExcludedAssetFolderPath(registryAssetFolderPath(item));
+    const notExcludedFolder = folder => !isSystemExcludedAssetFolderPath(folder?.path || '');
     if(board){
         if(root === '__automatic__'){
             // 【QIN-527 修复】自动归档同样要下钻真实物理子目录：生产库 900+ 条素材都落在
             // 未显式登记的根上，早先返回空树会让用户只看到一行「自动归档」而误判没有层级。
-            const items = assetRackAutomaticItems(board);
+            const items = assetRackAutomaticItems(board).filter(notExcludedItem);
             const known = new Set([...(board.sources || []).map(source => String(source.id || '')), ...(board.excludedSourceIds || []).map(String)]);
             const directories = [
                 ...registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || ''))).map(folder => folder.path),
                 ...assetRackAutomaticDirectories(items),
                 ...assetRackDiskDirectoriesForItems(items),
-            ];
-            const summary = registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || '')));
+            ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
+            const summary = registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || '')) && notExcludedFolder(folder));
             return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
         }
-        const items = assetRackBoardPool(board).filter(item => String(item.storage_root_id || '') === root);
+        const items = assetRackBoardPool(board).filter(item => String(item.storage_root_id || '') === root && notExcludedItem(item));
         const directories = [
             ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
             ...(registryRootFolders.get(root) || []).map(folder => String(folder?.path || '')).filter(Boolean),
             ...assetRackDiskDirectories(root),
-        ];
-        const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
+        ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
+        const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root && notExcludedFolder(folder));
         return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
     }
-    const items = registryAssets.filter(item => String(item.storage_root_id || '') === root);
+    const items = registryAssets.filter(item => String(item.storage_root_id || '') === root && notExcludedItem(item));
     const directories = [
         ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
         ...(assetRackRegisteredFoldersByRoot().get(root) || []),
         ...assetRackDiskDirectories(root),
-    ];
-    const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
+    ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
+    const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root && notExcludedFolder(folder));
     return customBoardFolderTree(items, directories, summary);
 }
 /* ---------------------------------------------------------------------------
@@ -7229,9 +7238,34 @@ function assetTreeGlobalRootsList(){
 function assetRackFolderTotalCount(rootId, relPath){
     if(!registryRegisteredFoldersLoaded) return null;
     const cleanPath = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    const found = registryIndexedFolders.find(f => String(f.root_id || '') === String(rootId || '') && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
-    if(found && found.total_count != null) return Number(found.total_count);
-    if(found && found.count != null) return Number(found.count);
+    const rootKey = String(rootId || '');
+    const rootIds = new Set([rootKey].filter(Boolean));
+    const matchedFacet = (typeof registryFacets !== 'undefined' ? (registryFacets.roots || []) : []).find(r => (
+        String(r.id || '') === rootKey || (Array.isArray(r.aliases) && r.aliases.map(String).includes(rootKey))
+    ));
+    if(matchedFacet){
+        if(matchedFacet.id) rootIds.add(String(matchedFacet.id));
+        (matchedFacet.aliases || []).forEach(a => { if(a) rootIds.add(String(a)); });
+    }
+    if(rootIds.size <= 1){
+        const found = registryIndexedFolders.find(f => String(f.root_id || '') === rootKey && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+        if(found && found.total_count != null) return Number(found.total_count);
+        if(found && found.count != null) return Number(found.count);
+    }
+    let total = 0;
+    const prefix = cleanPath ? `${cleanPath}/` : '';
+    rootIds.forEach(rid => {
+        const entries = registryIndexedFolders.filter(f => String(f.root_id || '') === rid);
+        const found = entries.find(f => String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+        if(found && found.total_count != null){ total += Number(found.total_count); return; }
+        if(found && found.count != null){ total += Number(found.count); return; }
+        if(!cleanPath) return;
+        entries.forEach(f => {
+            const p = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            if(p.startsWith(prefix)) total += Number(f.count || 0);
+        });
+    });
+    if(total > 0) return total;
     return 0;
 }
 function assetRackGlobalFolderTree(rootId){
@@ -7240,7 +7274,7 @@ function assetRackGlobalFolderTree(rootId){
         ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
         ...(assetRackRegisteredFoldersByRoot().get(root) || []),
         ...assetRackDiskDirectories(root),
-    ];
+    ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
     const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
     return customBoardFolderTree([], directories, summary);
 }
@@ -7634,6 +7668,19 @@ function assetOrganizeTargetFromKey(key){
         target.aliases = Array.isArray(rootFacet.aliases) ? rootFacet.aliases : [];
     }
     return target;
+}
+function assetOrganizePhysicalRootId(targetOrRootId){
+    const rootId = typeof targetOrRootId === 'string' ? targetOrRootId : String(targetOrRootId?.rootId || '');
+    if(!rootId) return '';
+    const diskPath = assetRackRootDiskPath(rootId);
+    const allowedRoots = typeof allowedRootSettingsState !== 'undefined' && Array.isArray(allowedRootSettingsState?.roots) ? allowedRootSettingsState.roots : [];
+    const matchedAllowed = allowedRoots.find(r => (
+        String(r.id || '') === rootId ||
+        (Array.isArray(r.aliases) && r.aliases.map(String).includes(rootId)) ||
+        (diskPath && r.path && typeof pathCompareKey === 'function' && pathCompareKey(r.path) === pathCompareKey(diskPath))
+    ));
+    const rootFacet = (typeof registryFacets !== 'undefined' ? registryFacets.roots : []).find(root => [root.id, ...(root.aliases || [])].map(String).includes(rootId));
+    return String(matchedAllowed?.id || rootFacet?.root_id || rootId);
 }
 function assetOrganizeAbsPath(rootId, relPath=''){
     const base = String(assetRackRootDiskPath(rootId) || '').replace(/\\/g, '/').replace(/\/+$/g, '');
@@ -11523,7 +11570,7 @@ async function gwAssetTreeOpenInSystem(key){
     if(!target) return {status:'failed', message:'目标不可整理'};
     return assetOrganizeOpenFolderInSystem(target);
 }
-async function gwAssetTreeCreateFolder(parentKey, folderName){
+async function gwAssetTreeCreateFolder(parentKey, folderName, options={}){
     await loadAssetAllowedRootPaths?.();
     let target = parentKey ? assetOrganizeTargetFromKey(parentKey) : null;
     let rootId = target?.rootId || '';
@@ -11531,6 +11578,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
         rootId = assetOrganizeDefaultRootId();
         if(!rootId) throw new Error('未找到可写挂载目录');
     }
+    const physicalRootId = assetOrganizePhysicalRootId(target || rootId);
     const name = assetOrganizeValidateFolderName(folderName);
     const parentPath = target ? target.path : '';
     const newPath = parentPath ? `${parentPath}/${name}` : name;
@@ -11538,12 +11586,14 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
     if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
     const data = await assetOrganizeRequest('/api/local-assets/folders', {
         path: abs,
-        root_id: rootId,
+        root_id: physicalRootId,
     });
+    if(options?.isCancelled?.()) return {cancelled:true, ...data};
     gwCall('organize', 'assetOrganizePushUndo', data, `新建文件夹「${name}」`, rootId);
     gwCall('organize', 'showAssetOrganizeToast', `已新建文件夹「${name}」`, {undoable:true});
     setStatus(`已新建文件夹「${name}」`);
     assetTreeSelectedKey = `mine:root:${rootId}::${newPath}`;
+    expandAssetTreeAncestors(assetTreeSelectedKey);
     await gwCall('organize', 'assetOrganizeRefresh', rootId);
     return data;
 }
@@ -11560,7 +11610,7 @@ async function gwAssetTreeCommitRename(key, newName){
         const data = await assetOrganizeRequest('/api/local-assets/folders', {
             path: abs,
             name: name,
-            root_id: target.rootId,
+            root_id: assetOrganizePhysicalRootId(target),
         }, {method:'PATCH'});
         gwCall('organize', 'assetOrganizePushUndo', data, `重命名为「${name}」`, target.rootId);
         gwCall('organize', 'showAssetOrganizeToast', `已重命名文件夹为「${name}」`, {undoable:true});
@@ -11585,7 +11635,7 @@ async function gwAssetTreeDeleteFolder(key){
     try {
         const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {
             path: absPath,
-            root_id: target.rootId,
+            root_id: assetOrganizePhysicalRootId(target),
         });
         gwCall('organize', 'assetOrganizePushUndo', data, `删除 ${label}`, target.rootId);
         gwCall('organize', 'showAssetOrganizeToast', `已移入回收站：${label}`, {undoable:true});
@@ -12278,6 +12328,7 @@ export {
     assetOrganizeMenu,
     assetOrganizeOpenFolderInSystem,
     assetOrganizeParentPath,
+    assetOrganizePhysicalRootId,
     assetOrganizeRequest,
     assetOrganizeUndoLast,
     assetOrganizeUndoStack,
@@ -12374,6 +12425,7 @@ export {
     detailMediaLutDraw,
     detailMediaLutListCache,
     detailMediaLutSamples,
+    expandAssetTreeAncestors,
     detailMediaLutSplitDragEndedAt,
     detailReferenceFromTarget,
     detailVideoStoryboardEnabled,

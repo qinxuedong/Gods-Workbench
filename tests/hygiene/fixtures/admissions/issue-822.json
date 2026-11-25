@@ -1,0 +1,9 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 822,
+  "authorization_basis": "GitHub Issue #822 (QIN-660)",
+  "files": [
+    "tests/contracts/assets/test_qin_660_mount_tree_fixes.py",
+    "tests/frontend/qin-660-mount-tree-fixes.test.mjs"
+  ]
+}

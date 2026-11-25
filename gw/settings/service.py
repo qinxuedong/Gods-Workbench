@@ -35,7 +35,9 @@
 from __future__ import annotations
 
 import copy
+import json
 import os
+import re
 import stat
 import threading
 from collections.abc import Iterable, Sequence
@@ -274,6 +276,22 @@ class StorageSettingsService:
             if StorageSettingsService._is_directory_link(current, info):
                 raise CleanroomException(400, "INVALID_PATH", "服务器目录浏览不允许经过符号链接")
 
+    @staticmethod
+    def _excluded_browse_directory_names() -> frozenset[str]:
+        """返回目录浏览须自动隐藏的系统内部目录名集合（小写精确匹配）。"""
+        excluded = {"god-recycler", "god-cache", ".gods-workbench"}
+        try:
+            media_path = storage.data_root() / "media_settings.json"
+            if media_path.is_file():
+                payload = json.loads(media_path.read_text(encoding="utf-8"))
+                thumbnails = payload.get("thumbnails") if isinstance(payload, dict) else None
+                cache_folder = str((thumbnails or {}).get("cache_folder") or "").strip()
+                if cache_folder and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", cache_folder):
+                    excluded.add(cache_folder.casefold())
+        except Exception:
+            pass
+        return frozenset(excluded)
+
     def browse_directories(self, path: str | None = None) -> dict[str, Any]:
         """只读列出服务器目录；限制单次结果数并跳过不可访问的子项。"""
         if path is None or not str(path).strip():
@@ -297,6 +315,7 @@ class StorageSettingsService:
             raise CleanroomException(400, "INVALID_PATH", "服务器目录必须是无路径穿越的绝对路径")
 
         target = Path(raw_path)
+        excluded_names = self._excluded_browse_directory_names()
         try:
             self._reject_directory_symlinks(target)
             resolved = target.resolve(strict=True)
@@ -308,6 +327,8 @@ class StorageSettingsService:
                 for entry in entries:
                     try:
                         if not entry.is_dir(follow_symlinks=False):
+                            continue
+                        if entry.name.casefold() in excluded_names:
                             continue
                         child = Path(entry.path)
                         if self._is_directory_link(child):

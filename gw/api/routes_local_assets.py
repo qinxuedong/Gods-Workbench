@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import asyncio
 import base64
-from pathlib import PurePosixPath
+from pathlib import Path, PurePosixPath
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, Query, Request, status
@@ -72,11 +72,94 @@ def _is_loopback_request(request: Request) -> bool:
     return host in {"127.0.0.1", "::1", "localhost"}
 
 
+def _match_allowed_root_id(raw_path: str) -> str | None:
+    """将来源路径（含嵌套子目录）解析为最深匹配的物理允许根 root_id。"""
+    cleaned = str(raw_path or "").strip()
+    if not cleaned:
+        return None
+    roots = storage.allowed_roots()
+    target_key = storage.directory_path_key(cleaned)
+    for root in roots:
+        try:
+            if storage.directory_path_key(str(root)) == target_key:
+                return storage.root_identity_id(root)
+        except Exception:
+            continue
+    try:
+        target_path = Path(storage.normalize_directory_path(cleaned)).resolve(strict=False)
+    except Exception:
+        return None
+    best_root = None
+    best_depth = -1
+    for root in roots:
+        try:
+            root_path = root.resolve(strict=False)
+            if target_path == root_path or target_path.is_relative_to(root_path):
+                depth = len(root_path.parts)
+                if depth > best_depth:
+                    best_depth = depth
+                    best_root = root
+        except Exception:
+            continue
+    return storage.root_identity_id(best_root) if best_root is not None else None
+
+
 def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
-    """可选的来源根身份；缺省时由仓库按索引记录或单根唯一根解析。"""
+    """可选的来源根身份；兼容 storage_root_id / 别名 / 嵌套素材库映射为物理允许根 root_id。"""
     value = payload.get(key)
     text = str(value).strip() if value is not None else ""
-    return text or None
+    if not text:
+        return None
+    physical_ids = {storage.root_identity_id(r) for r in storage.allowed_roots()}
+    if text in physical_ids:
+        return text
+    try:
+        from gw.asset_registry import index_jobs
+
+        facets = index_jobs.root_facets()
+        facet_list = facets if isinstance(facets, list) else (facets.get("roots") or [])
+        for facet in facet_list:
+            if not isinstance(facet, dict):
+                continue
+            candidates = {
+                str(facet.get("id") or "").strip(),
+                str(facet.get("storage_root_id") or "").strip(),
+                str(facet.get("root_id") or "").strip(),
+                *(str(a).strip() for a in (facet.get("aliases") or [])),
+            }
+            if text not in candidates:
+                continue
+            for cand in (
+                str(facet.get("root_id") or "").strip(),
+                *(str(a).strip() for a in (facet.get("aliases") or [])),
+                str(facet.get("id") or "").strip(),
+            ):
+                if cand in physical_ids:
+                    return cand
+            matched = _match_allowed_root_id(str(facet.get("path") or ""))
+            if matched:
+                return matched
+    except Exception:
+        pass
+    try:
+        from gw.settings.service import default_storage_settings_service
+
+        snapshot = default_storage_settings_service.get_snapshot()
+        for entry in snapshot.extra_local_entries:
+            if isinstance(entry, dict):
+                entry_id = str(entry.get("id") or "").strip()
+                entry_path = str(entry.get("path") or "").strip()
+            else:
+                entry_id = str(getattr(entry, "id", "") or "").strip()
+                entry_path = str(getattr(entry, "path", "") or "").strip()
+            if entry_id != text or not entry_path:
+                continue
+            matched = _match_allowed_root_id(entry_path)
+            if matched:
+                return matched
+    except Exception:
+        pass
+    return text
 
 
 def _ids(payload: dict[str, Any], key: str = "paths") -> list[str]:
