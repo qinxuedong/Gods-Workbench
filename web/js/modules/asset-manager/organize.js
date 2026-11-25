@@ -2098,11 +2098,18 @@ async function handleAssetOrganizeOverlayClick(event){
         if(state.kind === 'delete'){ closeAssetOrganizeDialog('confirm'); return true; }
         if(state.kind === 'create'){
             const input = document.querySelector('#assetOrganizeDialog [data-asset-organize-dialog-input]');
+            const confirmBtn = document.querySelector('#assetOrganizeDialog [data-asset-organize-dialog-confirm]');
+            if(confirmBtn?.disabled) return true;
             try {
                 setAssetOrganizeDialogError('');
-                closeAssetOrganizeDialog('created');
+                if(confirmBtn){ confirmBtn.disabled = true; confirmBtn.textContent = '创建中...'; }
                 await assetOrganizeCreateFolder(state, input?.value || '');
+                if(assetOrganizeDialog === state) closeAssetOrganizeDialog('created');
             } catch(err) {
+                if(assetOrganizeDialog === state){
+                    setAssetOrganizeDialogError(err?.message || '新建文件夹失败');
+                    if(confirmBtn){ confirmBtn.disabled = false; confirmBtn.textContent = '创建'; }
+                }
                 setStatus(err?.message || '新建文件夹失败');
                 showAssetOrganizeToast(err?.message || '新建文件夹失败');
             }

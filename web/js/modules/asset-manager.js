@@ -3539,14 +3539,15 @@ function registryQueryString({offset=0, limit=null, cursor=''}={}){
     params.set('dynamic_limit', String(Math.min(pageLimit, viewportLimit)));
     if(cursor) params.set('cursor', cursor);
     if(registryQuery.trim()) params.set('search', registryQuery.trim());
-    if(registryKind) params.set('kind', registryKind);
-    if(registryStatCategory) params.set('category', registryStatCategory);
-    else if(activeTab === 'registry' && !registryKind) params.set('category', 'image,video');
-    if(registryCollectionId) params.set('collection_id', registryCollectionId);
     const board = assetBoardById(activeTab);
     const folderRoot = board?.system === false ? (board.sourceBoard ? board.rootId : boardSourceSelection[board.id]) : registryNavFolder.rootId;
     const folderPath = board?.system === false ? boardFolderSelection[board.id] : registryNavFolder.path;
     const selectedRoot = folderRoot && folderRoot !== '__automatic__' ? folderRoot : registryRootId;
+    const hasFolderFilter = Boolean(selectedRoot || folderPath);
+    if(registryKind) params.set('kind', registryKind);
+    if(registryStatCategory) params.set('category', registryStatCategory);
+    else if(activeTab === 'registry' && !registryKind && !hasFolderFilter) params.set('category', 'image,video');
+    if(registryCollectionId) params.set('collection_id', registryCollectionId);
     if(selectedRoot) params.set('root_id', selectedRoot);
     if(board?.system === false && !board.sourceBoard){
         const sources = Array.isArray(board.sources) ? board.sources : [];
@@ -6784,6 +6785,13 @@ function assetRackDiskDirectoriesForItems(items=[]){
     });
     return merged;
 }
+function isSystemExcludedAssetFolderPath(relPath=''){
+    const cacheFolder = String(typeof thumbnailGeneratorState !== 'undefined' ? (thumbnailGeneratorState?.cacheFolder || '') : '').trim().toLowerCase();
+    const excluded = new Set(['god-recycler', 'god-cache', '.gods-workbench']);
+    if(cacheFolder) excluded.add(cacheFolder);
+    const segments = String(relPath || '').replace(/\\/g, '/').split('/').filter(Boolean);
+    return segments.some(seg => excluded.has(seg.toLowerCase()));
+}
 function assetRackFolderTree(rootId){
     const root = String(rootId || '');
     const board = assetRackBoard();
@@ -6797,7 +6805,7 @@ function assetRackFolderTree(rootId){
                 ...registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || ''))).map(folder => folder.path),
                 ...assetRackAutomaticDirectories(items),
                 ...assetRackDiskDirectoriesForItems(items),
-            ];
+            ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
             const summary = registryIndexedFolders.filter(folder => !known.has(String(folder.root_id || '')));
             return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
         }
@@ -6806,7 +6814,7 @@ function assetRackFolderTree(rootId){
             ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
             ...(registryRootFolders.get(root) || []).map(folder => String(folder?.path || '')).filter(Boolean),
             ...assetRackDiskDirectories(root),
-        ];
+        ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
         const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
         return customBoardFolderTree(items, directories, summary, board.preset === 'other' ? '' : board.preset);
     }
@@ -6815,7 +6823,7 @@ function assetRackFolderTree(rootId){
         ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
         ...(assetRackRegisteredFoldersByRoot().get(root) || []),
         ...assetRackDiskDirectories(root),
-    ];
+    ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
     const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
     return customBoardFolderTree(items, directories, summary);
 }
@@ -7240,7 +7248,7 @@ function assetRackGlobalFolderTree(rootId){
         ...registryIndexedFolders.filter(folder => String(folder.root_id || '') === root).map(folder => folder.path),
         ...(assetRackRegisteredFoldersByRoot().get(root) || []),
         ...assetRackDiskDirectories(root),
-    ];
+    ].filter(dir => !isSystemExcludedAssetFolderPath(dir));
     const summary = registryIndexedFolders.filter(folder => String(folder.root_id || '') === root);
     return customBoardFolderTree([], directories, summary);
 }
@@ -7633,6 +7641,14 @@ function assetOrganizeTargetFromKey(key){
         target.id = String(rootFacet.id || rootId);
         target.aliases = Array.isArray(rootFacet.aliases) ? rootFacet.aliases : [];
     }
+    const diskPath = assetRackRootDiskPath(rootId);
+    const allowedRoots = Array.isArray(allowedRootSettingsState?.roots) ? allowedRootSettingsState.roots : [];
+    const matchedAllowed = allowedRoots.find(r => (
+        String(r.id || '') === rootId ||
+        (Array.isArray(r.aliases) && r.aliases.map(String).includes(rootId)) ||
+        (diskPath && r.path && pathCompareKey(r.path) === pathCompareKey(diskPath))
+    ));
+    target.physicalRootId = String(matchedAllowed?.id || rootFacet?.root_id || rootId);
     return target;
 }
 function assetOrganizeAbsPath(rootId, relPath=''){
@@ -11531,6 +11547,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
         rootId = assetOrganizeDefaultRootId();
         if(!rootId) throw new Error('未找到可写挂载目录');
     }
+    const physicalRootId = target?.physicalRootId || assetOrganizeTargetFromKey(`mine:root:${rootId}`)?.physicalRootId || rootId;
     const name = assetOrganizeValidateFolderName(folderName);
     const parentPath = target ? target.path : '';
     const newPath = parentPath ? `${parentPath}/${name}` : name;
@@ -11538,7 +11555,7 @@ async function gwAssetTreeCreateFolder(parentKey, folderName){
     if(!abs) throw new Error('挂载路径不可用，无法新建文件夹');
     const data = await assetOrganizeRequest('/api/local-assets/folders', {
         path: abs,
-        root_id: rootId,
+        root_id: physicalRootId,
     });
     gwCall('organize', 'assetOrganizePushUndo', data, `新建文件夹「${name}」`, rootId);
     gwCall('organize', 'showAssetOrganizeToast', `已新建文件夹「${name}」`, {undoable:true});
@@ -11560,7 +11577,7 @@ async function gwAssetTreeCommitRename(key, newName){
         const data = await assetOrganizeRequest('/api/local-assets/folders', {
             path: abs,
             name: name,
-            root_id: target.rootId,
+            root_id: target.physicalRootId || target.rootId,
         }, {method:'PATCH'});
         gwCall('organize', 'assetOrganizePushUndo', data, `重命名为「${name}」`, target.rootId);
         gwCall('organize', 'showAssetOrganizeToast', `已重命名文件夹为「${name}」`, {undoable:true});
@@ -11585,7 +11602,7 @@ async function gwAssetTreeDeleteFolder(key){
     try {
         const data = await assetOrganizeRequest('/api/local-assets/folders/delete', {
             path: absPath,
-            root_id: target.rootId,
+            root_id: target.physicalRootId || target.rootId,
         });
         gwCall('organize', 'assetOrganizePushUndo', data, `删除 ${label}`, target.rootId);
         gwCall('organize', 'showAssetOrganizeToast', `已移入回收站：${label}`, {undoable:true});

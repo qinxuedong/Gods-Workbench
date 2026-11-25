@@ -2486,6 +2486,25 @@ def _root_identity_groups(facets: Iterable[Dict[str, Any]]) -> Dict[str, Dict[st
     return groups
 
 
+def _folders_excluded_directory_names() -> frozenset[str]:
+    """返回目录树展示须排除的系统内部目录名集合（含当前 cache_folder）。"""
+    excluded = {"god-recycler", "god-cache", ".gods-workbench"}
+    data_root = _index_scan_runtime_data_root()
+    if data_root is not None:
+        thumbnail_state = _index_scan_read_state(data_root, "media_settings", {})
+        thumbnail_settings = dict(thumbnail_state.get("thumbnails") or {})
+        cache_folder = str(thumbnail_settings.get("cache_folder") or "").strip()
+        if cache_folder and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]{0,63}", cache_folder):
+            excluded.add(cache_folder.casefold())
+    return frozenset(excluded)
+
+
+def _folder_path_is_system_excluded(folder_path: str, excluded_names: frozenset[str]) -> bool:
+    """按路径段大小写不敏感精确匹配系统目录，不误伤普通子串目录。"""
+    segments = [seg for seg in str(folder_path or "").replace("\\", "/").split("/") if seg]
+    return any(seg.casefold() in excluded_names for seg in segments)
+
+
 def folders(root_id: Optional[str]) -> Dict[str, Any]:
     raw = readonly_registry_snapshot()
     # QIN-596：请求身份展开为身份组并把返回身份归一到主 ID；未知身份保持
@@ -2497,7 +2516,12 @@ def folders(root_id: Optional[str]) -> Dict[str, Any]:
         group_entry = _root_identity_groups(index_jobs.root_facets()).get(str(root_id))
     members = group_entry["members"] if group_entry else {str(root_id)} if root_id else set()
     primary = group_entry["primary"] if group_entry else (str(root_id) if root_id else "")
-    items = [dict(f) for f in sorted(raw["folders"].values(), key=lambda x: x["folder_id"])]
+    excluded_names = _folders_excluded_directory_names()
+    items = [
+        dict(f)
+        for f in sorted(raw["folders"].values(), key=lambda x: x["folder_id"])
+        if not _folder_path_is_system_excluded(str(f.get("path") or f.get("name") or ""), excluded_names)
+    ]
     if root_id:
         items = [f for f in items if f.get("parent_id") in members]
         for f in items:
@@ -2512,7 +2536,7 @@ def folders(root_id: Optional[str]) -> Dict[str, Any]:
             continue
         relative = str(asset.get("relative_path") or asset.get("canonical_relpath") or "").replace("\\", "/").strip("/")
         folder = relative.rpartition("/")[0]
-        if folder:
+        if folder and not _folder_path_is_system_excluded(folder, excluded_names):
             key_source = primary if root_id else source_id
             summary = indexed.setdefault((key_source, folder), {"count": 0, "categories": {}})
             summary["count"] += 1
@@ -2527,14 +2551,17 @@ def folders(root_id: Optional[str]) -> Dict[str, Any]:
             key = (source, "/".join(segments[:depth]))
             totals[key] = totals.get(key, 0) + direct
     indexed_folders = []
-    for (source, path), summary in sorted(indexed.items()):
+    # QIN-660 AC3：遍历全部出现过的目录（含自身无直属文件、但子孙有素材的中间祖先目录）
+    for source, path in sorted(set(indexed.keys()) | set(totals.keys())):
+        summary = indexed.get((source, path))
+        direct_count = int(summary["count"]) if summary else 0
         # QIN-542 AC3：count 保持「仅本层直接文件」口径；total_count 为含子目录的递归总数
         indexed_folders.append({
             "root_id": source,
             "path": path,
-            "count": summary["count"],
-            "total_count": totals.get((source, path), int(summary["count"])),
-            "categories": summary["categories"],
+            "count": direct_count,
+            "total_count": totals.get((source, path), direct_count),
+            "categories": dict(summary["categories"]) if summary else {},
         })
     return {"folders": items, "indexed_folders": indexed_folders,
             "root_id": root_id, "revision": raw["revision"],

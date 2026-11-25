@@ -2719,11 +2719,14 @@ async function loadAssetRackDiskFolders(rootId, relPath=''){
                 registryDiskFolderCache.set(key, []);
                 return [];
             }
+            const cacheFolder = String(thumbnailGeneratorState?.cacheFolder || '').trim().toLowerCase();
+            const excludedDirs = new Set(['god-recycler', 'god-cache', '.gods-workbench']);
+            if(cacheFolder) excludedDirs.add(cacheFolder);
             const entries = (Array.isArray(data?.directories) ? data.directories : []).map(item => {
                 const abs = String(item?.path || '').replace(/\\/g, '/').replace(/\/+$/g, '');
                 const rel = abs.startsWith(`${base}/`) ? abs.slice(base.length + 1) : String(item?.name || '');
                 return {name: String(item?.name || rel), rel: rel.replace(/^\/+|\/+$/g, '')};
-            }).filter(item => item.rel);
+            }).filter(item => item.rel && !item.rel.split('/').some(seg => excludedDirs.has(seg.toLowerCase())));
             registryDiskFolderCache.set(key, entries);
             return entries;
         } catch(_) {

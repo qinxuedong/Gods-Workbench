@@ -545,7 +545,11 @@ window.WorkbenchAssets = (() => {
     window.lucide?.createIcons();
   }
 
+  let activeShellDialogGen = 0;
+
   function openShellCreateDialog(parentKey) {
+    activeShellDialogGen += 1;
+    const dialogGen = activeShellDialogGen;
     document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
@@ -575,6 +579,10 @@ window.WorkbenchAssets = (() => {
     input?.focus();
 
     let isSubmitting = false;
+    const closeDialog = () => {
+      activeShellDialogGen += 1;
+      overlay.remove();
+    };
     const confirm = async () => {
       if (isSubmitting) return;
       const name = String(input?.value || '').trim();
@@ -584,6 +592,7 @@ window.WorkbenchAssets = (() => {
         return;
       }
       isSubmitting = true;
+      const submitGen = dialogGen;
       if (confirmBtn) {
         confirmBtn.disabled = true;
         confirmBtn.textContent = '创建中...';
@@ -593,9 +602,11 @@ window.WorkbenchAssets = (() => {
         const bridge = organizeBridge();
         if (!bridge?.createFolder) throw new Error('资产库尚未就绪，请稍后重试');
         await bridge.createFolder(parentKey, name);
-        overlay.remove();
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
+        closeDialog();
         showShellOrganizeToast(`已新建文件夹「${name}」`, true);
       } catch (err) {
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
         if (errorEl) errorEl.textContent = err.message || '创建文件夹失败';
         isSubmitting = false;
         if (confirmBtn) {
@@ -610,7 +621,7 @@ window.WorkbenchAssets = (() => {
       if (cancelEl || e.target === overlay) {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
         return;
       }
       const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
@@ -622,17 +633,18 @@ window.WorkbenchAssets = (() => {
       }
     });
 
-    input?.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
+    const handleKeydown = (e) => {
+      if (e.key === 'Enter' && e.target === input) {
         e.preventDefault();
         e.stopPropagation();
         void confirm();
       } else if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
       }
-    });
+    };
+    overlay.addEventListener('keydown', handleKeydown);
   }
 
   function openShellDeleteDialog(key, name) {
@@ -1331,6 +1343,7 @@ window.WorkbenchAssets = (() => {
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape') {
         closeShellOrganizeMenu();
+        activeShellDialogGen += 1;
         document.getElementById('assetOrganizeDialogOverlay')?.remove();
       }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {

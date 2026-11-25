@@ -73,10 +73,66 @@ def _is_loopback_request(request: Request) -> bool:
 
 
 def _root_hint(payload: dict[str, Any], key: str = "root_id") -> str | None:
-    """可选的来源根身份；缺省时由仓库按索引记录或单根唯一根解析。"""
+    """可选的来源根身份；兼容 storage_root_id / 别名映射为物理允许根 root_id。"""
     value = payload.get(key)
     text = str(value).strip() if value is not None else ""
-    return text or None
+    if not text:
+        return None
+    physical_ids = {storage.root_identity_id(r) for r in storage.allowed_roots()}
+    if text in physical_ids:
+        return text
+    try:
+        from gw.asset_registry import index_jobs
+
+        facets = index_jobs.root_facets()
+        for facet in facets.get("roots") or []:
+            candidates = {
+                str(facet.get("id") or "").strip(),
+                str(facet.get("storage_root_id") or "").strip(),
+                str(facet.get("root_id") or "").strip(),
+                *(str(a).strip() for a in (facet.get("aliases") or [])),
+            }
+            if text not in candidates:
+                continue
+            for cand in (
+                str(facet.get("root_id") or "").strip(),
+                *(str(a).strip() for a in (facet.get("aliases") or [])),
+                str(facet.get("id") or "").strip(),
+            ):
+                if cand in physical_ids:
+                    return cand
+            raw_path = str(facet.get("path") or "").strip()
+            if raw_path:
+                for root in storage.allowed_roots():
+                    try:
+                        if storage.directory_path_key(str(root)) == storage.directory_path_key(raw_path):
+                            return storage.root_identity_id(root)
+                    except Exception:
+                        continue
+    except Exception:
+        pass
+    try:
+        from gw.settings.service import default_storage_settings_service
+
+        snapshot = default_storage_settings_service.get_snapshot()
+        for entry in snapshot.extra_local_entries:
+            if isinstance(entry, dict):
+                entry_id = str(entry.get("id") or "").strip()
+                entry_path = str(entry.get("path") or "").strip()
+            else:
+                entry_id = str(getattr(entry, "id", "") or "").strip()
+                entry_path = str(getattr(entry, "path", "") or "").strip()
+            if entry_id != text or not entry_path:
+                continue
+            for root in storage.allowed_roots():
+                try:
+                    if storage.directory_path_key(str(root)) == storage.directory_path_key(entry_path):
+                        return storage.root_identity_id(root)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+    return text
 
 
 def _ids(payload: dict[str, Any], key: str = "paths") -> list[str]:

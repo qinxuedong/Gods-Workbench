@@ -152,6 +152,7 @@ tests/frontend/qin-649-cleanup-mount-and-directory-settings.test.mjs
 tests/frontend/qin-651-sw-navigation-network-first.test.mjs
 tests/frontend/qin-653-asset-detail-panel.test.mjs
 tests/frontend/qin-659-mount-tree-ux.test.mjs
+tests/frontend/qin-660-mount-tree-fixes.test.mjs
 tests/frontend/qin-661-detail-sidebar-layout.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs
