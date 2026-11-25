@@ -485,7 +485,7 @@ test('AC2: asset-manager.js serializeAssetRackFolderNode 对仅索引叶子的�
       { name: 'sub_non_empty', path: 'parent_mixed/sub_non_empty', children: [] },
     ],
   }, 1);
-  assert.equal(serializedParent.count, 0, '中间目录自身未在索引登记时 count 为 0');
+  assert.equal(serializedParent.count, 1, '中间目录自身未在索引登记时按 QIN-660 AC3 递归汇总子孙数量为 1');
   assert.equal(serializedParent.expanded, false, '中间目录处于折叠态');
   assert.equal(serializedParent.hasNonEmptyDescendant, true, '有已索引非空后代时 hasNonEmptyDescendant 必须为 true');
   assert.deepEqual(serializedParent.children, [], '折叠态 children 仍保持空数组');
