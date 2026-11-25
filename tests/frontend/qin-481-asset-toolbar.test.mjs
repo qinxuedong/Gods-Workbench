@@ -50,17 +50,24 @@ assert.match(
   /data-registry-aspect-toggle aria-pressed="\$\{registryAspect === 'square'\}"/,
   '方格比例切换应携带 aria-pressed 选中态'
 );
-assert.match(
-  js,
-  /data-registry-group-selected \$\{selectedIds\.length \? '' : 'disabled'\}/,
-  '加入分组应保留 disabled 禁用态（虚线灰字来源）'
-);
+const toolbar = js.slice(js.indexOf('function renderRegistryToolbar('), js.indexOf('function renderRegistryEditableTags('));
+assert.match(toolbar, /data-registry-group-selected \$\{selectedIds\.length \? '' : 'disabled'\}/);
+assert.match(toolbar, /data-registry-group-remove \$\{selectedGroupIds\.length \? '' : 'disabled'\}/);
+assert.doesNotMatch(toolbar, /data-registry-add-url/);
+assert.match(toolbar, /<span>建议<\/span><span class="governance-topbar-count"/);
+assert.match(toolbar, /workspaceContext\?\.active_workspace_id === 'ws_nas_01' \? '' : ' hidden'/);
+assert.match(css, /\.registry-toolbar \[data-transfer-open\]\[hidden\] \{\s*display:none !important/);
+assert.match(css, /\.registry-toolbar \.asset-search-wrap \{\s*min-width:100px; flex:0 1 105px; width:105px;/);
+assert.match(css, /\.registry-toolbar :is\(\.governance-topbar-count,\[data-unassigned-count\]\) \{\s*color:var\(--faint\); font:700 var\(--gw-type-label-sm\)/);
+assert.doesNotMatch(css, /\.governance-topbar-count \{[^}]*border:/);
 
 // 4. AC4：外层搜索标签透明且无框，边框仅由输入框本身提供。
 const searchWrapperStyle = css.match(
   /body\.gw-signal\.gw-page--asset-manager #assetManagerRoot \.registry-toolbar \.asset-search-wrap \{([^}]*)\}/s
 );
 assert.ok(searchWrapperStyle, '搜索框外层样式应由 asset-manager.css 明确控制');
+assert.match(searchWrapperStyle[1], /flex: 0 1 calc\(12\.5% - 22px\) !important/);
+assert.match(searchWrapperStyle[1], /min-width: 100px !important/);
 assert.match(searchWrapperStyle[1], /height: 32px !important/);
 assert.match(searchWrapperStyle[1], /border: 0 !important/);
 assert.match(searchWrapperStyle[1], /background: transparent !important/);

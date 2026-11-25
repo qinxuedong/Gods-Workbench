@@ -37,6 +37,12 @@ test('添加资源文件夹取消旧版 boardCreatePath 表单，统一走资源
     assert.match(organize, /<label class="board-source-path-label"><span>素材路径<\/span><div class="board-source-path-row"><input id="boardSourcePath"[\s\S]*?data-board-source-pick/);
 });
 
+test('选夹状态提示增删时素材路径始终占满表单行', () => {
+    assert.match(styles, /\.board-source-form \.board-source-path-label\s*\{\s*grid-column:1\/-1;/);
+    assert.doesNotMatch(styles, /\.board-source-form label:last-child/);
+    assert.match(organize, /board-source-path-label[\s\S]*?\$\{pickerStatusHtml\}/);
+});
+
 test('新建资源库折叠右侧详情栏后释放网格宽度，不保留空白列', () => {
     assert.match(source, /function syncRegistryDetailGridWidth\(\)\{\s*root\?\.style\.setProperty\('--registry-detail-width',`\$\{registryDetailPanelCollapsed \? 44 : registryDetailPanelWidth\}px`\);\s*\}/);
     assert.match(source, /root\.classList\.toggle\('registry-detail-collapsed'[\s\S]*?syncRegistryDetailGridWidth\(\);/);

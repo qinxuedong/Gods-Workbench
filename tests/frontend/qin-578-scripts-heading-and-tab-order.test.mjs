@@ -28,7 +28,7 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
     !toolbar('inbox', {hideHeading: true}).includes('class="content-heading"'),
     '显式 hideHeading 时工具栏必须输出空字符串',
   );
-  assert.ok(toolbar('inbox').includes('data-registry-add-url'), 'allowUrl:true 应输出添加 URL 控件');
+  assert.ok(!toolbar('inbox').includes('data-registry-add-url'), '工具栏不再显示添加 URL 控件');
 
   // ④ 汇聚点调用签名契约：registry / projects / scripts 隐藏标题，收集箱显示；
   //    已移除的旧自定义看板 library_demo 会回落到 registry（hideHeading:true）。
@@ -39,7 +39,7 @@ test('AC1: 嵌入态下剧本标签隐藏 content-heading，实现 Coverflow 与
       !hidden,
       `${tab} 工具栏 hideHeading 行为须与 QIN-572 / QIN-574 契约一致`,
     );
-    assert.ok(host.root.innerHTML.includes('data-registry-add-url'), `${tab} 应保留 allowUrl:true`);
+    assert.ok(!host.root.innerHTML.includes('data-registry-add-url'), `${tab} 不再显示添加 URL 控件`);
     assert.equal(host.root.querySelectorAll('.content-toolbar.registry-toolbar').length, 1, `${tab} 工具栏应恰好 1 份`);
   }
   await host.setTab('library_demo');
@@ -70,6 +70,26 @@ test('AC2: 顶栏概览统计卡片顺序调整为 画布 → 其他 → 项目 
     '卡片顺序必须为 画布 → 其他 → 项目 → 剧本 → 提示词 → LUT'
   );
   assert.doesNotMatch(statsSlice, /id:'lut', name:'LUT',[^\n]*registryCategoryCount\('lut'\)/, 'LUT 不得出统计数值卡');
+});
+
+test('QIN-662: 工作区状态决定工具栏传输入口，保留批量分组入口', async () => {
+  const host = await createAssetViewHost({embedded:true, tab:'registry'});
+  try {
+    host.main.setWorkspaceContext(null);
+    assert.match(host.toolbar('registry'), /data-transfer-open hidden/);
+    host.main.setWorkspaceContext({active_workspace_id:'ws_nas_01'});
+    const remote = host.toolbar('registry');
+    assert.match(remote, /data-transfer-open aria-haspopup/);
+    assert.match(remote, /data-registry-group-selected/);
+    assert.match(remote, /data-registry-group-remove/);
+    assert.doesNotMatch(remote, /data-registry-add-url/);
+    host.main.setWorkspaceContext({active_workspace_id:'ws_local_01'});
+    assert.match(host.toolbar('registry'), /data-transfer-open hidden/);
+    assert.match(managerJs, /data-registry-\$\{owning\.group \? 'bulk-release' : 'structure-merge'\}="group"/);
+    assert.match(managerJs, /document\.addEventListener\('contextmenu', openRegistryStructureContextMenu\)/);
+  } finally {
+    host.dispose();
+  }
 });
 
 test('AC3: 顶栏导航卡片保留 is-nav 与 data-registry-nav，点击激活对应系统看板', () => {

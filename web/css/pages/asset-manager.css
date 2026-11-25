@@ -2451,7 +2451,7 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .board-source-form-head span { margin-top:4px; color:var(--muted); font-size: var(--gw-type-label-md); }
 .board-source-form { padding:16px 18px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; }
 .board-source-form label { min-width:0; display:flex; flex-direction:column; gap:6px; }
-.board-source-form label:last-child { grid-column:1/-1; }
+.board-source-form .board-source-path-label { grid-column:1/-1; }
 .board-source-form label > span { color:var(--muted); font-size: var(--gw-type-label-md); font-weight:900; }
 .board-source-picker-status { grid-column:1 / -1; margin:0; color:var(--muted); font-size:var(--gw-type-label-sm); line-height:1.5; }
 .board-source-form input,.board-source-form select { width:100%; height:36px; border:1px solid var(--line); border-radius:8px; background:var(--card); color:var(--text); padding:0 10px; outline:none; font-size: var(--gw-type-label-md); font-weight:800; }
@@ -2462,7 +2462,7 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .board-source-form .board-source-select { color-scheme:light; }
 .theme-dark .board-source-form .board-source-select { color-scheme:dark; }
 .theme-dark .board-create-modal { background:rgba(17,18,22,.98); box-shadow:0 28px 90px rgba(0,0,0,.54); }
-@media (max-width:860px){ .board-settings-modal { width:96vw; height:92vh; max-height:92vh; } .board-create-form,.board-source-form { grid-template-columns:1fr; } .board-source-form label:last-child { grid-column:auto; } .board-source-settings-row { grid-template-columns:30px minmax(0,1fr) 76px 28px; } .board-source-row-action { grid-column:2; justify-self:start; } .board-feature-grid,.board-ai-settings-grid,.board-proxy-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .board-ai-extra,.board-ai-rule,.board-ai-rule[open] { grid-column:1/-1; } }
+@media (max-width:860px){ .board-settings-modal { width:96vw; height:92vh; max-height:92vh; } .board-create-form,.board-source-form { grid-template-columns:1fr; } .board-source-form .board-source-path-label { grid-column:auto; } .board-source-settings-row { grid-template-columns:30px minmax(0,1fr) 76px 28px; } .board-source-row-action { grid-column:2; justify-self:start; } .board-feature-grid,.board-ai-settings-grid,.board-proxy-grid { grid-template-columns:repeat(2,minmax(0,1fr)); } .board-ai-extra,.board-ai-rule,.board-ai-rule[open] { grid-column:1/-1; } }
 @media (max-width:620px){ .board-feature-grid,.board-ai-settings-grid,.board-proxy-grid,.board-directory-settings .storage-dir-grid { grid-template-columns:1fr; } .board-ai-extra,.board-ai-rule,.board-ai-rule[open] { grid-column:1; } .board-preview-title { align-items:flex-start; flex-direction:column; } .board-preview-feature-switches { width:100%; margin-left:0; justify-content:stretch; } .board-preview-feature-switches .board-feature-control { flex:1 1 100%; } .board-thumbnail-actions .hw-btn { flex:1 1 150px; } .registry-recycle-bin-item { grid-template-columns:34px minmax(0,1fr); } .registry-recycle-bin-item > .hw-btn { grid-column:2; justify-self:start; } .registry-recycle-bin-paths { grid-template-columns:1fr; } .registry-recycle-bin-paths code { grid-column:1; } }
 
 .asset-manager-root.asset-manager-root-local { grid-template-rows:auto minmax(0,1fr); }
@@ -2484,7 +2484,8 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .registry-toolbar { align-items:center; }
 .registry-toolbar .content-heading { flex:0 0 150px; }
 .registry-toolbar-controls { min-width:0; flex:1; display:flex; align-items:center; justify-content:flex-end; flex-wrap:wrap; gap:5px; }
-.registry-toolbar .asset-search-wrap { min-width:170px; flex:1 1 210px; width:auto; }
+.registry-toolbar [data-transfer-open][hidden] { display:none !important; }
+.registry-toolbar .asset-search-wrap { min-width:100px; flex:0 1 105px; width:105px; }
 .registry-toolbar-group-actions { display:flex; flex:0 0 auto; align-items:center; gap:5px; max-width:100%; margin-left:auto; overflow-x:auto; white-space:nowrap; }
 .registry-toolbar-shell-actions { display:flex; flex:0 0 auto; align-items:center; gap:5px; }
 .registry-toolbar-group-actions > .hw-btn,
@@ -3328,6 +3329,10 @@ body.asset-image-editor-open{overflow:hidden}
 
 /* QIN-505：搜索框只保留输入框自身边框，外层标签不再叠加矩形外框。 */
 body.gw-signal.gw-page--asset-manager #assetManagerRoot .registry-toolbar .asset-search-wrap {
+  flex: 0 1 calc(12.5% - 22px) !important;
+  width: calc(12.5% - 22px) !important;
+  min-width: 100px !important;
+  max-width: calc(12.5% - 22px) !important;
   height: 32px !important;
   min-height: 32px !important;
   position: relative !important;
@@ -4044,9 +4049,8 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 /* QIN-549：治理建议顶栏入口与六类清单抽屉。 */
 .governance-topbar-entry { display:inline-flex; align-items:center; gap:7px; flex:0 0 auto; white-space:nowrap; }
 .governance-topbar-entry > svg { width:15px; height:15px; }
-.governance-topbar-count { min-width:20px; height:20px; padding:0 5px; border:1px solid var(--vault-edge,var(--line)); border-radius:10px; background:var(--vault-card,var(--soft)); color:var(--vault-accent,var(--asset-type-other)); display:inline-flex; align-items:center; justify-content:center; font:700 var(--gw-type-label-sm)/1 var(--gw-font-mono); }
+.registry-toolbar :is(.governance-topbar-count,[data-unassigned-count]) { color:var(--faint); font:700 var(--gw-type-label-sm)/1 var(--gw-font-mono); font-variant-numeric:tabular-nums; }
 .governance-topbar-entry.has-error { border-color:color-mix(in srgb,var(--asset-type-model) 65%,transparent); color:var(--asset-type-model); }
-.governance-topbar-entry.has-error .governance-topbar-count { border-color:var(--asset-type-model); color:var(--asset-type-model); }
 .governance-drawer-overlay { position:fixed; inset:0; z-index:4050; display:flex; justify-content:flex-end; background:rgba(3,5,4,.72); backdrop-filter:blur(5px); }
 .governance-suggestion-drawer { width:min(760px,100vw); height:100%; min-height:0; display:grid; grid-template-rows:auto minmax(0,1fr); border-left:1px solid var(--vault-edge,#4b4435); background:linear-gradient(180deg,var(--vault-top,#191d24),var(--vault-bottom,#0b0d11)); color:var(--vault-text,var(--text)); box-shadow:-22px 0 70px rgba(0,0,0,.54); }
 .governance-suggestion-drawer > header { min-width:0; padding:20px 22px 16px; border-bottom:1px solid var(--vault-edge,#4b4435); display:flex; align-items:flex-start; justify-content:space-between; gap:16px; }

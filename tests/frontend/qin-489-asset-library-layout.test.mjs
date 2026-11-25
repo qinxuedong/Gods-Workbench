@@ -96,7 +96,7 @@ test('AC2: 状态显示在固定顶栏并从嵌入资产管理器回写', () => 
     assert.match(manager, /embeddedVault \? '' : `<div id="assetStatus"/);
 });
 
-test('AC3/AC14: 左栏移除导入按钮，资产操作放在移出分组行末端', () => {
+test('AC3/AC14: 左栏移除导入按钮，资产操作保留在工具栏末端', () => {
     // 【QIN-527】左栏底部重复的「智能筛选」按钮已移除，入口收敛到中栏双模机架拨片
     assert.doesNotMatch(html, /id="assetSidebarSmartFilter"/);
     assert.doesNotMatch(html, /WorkbenchAssets\.toggleSmartFilter\(\)/);
