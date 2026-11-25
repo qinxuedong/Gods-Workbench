@@ -103,6 +103,94 @@ def _enrich_hash_concurrency() -> int:
     return max(1, min(ENRICH_HASH_CONCURRENCY_MAX, value))
 
 
+# 扫描期落盘的文件版本指纹键。旧记录的 `modified_at` 只有秒级精度，同秒等长
+# 改写会与原版本逐字节相同；`mtime_ns` 提供纳秒分辨率，`ino`/`dev` 再区分
+# 「原子替换成另一份同秒同长文件」，三者合起来才足以判定「内容未变」。
+FILE_VERSION_FIELDS = ("size_bytes", "mtime_ns", "ino", "dev")
+
+
+def _file_version(info) -> dict:
+    """由 stat 结果构造版本指纹（扫描与富化同一口径）。"""
+    return {
+        "size_bytes": int(getattr(info, "st_size", 0) or 0),
+        "mtime_ns": int(getattr(info, "st_mtime_ns", 0) or 0),
+        "ino": int(getattr(info, "st_ino", 0) or 0),
+        "dev": int(getattr(info, "st_dev", 0) or 0),
+    }
+
+
+def _same_file_version(left: object, right: object) -> bool:
+    """两个版本指纹是否逐字段相同；任一侧缺失/畸形一律判「不同」。
+
+    缺失即未知（既有登记建于本改动之前），按不同处理让富化重新计算并补写
+    指纹，宁可多算一次也不复用可能过期的旧结果。
+    """
+    if not isinstance(left, dict) or not isinstance(right, dict):
+        return False
+    for field in FILE_VERSION_FIELDS:
+        if field not in left or field not in right:
+            return False
+        try:
+            if int(left[field]) != int(right[field]):
+                return False
+        except (TypeError, ValueError):
+            return False
+    return True
+
+
+class _EnrichGate:
+    """跨任务富化通道闸门：进程内同一通道并发数不超过 ``limit``。
+
+    PM 裁决（issue #812）的并发上限是**全局**口径：视频 1 / 哈希 2。
+    每个任务各建线程池时，两个并发索引任务会同时跑 2 个视频探测、4 个哈希，
+    因此把上限收到进程级闸门上，池大小只决定「谁在等闸门」。
+    """
+
+    def __init__(self, limit: int):
+        self._condition = threading.Condition()
+        self._active = 0
+        self._limit = max(1, int(limit))
+
+    def configure(self, limit: int) -> None:
+        """按当前配置对齐上限；调小只拦新进入者，已在跑的不强杀。"""
+        with self._condition:
+            self._limit = max(1, int(limit))
+            self._condition.notify_all()
+
+    def acquire(self, timeout: float) -> bool:
+        deadline = time.monotonic() + max(0.0, float(timeout))
+        with self._condition:
+            while self._active >= self._limit:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return False
+                self._condition.wait(remaining)
+            self._active += 1
+            return True
+
+    def release(self) -> None:
+        with self._condition:
+            if self._active > 0:
+                self._active -= 1
+            self._condition.notify()
+
+
+_ENRICH_GATES: dict[str, _EnrichGate] = {}
+_ENRICH_GATES_LOCK = threading.Lock()
+
+
+def _enrich_gate(kind: str) -> _EnrichGate:
+    """取（必要时创建）通道闸门；上限每次按当前配置对齐。"""
+    limit = ENRICH_VIDEO_CONCURRENCY if kind == "video" else _enrich_hash_concurrency()
+    with _ENRICH_GATES_LOCK:
+        gate = _ENRICH_GATES.get(kind)
+        if gate is None:
+            gate = _ENRICH_GATES[kind] = _EnrichGate(limit)
+        else:
+            gate.configure(limit)
+        return gate
+
+
 def _error(status, code, message, *, data_status=None, unavailable=False):
     """抛出受控错误；来源不可用时同时返回明确的降级标记。"""
     extra = {}
@@ -2174,8 +2262,21 @@ class IndexJobs:
             ),
         }
 
+    def _enrich_acquire(self, gate, stop, job_id, attempt):
+        """拿通道闸门；等不到就短暂让出，暂停阻塞、取消抛 ``_Stopped``。
+
+        闸门的条件变量不跨 ``_checkpoint`` 持有：暂停期间 worker 会阻塞在
+        任务条件上，若同时握着闸门锁，别的任务连释放都做不到。
+        """
+        while not stop.is_set():
+            if gate.acquire(0.2):
+                return True
+            self._checkpoint(job_id, attempt)
+        return False
+
     def _enrich_worker(self, kind, pending, completed, stop, job_id, attempt, tasks):
         """通道 worker：在条目边界检查暂停/取消，失败只上报不整单失败。"""
+        gate = _enrich_gate(kind)
         while not stop.is_set():
             try:
                 index = pending.get(timeout=0.2)
@@ -2192,6 +2293,13 @@ class IndexJobs:
                     return
                 task = tasks[index]
                 try:
+                    acquired = self._enrich_acquire(gate, stop, job_id, attempt)
+                except _Stopped:
+                    stop.set()
+                    return
+                if not acquired:
+                    return
+                try:
                     value = (
                         self._enrich_video_value(task)
                         if kind == "video"
@@ -2204,6 +2312,8 @@ class IndexJobs:
                     return
                 except Exception as exc:  # 单条目失败：保留条目，计入 enrich.failed
                     completed.put((index, kind, None, str(exc)))
+                finally:
+                    gate.release()
             finally:
                 pending.task_done()
 
@@ -2323,7 +2433,9 @@ class IndexJobs:
 
         幂等基线必须是**快照提交前**的注册表状态：提交会把 size/modified_at
         更新为本次值，但保留旧 sha256；若用提交后的状态判「未变」，同秒改写
-        内容时会误判成可跳过，旧哈希永远不被刷新。
+        内容时会误判成可跳过，旧哈希永远不被刷新。跳过判定统一用
+        ``scan_version`` 版本指纹（``mtime_ns`` + ``ino``/``dev`` + size），
+        秒级 ``modified_at`` 不参与判定。
         """
         job_id, attempt = job["job_id"], job["attempt"]
         hash_workers = _enrich_hash_concurrency()
@@ -2350,9 +2462,10 @@ class IndexJobs:
             )
             if not isinstance(current, dict):
                 current = {}
-            unchanged = (
-                current.get("size_bytes") == item.get("size_bytes")
-                and current.get("modified_at") == item.get("modified_at")
+            # 「未变化」必须按版本指纹判定：秒级 modified_at + 文件大小无法区分
+            # 同秒等长改写，会复用过期的哈希与镜头数据。
+            unchanged = _same_file_version(
+                current.get("scan_version"), item.get("scan_version")
             )
             if task["want_hash"]:
                 if current.get("sha256") and unchanged:
@@ -2606,6 +2719,7 @@ class IndexJobs:
                             ] = {
                                 "size_bytes": asset.get("size_bytes"),
                                 "modified_at": asset.get("modified_at"),
+                                "scan_version": asset.get("scan_version"),
                                 "sha256": asset.get("sha256"),
                                 "hash_mode": asset.get("hash_mode"),
                                 "full_sha256_cache": asset.get("full_sha256_cache"),
@@ -3000,6 +3114,10 @@ class IndexJobs:
                             "modified_at": time.strftime(
                                 "%Y-%m-%dT%H:%M:%SZ", time.gmtime(info.st_mtime)
                             ),
+                            # QIN-652 返工：落盘版本指纹，供下次 reindex 判定
+                            # 「内容未变」与富化批次校验版本，避免同秒等长改写
+                            # 复用过期哈希/镜头数据。
+                            "scan_version": _file_version(info),
                         }
                         if path.suffix.lower() == ".cube":
                             from gw.asset_registry.lut_cube import (
@@ -3218,34 +3336,69 @@ class IndexJobs:
             if job["_request"]["kind"] == "reindex":
                 search_documents = {}
                 next_asset_number = repo._asset_sequence_start(raw)
+                # 富化批次（update_only）只允许回写富化产物：身份、名称、大小、
+                # 修改时间、类型都属扫描字段，旧批次绝不能覆盖新版本。
+                scan_fields = (
+                    ("sha256", "hash_mode")
+                    if update_only
+                    else (
+                        "storage_root_id",
+                        "canonical_relpath",
+                        "name",
+                        "size_bytes",
+                        "sha256",
+                        "hash_mode",
+                        "modified_at",
+                        "kind",
+                    )
+                )
+                cache_breaking_fields = {
+                    "storage_root_id",
+                    "canonical_relpath",
+                    "size_bytes",
+                    "sha256",
+                    "hash_mode",
+                    "modified_at",
+                }
                 for item in valid_files:
                     identity = (item["root_id"], item["canonical_relpath"])
                     existing = known.get(identity)
                     if existing is not None:
+                        item_version = item.get("scan_version")
+                        # 版本校验：富化批次只对「扫描时那一版」的资产生效。
+                        # 两个 reindex 交错时，旧任务晚到的批次会把新版本的
+                        # 信息与富化结果改回旧值，因此版本不符整条丢弃。
+                        version_changed = not _same_file_version(
+                            existing.get("scan_version"), item_version
+                        )
+                        if update_only and version_changed:
+                            continue
                         changed = False
                         cache_invalidated = False
                         was_lut = existing.get("kind") == "lut"
-                        for field in (
-                            "storage_root_id",
-                            "canonical_relpath",
-                            "name",
-                            "size_bytes",
-                            "sha256",
-                            "hash_mode",
-                            "modified_at",
-                            "kind",
-                        ):
+                        if version_changed and item_version is not None:
+                            # 扫到新版本：旧哈希/镜头结果描述的是上一份内容，
+                            # 必须先失效再等富化补齐；否则富化失败或取消后，
+                            # 下一次 reindex 会把「新文件信息 + 旧结果」判成
+                            # 未变化而永久跳过。
+                            for stale in (
+                                "sha256",
+                                "hash_mode",
+                                "full_sha256_cache",
+                                "duration",
+                            ):
+                                existing.pop(stale, None)
+                            stale_metadata = existing.get("metadata")
+                            if isinstance(stale_metadata, dict):
+                                stale_metadata.pop("video_segments", None)
+                                stale_metadata.pop("video_metadata", None)
+                            existing["scan_version"] = item_version
+                            changed = True
+                        for field in scan_fields:
                             if field in item and existing.get(field) != item[field]:
                                 existing[field] = item.get(field)
                                 changed = True
-                                if field in (
-                                    "storage_root_id",
-                                    "canonical_relpath",
-                                    "size_bytes",
-                                    "sha256",
-                                    "hash_mode",
-                                    "modified_at",
-                                ):
+                                if field in cache_breaking_fields:
                                     cache_invalidated = True
                         if cache_invalidated and "full_sha256_cache" in existing:
                             existing.pop("full_sha256_cache", None)

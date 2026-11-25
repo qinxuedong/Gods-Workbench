@@ -26,8 +26,10 @@
 """
 
 import hashlib
+import os
 import threading
 import time
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -488,3 +490,309 @@ def test_regression_progress_shape_and_result_counts(index_runtime):
     ]
     assert "enrich_pending" not in receipt
     assert receipt["hashed"] == 2
+
+
+# ----------------------------------------------------------------------
+# 独立审核（comment 7154305645）FIX_REQUIRED 的回归用例：
+#   R-1 同秒等长改写必须刷新哈希与镜头数据；
+#   R-2 版本变化后旧富化结果失效，失败/取消后下一次 reindex 能自愈；
+#   R-3 旧任务的迟到富化批次不得覆盖新版本；
+#   R-4 并发上限是全局口径（跨两个索引任务）。
+# ----------------------------------------------------------------------
+
+
+def _asset(name):
+    return next(asset for asset in _assets().values() if asset["name"] == name)
+
+
+def _same_second_bump(path, base_ns):
+    """把 mtime 调回基线所在的那一秒、但纳秒不同（模拟同秒等长改写）。"""
+    within_second = base_ns % 1_000_000_000
+    delta = 1_000 if within_second <= 999_999_000 - 1_000 else -1_000
+    os.utime(path, ns=(base_ns, base_ns + delta))
+    return path.stat()
+
+
+def test_review_same_second_same_size_rewrite_refreshes_enrichment(
+    index_runtime, monkeypatch
+):
+    """R-1：秒级 modified_at 与大小都相同，但内容已改写 → 不得复用旧结果。
+
+    旧实现仅比 `size_bytes` + 秒级 `modified_at`，同秒等长改写会被判成
+    「未变化」而跳过哈希与视频探测；这里用 `mtime_ns` 版本指纹区分。
+    """
+
+    text = index_runtime / "same-size.txt"
+    first_text = b"payload-AAAA"
+    second_text = b"payload-BBBB"
+    assert len(first_text) == len(second_text)
+    text.write_bytes(first_text)
+
+    video = index_runtime / "same-size.mp4"
+    first_video = b"video-AAAA"
+    second_video = b"video-BBBB"
+    assert len(first_video) == len(second_video)
+    video.write_bytes(first_video)
+
+    def fake_video(path):
+        raw = Path(path).read_bytes()
+        duration = 10.0 if raw.endswith(b"AAAA") else 20.0
+        return (
+            {
+                "video_segments": [{"start_sec": 0.0, "end_sec": duration}],
+                "video_metadata": {
+                    "scene_detection_status": "complete",
+                    "keyframe_status": "decoded_in_memory",
+                    "duration_sec": duration,
+                },
+            },
+            duration,
+        )
+
+    monkeypatch.setattr(jobs, "_video_index_data", fake_video)
+    text_before = text.stat()
+    video_before = video.stat()
+
+    with TestClient(create_app()) as client:
+        created = _submit(client, "qin-652-r1-first", hash_files=True)
+        assert created.status_code == 202, created.text
+        assert _wait_job(client, created.json()["job_id"])["status"] == "succeeded"
+        before_modified = {name: _asset(name)["modified_at"] for name in ("same-size.txt", "same-size.mp4")}
+        assert _asset("same-size.txt")["sha256"] == hashlib.sha256(first_text).hexdigest()
+
+        text.write_bytes(second_text)
+        text_after = _same_second_bump(text, text_before.st_mtime_ns)
+        video.write_bytes(second_video)
+        video_after = _same_second_bump(video, video_before.st_mtime_ns)
+        # 前提：旧判据看到的仍是「同一个秒」，只有纳秒级指纹变了。
+        assert int(text_after.st_mtime) == int(text_before.st_mtime)
+        assert int(video_after.st_mtime) == int(video_before.st_mtime)
+        assert text_after.st_size == text_before.st_size
+
+        second = _submit(client, "qin-652-r1-second", hash_files=True)
+        assert second.status_code == 202, second.text
+        final = _wait_job(client, second.json()["job_id"])
+
+    assert final["status"] == "succeeded", final
+    assert final["result"]["enrich"]["skipped"] == 0, final["result"]["enrich"]
+    refreshed_text = _asset("same-size.txt")
+    refreshed_video = _asset("same-size.mp4")
+    # 秒级 modified_at 意外滚到下一秒时用例前提失效，先显式守住前提。
+    assert refreshed_text["modified_at"] == before_modified["same-size.txt"]
+    assert refreshed_video["modified_at"] == before_modified["same-size.mp4"]
+    assert refreshed_text["sha256"] == hashlib.sha256(second_text).hexdigest()
+    assert refreshed_video["sha256"] == hashlib.sha256(second_video).hexdigest()
+    assert refreshed_video["duration"] == 20.0
+    assert refreshed_video["metadata"]["video_metadata"]["duration_sec"] == 20.0
+
+
+def test_review_changed_version_retries_after_enrich_failure(index_runtime, monkeypatch):
+    """R-2：版本变化后旧结果必须失效，富化失败也不得让下次 reindex 误跳过。"""
+
+    text = index_runtime / "doc.txt"
+    video = index_runtime / "clip.mp4"
+    text.write_bytes(b"version-one")
+    video.write_bytes(b"clip-one")
+
+    fail = {"on": False}
+    original_hash = jobs.IndexJobs._enrich_hash_value
+
+    def flaky_hash(self, task, job_id, attempt):
+        if fail["on"]:
+            raise RuntimeError("hash channel down")
+        return original_hash(self, task, job_id, attempt)
+
+    def flaky_video(path):
+        if fail["on"]:
+            raise RuntimeError("probe channel down")
+        return (
+            {
+                "video_segments": [{"start_sec": 0.0, "end_sec": 7.0}],
+                "video_metadata": {
+                    "scene_detection_status": "complete",
+                    "keyframe_status": "decoded_in_memory",
+                    "duration_sec": 7.0,
+                },
+            },
+            7.0,
+        )
+
+    monkeypatch.setattr(jobs.IndexJobs, "_enrich_hash_value", flaky_hash)
+    monkeypatch.setattr(jobs, "_video_index_data", flaky_video)
+
+    with TestClient(create_app()) as client:
+        first = _submit(client, "qin-652-r2-first", hash_files=True)
+        assert first.status_code == 202, first.text
+        assert _wait_job(client, first.json()["job_id"])["status"] == "succeeded"
+        assert _asset("doc.txt")["sha256"] == hashlib.sha256(b"version-one").hexdigest()
+        assert _asset("clip.mp4")["duration"] == 7.0
+
+        # 两个文件都改写（长度变化 → 版本指纹必然不同），随后富化全线失败。
+        text.write_bytes(b"version-two-longer")
+        video.write_bytes(b"clip-two-longer")
+        fail["on"] = True
+        second = _submit(client, "qin-652-r2-second", hash_files=True)
+        assert second.status_code == 202, second.text
+        failed_run = _wait_job(client, second.json()["job_id"])
+
+        assert failed_run["status"] == "succeeded", failed_run
+        assert failed_run["result"]["enrich"]["failed"] == 3, failed_run["result"]["enrich"]
+        stale_text = _asset("doc.txt")
+        stale_video = _asset("clip.mp4")
+        # 旧版本结果必须已失效：否则下次 reindex 会把「新文件信息 + 旧结果」
+        # 判成未变化，旧哈希/镜头数据永远不再刷新。
+        assert "sha256" not in stale_text, stale_text.get("sha256")
+        assert "hash_mode" not in stale_text
+        assert "sha256" not in stale_video
+        assert "duration" not in stale_video
+        assert "video_metadata" not in (stale_video.get("metadata") or {})
+        assert stale_text["scan_version"]["size_bytes"] == len(b"version-two-longer")
+
+        fail["on"] = False
+        third = _submit(client, "qin-652-r2-third", hash_files=True)
+        assert third.status_code == 202, third.text
+        healed = _wait_job(client, third.json()["job_id"])
+
+    assert healed["status"] == "succeeded", healed
+    assert healed["result"]["enrich"]["failed"] == 0
+    assert healed["result"]["enrich"]["skipped"] == 0, healed["result"]["enrich"]
+    healed_text = _asset("doc.txt")
+    healed_video = _asset("clip.mp4")
+    assert healed_text["sha256"] == hashlib.sha256(b"version-two-longer").hexdigest()
+    assert healed_video["sha256"] == hashlib.sha256(b"clip-two-longer").hexdigest()
+    assert healed_video["duration"] == 7.0
+    assert healed_video["metadata"]["video_metadata"]["scene_detection_status"] == "complete"
+
+
+def test_review_late_enrich_batch_cannot_overwrite_newer_version(
+    index_runtime, monkeypatch
+):
+    """R-3：旧任务晚到的富化批次不得把资产改回扫描时的旧版本。"""
+
+    text = index_runtime / "doc.txt"
+    text.write_bytes(b"scan-one")
+    (index_runtime / "other.txt").write_bytes(b"other")
+
+    gate = threading.Event()
+    entered = threading.Event()
+    original_hash = jobs.IndexJobs._enrich_hash_value
+
+    def blocked(self, task, job_id, attempt):
+        if task["name"] == "doc.txt":
+            entered.set()
+            assert gate.wait(15), "富化未放行"
+        return original_hash(self, task, job_id, attempt)
+
+    monkeypatch.setattr(jobs.IndexJobs, "_enrich_hash_value", blocked)
+
+    newer_version = {
+        "size_bytes": len(b"scan-two"),
+        "mtime_ns": 9876543210123456,
+        "ino": 4242,
+        "dev": 7,
+    }
+    newer_sha = hashlib.sha256(b"scan-two").hexdigest()
+
+    with TestClient(create_app()) as client:
+        created = _submit(client, "qin-652-r3", hash_files=True)
+        assert created.status_code == 202, created.text
+        job_id = created.json()["job_id"]
+        assert entered.wait(10), "富化未启动"
+
+        # 模拟并发的后一个 reindex 已把该资产推进到新版本（同 relpath、新内容）。
+        def advance(raw):
+            for asset in raw["assets"].values():
+                if asset.get("name") == "doc.txt":
+                    asset["sha256"] = newer_sha
+                    asset["hash_mode"] = "full"
+                    asset["size_bytes"] = newer_version["size_bytes"]
+                    asset["scan_version"] = dict(newer_version)
+
+        repo.state().mutate(advance)
+        gate.set()
+        final = _wait_job(client, job_id)
+
+    assert final["status"] == "succeeded", final
+    asset = _asset("doc.txt")
+    assert asset["sha256"] == newer_sha, "旧批次的哈希覆盖了新版本"
+    assert asset["size_bytes"] == newer_version["size_bytes"]
+    assert asset["scan_version"] == newer_version
+
+
+def test_review_enrich_concurrency_is_global_across_jobs(index_runtime, monkeypatch):
+    """R-4：两个索引任务并发时，全局仍只有 1 个视频探测、2 个哈希。"""
+
+    for index in range(4):
+        (index_runtime / f"clip-{index}.mp4").write_bytes(b"fake-mp4")
+    for index in range(4):
+        (index_runtime / f"still-{index}.txt").write_bytes(b"still")
+
+    lock = threading.Lock()
+    counter = {"video": 0, "video_max": 0, "hash": 0, "hash_max": 0}
+    overlap = {"active": set(), "max": 0}
+
+    def fake_video(path):
+        with lock:
+            counter["video"] += 1
+            counter["video_max"] = max(counter["video_max"], counter["video"])
+        try:
+            time.sleep(0.2)
+            return (
+                {
+                    "video_segments": [{"start_sec": 0.0, "end_sec": 1.0}],
+                    "video_metadata": {
+                        "scene_detection_status": "complete",
+                        "keyframe_status": "decoded_in_memory",
+                        "duration_sec": 1.0,
+                    },
+                },
+                1.0,
+            )
+        finally:
+            with lock:
+                counter["video"] -= 1
+
+    original_hash = jobs.IndexJobs._hash
+
+    def tracked_hash(self, *args):
+        with lock:
+            counter["hash"] += 1
+            counter["hash_max"] = max(counter["hash_max"], counter["hash"])
+        try:
+            time.sleep(0.12)
+            return original_hash(self, *args)
+        finally:
+            with lock:
+                counter["hash"] -= 1
+
+    original_enrich = jobs.IndexJobs._enrich
+
+    def tracked_enrich(self, job, *args, **kwargs):
+        with lock:
+            overlap["active"].add(job["job_id"])
+            overlap["max"] = max(overlap["max"], len(overlap["active"]))
+        try:
+            return original_enrich(self, job, *args, **kwargs)
+        finally:
+            with lock:
+                overlap["active"].discard(job["job_id"])
+
+    monkeypatch.setattr(jobs, "_video_index_data", fake_video)
+    monkeypatch.setattr(jobs.IndexJobs, "_hash", tracked_hash)
+    monkeypatch.setattr(jobs.IndexJobs, "_enrich", tracked_enrich)
+
+    with TestClient(create_app()) as client:
+        first = _submit(client, "qin-652-r4-a", hash_files=True)
+        second = _submit(client, "qin-652-r4-b", hash_files=True)
+        assert first.status_code == 202, first.text
+        assert second.status_code == 202, second.text
+        first_job = _wait_job(client, first.json()["job_id"])
+        second_job = _wait_job(client, second.json()["job_id"])
+
+    assert first_job["status"] == "succeeded", first_job
+    assert second_job["status"] == "succeeded", second_job
+    # 前提：两个任务的富化阶段确实重叠，否则并发断言会假绿。
+    assert overlap["max"] == 2, overlap
+    assert counter["video_max"] == 1, counter
+    assert counter["hash_max"] == 2, counter
+    assert counter["video"] == 0 and counter["hash"] == 0
