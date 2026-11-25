@@ -183,7 +183,7 @@ test('QIN-660 AC4: openShellCreateDialog 兼容 qin-579 切片且支持确认、
   assert.match(organize, /await assetOrganizeCreateFolder\(state, input\?\.value \|\| ''\);\s*if\(assetOrganizeDialog === state\) closeAssetOrganizeDialog\('created'\);/);
 });
 
-test('QIN-660 AC5: assetOrganizeTargetFromKey 解析 physicalRootId 并用于文件夹操作请求', () => {
-  assert.match(manager, /target\.physicalRootId = String\(matchedAllowed\?\.id \|\| rootFacet\?\.root_id \|\| rootId\);/);
-  assert.match(manager, /root_id:\s*target\.physicalRootId \|\| target\.rootId/);
+test('QIN-660 AC5: assetOrganizePhysicalRootId 解析物理 rootId 并用于文件夹操作请求', () => {
+  assert.match(manager, /function assetOrganizePhysicalRootId\(/);
+  assert.match(manager, /root_id:\s*assetOrganizePhysicalRootId\(target\)/);
 });
