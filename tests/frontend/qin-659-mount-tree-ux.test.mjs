@@ -450,7 +450,7 @@ test('AC2: asset-manager.js serializeAssetRackFolderNode 对仅索引叶子的�
   const managerSource = readText('web/js/modules/asset-manager.js');
   const fnStart = managerSource.indexOf('function assetRackFolderTotalCount(rootId, relPath){');
   const fnEnd = managerSource.indexOf('function gwAssetTreeSnapshot(){', fnStart);
-  assert.ok(fnStart >= 0 && fnEnd > fnStart, '定位 assetRackNodeHasAssets 与 serializeAssetRackFolderNode');
+  assert.ok(fnStart >= 0 && fnEnd > fnStart, '定位 serializeAssetRackFolderNode');
   const snippet = managerSource.slice(fnStart, fnEnd);
 
   const factory = new Function(
@@ -461,7 +461,7 @@ test('AC2: asset-manager.js serializeAssetRackFolderNode 对仅索引叶子的�
     'assetRackRegisteredFoldersByRoot',
     'assetRackDiskDirectories',
     'customBoardFolderTree',
-    `${snippet}; return { serializeAssetRackFolderNode, assetRackNodeHasAssets };`,
+    `${snippet}; return { serializeAssetRackFolderNode };`,
   );
 
   const indexed = [

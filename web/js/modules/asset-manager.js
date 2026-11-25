@@ -7279,33 +7279,31 @@ function gwAssetTreeEntryKey(){
     }
     return '';
 }
-function assetRackNodeHasAssets(rootId, node){
-    if(!registryRegisteredFoldersLoaded) return true;
-    const total = assetRackFolderTotalCount(rootId, node?.path || '');
-    if(total === null || total > 0) return true;
-    const cleanPath = String(node?.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    if(cleanPath){
-        const prefix = `${cleanPath}/`;
-        const hasIndexedDescendant = registryIndexedFolders.some(f => {
-            if(String(f.root_id || '') !== String(rootId || '')) return false;
-            const fp = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-            if(!fp.startsWith(prefix)) return false;
-            const cnt = f.total_count != null ? Number(f.total_count) : (f.count != null ? Number(f.count) : 0);
-            return cnt > 0;
-        });
-        if(hasIndexedDescendant) return true;
-    }
-    if(Array.isArray(node?.children)){
-        return node.children.some(child => assetRackNodeHasAssets(rootId, child));
-    }
-    return false;
-}
 function serializeAssetRackFolderNode(rootId, node, depth=1){
     const key = `mine:root:${rootId}::${node.path}`;
     const expanded = assetTreeExpanded.has(key);
     const totalCount = assetRackFolderTotalCount(rootId, node.path);
     const loading = totalCount === null;
-    const hasNonEmptyDescendant = assetRackNodeHasAssets(rootId, node);
+    const nodeHasAssets = (targetNode) => {
+        if(typeof registryRegisteredFoldersLoaded !== 'undefined' && !registryRegisteredFoldersLoaded) return true;
+        const t = assetRackFolderTotalCount(rootId, targetNode?.path || '');
+        if(t === null || t > 0) return true;
+        const cleanPath = String(targetNode?.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        const indexedList = typeof registryIndexedFolders !== 'undefined' && Array.isArray(registryIndexedFolders) ? registryIndexedFolders : [];
+        if(cleanPath){
+            const prefix = `${cleanPath}/`;
+            const hasIndexedDescendant = indexedList.some(f => {
+                if(String(f.root_id || '') !== String(rootId || '')) return false;
+                const fp = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+                if(!fp.startsWith(prefix)) return false;
+                const cnt = f.total_count != null ? Number(f.total_count) : (f.count != null ? Number(f.count) : 0);
+                return cnt > 0;
+            });
+            if(hasIndexedDescendant) return true;
+        }
+        return Array.isArray(targetNode?.children) && targetNode.children.some(child => nodeHasAssets(child));
+    };
+    const hasNonEmptyDescendant = nodeHasAssets(node);
     return {
         key,
         name: node.name,
