@@ -99,7 +99,8 @@ test('QIN-661 AC5/AC6：文件名下移至文件格式同级首行、单行中�
     const css = readFileSync(CSS_PATH, 'utf8');
     assert.match(css, /\.registry-detail-image-version > button:first-child\s*\{[^}]*justify-items:start;/);
     assert.match(css, /\.registry-detail-image-version\.is-selected\s*\{[^}]*border-color:var\(--gold-primary/);
-    assert.match(css, /\.asset-detail-media-sidebar-detail \.asset-detail-facts > div\s*\{[^}]*align-items:end;/);
+    assert.match(css, /\.asset-detail-facts > div\s*\{[^}]*min-height:32px;\s*padding:8px 0 6px;[^}]*align-items:end;/);
+    assert.match(css, /\.asset-detail-media-sidebar-detail \.asset-detail-facts > div\s*\{[^}]*min-height:32px;\s*padding:8px 0 6px;\s*align-items:end;/);
     assert.match(css, /\.asset-detail-media-sidebar-detail \.asset-detail-path span\s*\{[^}]*white-space:nowrap;/);
 
     const host = await createAssetViewHost({ tab: null });
