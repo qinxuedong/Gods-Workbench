@@ -99,12 +99,12 @@ def test_folders_recursive_counts_for_empty_intermediate_ancestors(tmp_path: Pat
 
     payload = registry_repo.folders(physical_id)
     by_path = {entry["path"]: entry for entry in payload["indexed_folders"]}
+    totals_by_path = {entry["path"]: entry for entry in payload["folder_totals"]}
 
     assert "god-recycler" not in by_path
-    assert by_path["ep01"]["count"] == 0
-    assert by_path["ep01"]["total_count"] == 2
-    assert by_path["ep01/shots"]["count"] == 0
-    assert by_path["ep01/shots"]["total_count"] == 2
+    assert "god-recycler" not in totals_by_path
+    assert totals_by_path["ep01"]["total_count"] == 2
+    assert totals_by_path["ep01/shots"]["total_count"] == 2
     assert by_path["ep01/shots/sh001"]["count"] == 1
     assert by_path["ep01/shots/sh001"]["total_count"] == 1
 

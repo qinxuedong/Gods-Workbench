@@ -2551,19 +2551,20 @@ def folders(root_id: Optional[str]) -> Dict[str, Any]:
             key = (source, "/".join(segments[:depth]))
             totals[key] = totals.get(key, 0) + direct
     indexed_folders = []
-    # QIN-660 AC3：遍历全部出现过的目录（含自身无直属文件、但子孙有素材的中间祖先目录）
-    for source, path in sorted(set(indexed.keys()) | set(totals.keys())):
-        summary = indexed.get((source, path))
-        direct_count = int(summary["count"]) if summary else 0
+    for (source, path), summary in sorted(indexed.items()):
         # QIN-542 AC3：count 保持「仅本层直接文件」口径；total_count 为含子目录的递归总数
         indexed_folders.append({
             "root_id": source,
             "path": path,
-            "count": direct_count,
-            "total_count": totals.get((source, path), direct_count),
-            "categories": dict(summary["categories"]) if summary else {},
+            "count": summary["count"],
+            "total_count": totals.get((source, path), int(summary["count"])),
+            "categories": summary["categories"],
         })
-    return {"folders": items, "indexed_folders": indexed_folders,
+    folder_totals = [
+        {"root_id": source, "path": path, "total_count": total}
+        for (source, path), total in sorted(totals.items())
+    ]
+    return {"folders": items, "indexed_folders": indexed_folders, "folder_totals": folder_totals,
             "root_id": root_id, "revision": raw["revision"],
             "data_status": DATA_STATUS_OK, "data_gaps": []}
 

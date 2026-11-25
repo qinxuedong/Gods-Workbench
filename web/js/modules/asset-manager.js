@@ -7236,10 +7236,17 @@ function assetTreeGlobalRootsList(){
 function assetRackFolderTotalCount(rootId, relPath){
     if(!registryRegisteredFoldersLoaded) return null;
     const cleanPath = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
-    const found = registryIndexedFolders.find(f => String(f.root_id || '') === String(rootId || '') && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
+    const rootKey = String(rootId || '');
+    const found = registryIndexedFolders.find(f => String(f.root_id || '') === rootKey && String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') === cleanPath);
     if(found && found.total_count != null) return Number(found.total_count);
     if(found && found.count != null) return Number(found.count);
-    return 0;
+    if(!cleanPath) return 0;
+    const prefix = `${cleanPath}/`;
+    return registryIndexedFolders.reduce((sum, f) => {
+        if(String(f.root_id || '') !== rootKey) return sum;
+        const p = String(f.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+        return p.startsWith(prefix) ? sum + Number(f.count || 0) : sum;
+    }, 0);
 }
 function assetRackGlobalFolderTree(rootId){
     const root = String(rootId || '');
