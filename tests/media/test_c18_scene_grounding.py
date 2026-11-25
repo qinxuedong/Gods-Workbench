@@ -8,6 +8,7 @@ import subprocess
 
 import pytest
 
+from gw.core.errors import CleanroomException
 from gw.media.keyframe_extractor import extract_keyframes
 from gw.media.scene_detector import detect_scenes
 
@@ -74,6 +75,12 @@ def test_detect_scenes_builds_millisecond_segment_metadata(tmp_path, monkeypatch
     ]
     assert len(calls) == 2
     assert any("gt(scene,0.3)" in argument for argument in calls[1])
+    assert calls[1].index("-threads") < calls[1].index("-i")
+    assert calls[1][calls[1].index("-threads") + 1] == "2"
+    assert calls[1][calls[1].index("-filter_threads") + 1] == "2"
+    video_filter = calls[1][calls[1].index("-vf") + 1]
+    assert video_filter.index("scale=320:-2:flags=fast_bilinear") < video_filter.index("select=")
+    assert "-sn" in calls[1] and "-dn" in calls[1]
 
 
 def test_real_ffmpeg_detects_scene_and_writes_webp_keyframes_and_sprite(tmp_path):
@@ -145,3 +152,21 @@ def test_real_ffmpeg_detects_scene_and_writes_webp_keyframes_and_sprite(tmp_path
         thumbnail = tmp_path / "grounding" / segment["thumbnail"]
         assert thumbnail.is_file()
         assert thumbnail.read_bytes()[8:12] == b"WEBP"
+
+    short_scenes = [
+        {"start_sec": 0.0, "end_sec": 0.05, "tags": []},
+        {"start_sec": 0.05, "end_sec": 0.15, "tags": []},
+    ]
+    short_result = extract_keyframes(video, short_scenes, tmp_path / "short-scenes")
+    assert len(short_result["metadata"]["video_segments"]) == 2
+
+    with pytest.raises(CleanroomException) as missing_frame:
+        extract_keyframes(
+            video,
+            [
+                {"start_sec": 0.0, "end_sec": 0.01, "tags": []},
+                {"start_sec": 0.01, "end_sec": 0.09, "tags": []},
+            ],
+            tmp_path / "no-frame",
+        )
+    assert missing_frame.value.code == "KEYFRAME_EXTRACTION_FAILED"

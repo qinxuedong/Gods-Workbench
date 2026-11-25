@@ -141,7 +141,7 @@ def test_collected_video_registers_scene_metadata_and_shot_index(monkeypatch):
     assert rows == [(asset["asset_id"], 0.0, 2.0)]
 
 
-def test_video_collect_extracts_and_indexes_shots_without_external_binaries(monkeypatch):
+def test_video_collect_indexes_shots_without_decoding_keyframes(monkeypatch):
     import sqlite3
     from gw.asset_registry import repository
     from gw.core import storage
@@ -170,10 +170,10 @@ def test_video_collect_extracts_and_indexes_shots_without_external_binaries(monk
     asset = result["asset"]
     assert asset["kind"] == "video"
     assert asset["metadata"]["video_metadata"]["scene_detection_status"] == "complete"
-    assert asset["metadata"]["video_metadata"]["keyframe_status"] == "decoded_in_memory"
+    assert asset["metadata"]["video_metadata"]["keyframe_status"] == "pending"
     assert asset["metadata"]["video_segments"] == scenes
     assert asset["duration"] == 1.0
-    assert decoded_midpoints == [0.5]
+    assert decoded_midpoints == []
     with sqlite3.connect(storage.data_root() / repository.ASSET_SEARCH_INDEX_FILENAME) as db:
         count = db.execute("SELECT count(*) FROM mvp1_shots WHERE asset_id = ?", (asset["asset_id"],)).fetchone()[0]
     assert count == len(asset["metadata"]["video_segments"])
