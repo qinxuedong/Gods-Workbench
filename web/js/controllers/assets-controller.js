@@ -656,12 +656,14 @@ window.WorkbenchAssets = (() => {
   }
 
   function openShellDeleteDialog(key, name) {
+    activeShellDialogGen += 1;
+    const dialogGen = activeShellDialogGen;
     document.querySelectorAll('#assetOrganizeDialogOverlay, .asset-organize-dialog-overlay').forEach(el => el.remove());
     const overlay = document.createElement('div');
     overlay.id = 'assetOrganizeDialogOverlay';
     overlay.className = 'asset-organize-dialog-overlay';
     overlay.innerHTML = `
-      <div class="asset-organize-dialog" id="assetOrganizeDialog" role="dialog" aria-modal="true" aria-label="删除文件夹">
+      <div class="asset-organize-dialog" id="assetOrganizeDialog" data-floating-content role="dialog" aria-modal="true" aria-label="删除文件夹">
         <header>
           <strong>删除文件夹</strong>
           <button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭">
@@ -683,20 +685,36 @@ window.WorkbenchAssets = (() => {
     const confirmBtn = overlay.querySelector('[data-asset-organize-dialog-confirm]');
 
     let isSubmitting = false;
+    const closeDialog = () => {
+      activeShellDialogGen += 1;
+      overlay.remove();
+    };
+    window.FloatingDismissal?.mark?.(overlay, {
+      kind: 'modal',
+      content: '[data-floating-content], [role="dialog"]',
+      close: closeDialog,
+      removeOnClose: true,
+    });
+    confirmBtn?.focus?.({ preventScroll: true });
+
     const confirm = async () => {
       if (isSubmitting) return;
       isSubmitting = true;
+      const submitGen = dialogGen;
       if (confirmBtn) {
         confirmBtn.disabled = true;
         confirmBtn.textContent = '删除中...';
       }
+      if (errorEl) errorEl.textContent = '';
       try {
         const bridge = organizeBridge();
         if (!bridge?.deleteFolder) throw new Error('资产库尚未就绪，请稍后重试');
         await bridge.deleteFolder(key);
-        overlay.remove();
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
+        closeDialog();
         showShellOrganizeToast(`已移入回收站：${name}`, true);
       } catch (err) {
+        if (submitGen !== activeShellDialogGen || !overlay.isConnected) return;
         if (errorEl) errorEl.textContent = err.message || '删除文件夹失败';
         isSubmitting = false;
         if (confirmBtn) {
@@ -711,7 +729,7 @@ window.WorkbenchAssets = (() => {
       if (cancelEl || e.target === overlay) {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
         return;
       }
       const confirmEl = e.target.closest('[data-asset-organize-dialog-confirm]');
@@ -727,7 +745,11 @@ window.WorkbenchAssets = (() => {
       if (e.key === 'Escape') {
         e.preventDefault();
         e.stopPropagation();
-        overlay.remove();
+        closeDialog();
+      } else if (e.key === 'Enter' && !e.target?.closest?.('[data-asset-organize-dialog-cancel]')) {
+        e.preventDefault();
+        e.stopPropagation();
+        void confirm();
       }
     });
   }

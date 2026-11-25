@@ -1800,7 +1800,7 @@ function renderAssetOrganizeDialog(){
     const state = assetOrganizeDialog;
     if(!state) return '';
     if(state.kind === 'create'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="新建子文件夹">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="新建子文件夹">
             <header><strong>新建子文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">位置：${escapeHtml(state.locationLabel)}</p>
             <input class="asset-organize-dialog-input" data-asset-organize-dialog-input value="${escapeAttr(state.value || '')}" placeholder="文件夹名称" maxlength="120" aria-label="新文件夹名称">
@@ -1809,14 +1809,14 @@ function renderAssetOrganizeDialog(){
         </div>`;
     }
     if(state.kind === 'delete'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="删除确认">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="删除确认">
             <header><strong>删除文件夹</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">「${escapeHtml(state.label)}」将移入应用回收站，不会永久删除；删除后可用 Ctrl+Z 撤销。</p>
             <footer><button class="hw-btn" type="button" data-asset-organize-dialog-cancel>取消</button><button class="hw-btn hw-btn-danger" type="button" data-asset-organize-dialog-confirm>删除</button></footer>
         </div>`;
     }
     if(state.kind === 'conflict'){
-        return `<div class="asset-organize-dialog" role="dialog" aria-modal="true" aria-label="重名处理">
+        return `<div class="asset-organize-dialog" data-floating-content role="dialog" aria-modal="true" aria-label="重名处理">
             <header><strong>目标位置已存在同名项</strong><button type="button" class="asset-organize-dialog-close" data-asset-organize-dialog-cancel aria-label="关闭"><i data-lucide="x"></i></button></header>
             <p class="asset-organize-dialog-hint">「${escapeHtml(state.name)}」在目标文件夹中已存在，请选择处理方式。</p>
             <footer class="asset-organize-dialog-choices">
@@ -1837,7 +1837,7 @@ function syncAssetOrganizeDialog(){
     host.className = 'storage-settings-overlay asset-organize-dialog-overlay';
     host.innerHTML = renderAssetOrganizeDialog();
     document.body.appendChild(host);
-    window.FloatingDismissal?.mark?.(host, {kind:'modal', content:'self', close:() => closeAssetOrganizeDialog('cancel')});
+    window.FloatingDismissal?.mark?.(host, {kind:'modal', content:'[data-floating-content], [role="dialog"]', close:() => closeAssetOrganizeDialog('cancel'), removeOnClose:true});
     refreshIcons();
     const input = host.querySelector('[data-asset-organize-dialog-input]');
     if(input){

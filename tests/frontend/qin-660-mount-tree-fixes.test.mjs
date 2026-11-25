@@ -200,11 +200,98 @@ test('QIN-660 AC4: openShellCreateDialog 兼容 qin-579 切片且支持确认、
   await Promise.resolve();
   assert.equal(toasts.length, 0);
 
-  // organize.js 确认失败时不提前关闭弹窗，且子目录新建展开祖先并重载已展开子路径
+  // organize.js 确认失败时不提前关闭弹窗，且 syncAssetOrganizeDialog 显式绑定外层遮罩防 Escape 残留
   assert.match(organize, /await assetOrganizeCreateFolder\(state, input\?\.value \|\| ''\);\s*if\(assetOrganizeDialog === state\) closeAssetOrganizeDialog\('created'\);/);
+  assert.match(organize, /<div class="asset-organize-dialog" data-floating-content role="dialog"/);
+  assert.match(organize, /FloatingDismissal\?\.mark\?\.\(host,\s*\{kind:'modal',\s*content:'\[data-floating-content\], \[role="dialog"\]',\s*close:\(\) => closeAssetOrganizeDialog\('cancel'\),\s*removeOnClose:true\}\)/);
   assert.match(controller, /FloatingDismissal\?\.mark\?\.\(overlay,/);
   assert.match(manager, /expandAssetTreeAncestors\(assetTreeSelectedKey\);/);
   assert.match(organize, /Promise\.all\(\[\.\.\.expandedSubPaths\]\.map\(sub => loadAssetRackDiskFolders\(id, sub\)\)\)/);
+});
+
+test('QIN-660 AC4: openShellDeleteDialog 接入 FloatingDismissal、自动聚焦、Enter/Escape 与飞行中取消守卫', async () => {
+  const fnSource = extractFunction(controller, '  function openShellDeleteDialog(key, name) {');
+  const toasts = [];
+  const marked = [];
+  const makeEl = (tag = 'div') => {
+    const el = {
+      tagName: tag.toUpperCase(),
+      id: '',
+      className: '',
+      innerHTML: '',
+      textContent: '',
+      disabled: false,
+      isConnected: true,
+      listeners: {},
+      addEventListener(name, cb) {
+        this.listeners[name] = cb;
+      },
+      focus() {},
+      remove() {
+        this.isConnected = false;
+      },
+      closest() { return null; },
+      querySelector(sel) {
+        if (sel === '[data-asset-organize-dialog-error]') return this._err;
+        if (sel === '[data-asset-organize-dialog-confirm]') return this._btn;
+        return null;
+      },
+    };
+    el._err = { textContent: '' };
+    el._btn = {
+      disabled: false,
+      textContent: '删除',
+      focused: false,
+      focus() { this.focused = true; },
+      closest(s) { return s === '[data-asset-organize-dialog-confirm]' ? this : null; },
+    };
+    return el;
+  };
+
+  let pendingResolve;
+  const bridge = {
+    deleteFolder: () => new Promise((resolve) => { pendingResolve = resolve; }),
+  };
+  const body = { children: [], appendChild(el) { this.children.push(el); } };
+  const document = {
+    body,
+    querySelectorAll: () => [],
+    createElement: (tag) => makeEl(tag),
+  };
+
+  const factory = new Function(
+    'document',
+    'window',
+    'organizeBridge',
+    'showShellOrganizeToast',
+    `let activeShellDialogGen = 0; ${fnSource}; return openShellDeleteDialog;`,
+  );
+  const openDel = factory(
+    document,
+    {
+      lucide: { createIcons() {} },
+      FloatingDismissal: { mark(el, opts) { marked.push({ el, opts }); } },
+    },
+    () => bridge,
+    (msg) => toasts.push(msg),
+  );
+
+  openDel('mine:root:r1::sub', 'sub');
+  const overlay = body.children.at(-1);
+  assert.equal(overlay._btn.focused, true);
+  assert.equal(marked.length, 1);
+  assert.equal(marked[0].opts.content, '[data-floating-content], [role="dialog"]');
+  assert.equal(marked[0].opts.removeOnClose, true);
+
+  // Enter 触发删除并在飞行中按 Escape 取消
+  await overlay.listeners.keydown({ key: 'Enter', target: overlay._btn, preventDefault() {}, stopPropagation() {} });
+  assert.equal(overlay._btn.disabled, true);
+  overlay.listeners.keydown({ key: 'Escape', preventDefault() {}, stopPropagation() {} });
+  assert.equal(overlay.isConnected, false);
+
+  pendingResolve({});
+  await Promise.resolve();
+  assert.equal(toasts.length, 0);
 });
 
 test('QIN-660 AC5 & 复审闭环: organize.js 完整导入并拦截取消后迟到副作用及历史系统目录', () => {
