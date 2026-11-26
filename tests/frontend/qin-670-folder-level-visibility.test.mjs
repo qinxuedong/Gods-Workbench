@@ -275,4 +275,54 @@ test('asset-manager 真实树序列化函数与 organize 显隐写入动作覆�
   assert.equal(writeAttempts, 1, 'FOLDER_ANCESTOR_HIDDEN 不应触发 409 重试');
   assert.equal(capturedArgs[4], 'shots/sc01');
   assert.match(toastText, /上级文件夹已隐藏/);
+
+  // 验证 gwSetMountedRootAssetsHidden 不会误清目录树缓存（防止展开再合起闪烁）
+  const gwSetSource = extractFunction(assetManagerSource, 'async function gwSetMountedRootAssetsHidden(rootTarget, hidden){', 'window.GWAssetOrganizeBridge =');
+  let resetCalls = 0;
+  let snapshotCalls = 0;
+  let settledSig = '10:1';
+  const gwSetFactory = new Function(
+    'assetOrganizeVisibilityTargetFromKey', 'gwCall', 'invalidateRegistryAssetCache',
+    'abortRegistryAssetRequests', 'registryPendingNewItems', 'refreshRegistryAssets',
+    'refreshRegistryFacetData', 'notifyShellTreeSnapshot', 'render', 'setStatus',
+    'registryDirectoryScopeSignature', 'getSettled', 'setSettled',
+    'registryPendingNewIds', 'registryPendingVanishedIds', 'registryReconcilePageIds',
+    `let registryRequestSeq = 0;
+     let registryDirectoryScopeSettled = getSettled();
+     const origSig = registryDirectoryScopeSignature;
+     ${gwSetSource.replace('if(typeof registryDirectoryScopeSignature === \'function\') registryDirectoryScopeSettled = registryDirectoryScopeSignature();', 'if(typeof registryDirectoryScopeSignature === \'function\') { registryDirectoryScopeSettled = registryDirectoryScopeSignature(); setSettled(registryDirectoryScopeSettled); }')}
+     return gwSetMountedRootAssetsHidden;`,
+  );
+  const runGwSet = gwSetFactory(
+    key => ({ key, id: 'r1', rootId: 'r1', isRoot: false, path: 'shots/sc01' }),
+    async (_ns, fn) => {
+      if (fn === 'setMountedRootAssetsHidden') {
+        settledSig = '10:2';
+        return { status: 'saved' };
+      }
+      if (fn === 'resetAssetRackDirectoryIndex') resetCalls += 1;
+      return null;
+    },
+    () => {},
+    () => {},
+    new Map(),
+    async () => {
+      if (currentSettled !== '10:2') resetCalls += 1;
+    },
+    async () => {},
+    () => { snapshotCalls += 1; },
+    () => {},
+    () => {},
+    () => '10:2',
+    () => settledSig,
+    v => { currentSettled = v; },
+    new Set(),
+    new Set(),
+    new Set(),
+  );
+  let currentSettled = '10:1';
+  const gwRes = await runGwSet({ key: 'mine:root:r1::shots/sc01' }, true);
+  assert.equal(gwRes.status, 'saved');
+  assert.equal(resetCalls, 0, '显隐切换不应清空目录树缓存导致树展开再合起');
+  assert.ok(snapshotCalls >= 1, '显隐切换应推送树快照');
 });

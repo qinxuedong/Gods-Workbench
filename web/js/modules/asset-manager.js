@@ -11765,6 +11765,11 @@ async function gwSetMountedRootAssetsHidden(rootTarget, hidden){
     const result = await gwCall('organize', 'setMountedRootAssetsHidden', target, Boolean(hidden));
     if(result?.status !== 'saved') return result || {status:'failed'};
 
+    // 显隐切换仅改变可见性过滤，不增删物理目录：同步目录作用域签名，避免后续
+    // refreshRegistryAssetsRequest 误判为目录变更并清空已展开的子目录树缓存。
+    if(typeof registryDirectoryScopeSignature === 'function') registryDirectoryScopeSettled = registryDirectoryScopeSignature();
+    notifyShellTreeSnapshot();
+
     // 存储设置 revision 独立于 registry revision：同时废弃缓存与在途旧列表代际。
     invalidateRegistryAssetCache('mounted-root-visibility');
     registryRequestSeq += 1;
