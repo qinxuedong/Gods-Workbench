@@ -314,16 +314,18 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
 def visible_asset_from_snapshot(
     raw: Dict[str, Any], asset_id: str, *, hidden_filter=None
 ) -> Optional[Dict[str, Any]]:
-    """从只读快照取单条可见登记；缺失或不可见返回 ``None``。
+    """从只读快照取单条镜头搜索可见登记；缺失、不可见或来源根已移除返回 ``None``。
 
-    供镜头检索下钻使用：与 ``get_asset`` 相同的 ``_visible`` 判定，但跳过详情
-    装饰（来源名、文件 stat、关联摘要），这些字段都不参与镜头检索输出。
+    供镜头检索下钻及最终输出复核使用：除 ``_visible`` 权限判定外，还沿用
+    资产列表的已移除来源根过滤；跳过来源名、文件 stat、关联摘要等详情装饰。
     """
     assets = raw.get("assets") if isinstance(raw, dict) else None
     record = assets.get(asset_id) if isinstance(assets, dict) else None
     if hidden_filter is None:
         hidden_filter = mounted_asset_hidden_filter()
     if not isinstance(record, dict) or not _visible(record) or hidden_filter(record):
+        return None
+    if _is_removed_asset(record, _removed_root_ids_for_search()):
         return None
     return record
 

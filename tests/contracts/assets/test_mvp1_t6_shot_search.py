@@ -25,7 +25,7 @@ from gw.asset_registry.hybrid_search import (
     shot_query_tokens,
 )
 from gw.core import storage
-from gw.core.sqlite_vec_engine import FTSMatch, ShotVectorMatch, SQLiteVecEngine
+from gw.core.sqlite_vec_engine import IndexMetadata, FTSMatch, ShotVectorMatch, SQLiteVecEngine
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 SHOT_API = "/api/asset-registry/search/shots"
@@ -494,6 +494,99 @@ def test_shot_search_returns_shot_hit_with_jump_timestamp(client: TestClient):
     # 未命中的镜头仍然可跳转，但排序必须落在命中镜头之后。
     others = [item for item in body["items"] if item["shot_index"] != 1]
     assert others and others[0]["score"] <= top["score"]
+
+
+@pytest.mark.parametrize(
+    ("root_id", "root_availability", "removed_root_ids"),
+    [
+        ("root-removed", "available", {"root-removed"}),
+        ("root-marker", "removed", set()),
+    ],
+)
+def test_shot_search_filters_vector_only_candidates_from_removed_roots(
+    client: TestClient,
+    monkeypatch,
+    root_id: str,
+    root_availability: str,
+    removed_root_ids: set[str],
+):
+    """纯向量候选也须遵守已移除来源根过滤，不能泄露镜头时间戳。"""
+    from gw.asset_registry.embedder import DEFAULT_MODEL_ID
+    from gw.core import sqlite_vec_engine
+
+    asset_id = "ast_removed_vector"
+    snapshot = {
+        "assets": {
+            asset_id: {
+                "asset_id": asset_id,
+                "id": asset_id,
+                "name": "已移除素材.mp4",
+                "kind": "video",
+                "root_id": root_id,
+                "storage_root_id": root_id,
+                "root_availability": root_availability,
+                "archived": False,
+                "hidden": False,
+                "metadata": {
+                    "video_segments": [
+                        {"start_sec": 0.0, "end_sec": 2.0, "tags": [], "summary": ""}
+                    ]
+                },
+            }
+        }
+    }
+    monkeypatch.setattr(repo, "readonly_registry_snapshot", lambda: snapshot)
+    monkeypatch.setattr(repo, "_removed_root_ids_for_search", lambda: removed_root_ids)
+    monkeypatch.setattr(repo, "shot_vector_enabled", lambda: True)
+    monkeypatch.setattr(
+        routes_asset_registry,
+        "_shot_vector_model_status",
+        lambda: {"ready": True, "model_version": "test-model-v1"},
+    )
+    monkeypatch.setattr(
+        routes_asset_registry, "_encode_shot_query", lambda *_args, **_kwargs: [1.0, 0.0]
+    )
+
+    class _VectorOnlyEngine:
+        dimensions = 2
+        vector_enabled = True
+        last_vector_search_degraded = False
+        last_shot_vector_search_degraded = False
+
+        def __init__(self, _db_path):
+            pass
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def index_metadata(self):
+            return IndexMetadata(DEFAULT_MODEL_ID, "test-model-v1", 2, "float32")
+
+        def search_fts(self, _query, *, limit):
+            return []
+
+        def search_vectors(self, _query_vector, *, limit):
+            return []
+
+        def search_shot_vectors(self, _query_vector, *, limit):
+            return [ShotVectorMatch(asset_id, 0, 0.0, 2.0, 0.01, (1.0, 0.0))]
+
+        def list_shots(self, *, asset_id):
+            return []
+
+    monkeypatch.setattr(sqlite_vec_engine, "SQLiteVecEngine", _VectorOnlyEngine)
+    db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    db_path.touch()
+
+    response = client.get(SHOT_API, params={"q": "无词面命中的查询"}, headers=AUTH)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["items"] == []
+    assert response.json()["shot_count"] == 0
 
 
 def test_shot_search_degrades_to_asset_hit_for_assets_without_segments(client: TestClient):
