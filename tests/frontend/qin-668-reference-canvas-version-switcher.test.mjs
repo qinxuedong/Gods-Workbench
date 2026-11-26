@@ -37,7 +37,6 @@ function createHost(){
             : jsonResponse({asset:{}}),
     });
 }
-
 async function openReference(host, items){
     host.main.setRegistryAssets(items);
     await host.main.gwCall('preview','showDetailPreview','registry',items[0].id,{
@@ -235,3 +234,67 @@ function trackTimers(){
         globalThis.setInterval=originalInterval;
     };
 }
+
+test('QIN-668：参考画布版本媒体慢加载 1500ms / 5000ms 时保留旧画面',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const selected=image('qin-668-slow');
+        await openReference(host,[selected]);
+        await setSelection(host,[selected.id]);
+        const state=host.main.detailViewerState;
+        state.imageVersions=[{id:'original',asset_id:selected.id,version_number:0,is_original:true,is_hidden:false},...VERSIONS];
+        state.imageVersionsAssetId=selected.id;
+        state.imageVersionSelectedId='original';
+        await host.main.gwCall('preview','renderDetailViewer');
+        const originalUrl=state.mediaCanvasItems[0].url;
+        for(const [versionId,delay,expectedSelected] of [['version-2',1500,'original'],['version-1',5000,'version-2']]){
+            click(host,currentSwitcher(host).querySelector(`[data-detail-canvas-image-version-select="${versionId}"]`));
+            await wait(delay);
+            assert.equal(state.imageVersionSwitchPendingId,versionId,`${delay}ms 内保持 pending`);
+            assert.equal(state.imageVersionSelectedId,expectedSelected,`${delay}ms 内保留已提交版本`);
+            assert.equal(state.mediaCanvasItems[0].url,versionId==='version-2'?originalUrl:`/api/asset-registry/assets/${selected.id}/image-versions/version-2/media`,`${delay}ms 内保留画布旧图`);
+            const request=images.instances.findLast(image=>image.src.includes(`/image-versions/${versionId}/media`));
+            assert.ok(request,`${delay}ms 请求保持可跟踪`);
+            request.onload();
+            await wait(20);
+            assert.equal(state.imageVersionSwitchPendingId,'');
+            assert.equal(state.imageVersionSelectedId,versionId,`${delay}ms 后才提交目标版本`);
+        }
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：普通媒体画布保留既有左侧版本管理栏',async()=>{
+    const restoreTimers=trackTimers();
+    const host=await createHost(async url=>String(url).includes('/image-versions?')?new Promise(()=>{}):jsonResponse({asset:{}}));
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const local=image('qin-668-local',{asset_id:'',url:'/assets/qin-668-local.png'});
+        await host.main.gwCall('preview','showDetailPreview','local',local.id,{items:[local],mediaCanvasItems:[]});
+        const selected=image('qin-668-legacy');
+        const state=host.main.detailViewerState;
+        state.source='registry';
+        state.id=selected.id;
+        state.index=0;
+        state.items=[selected];
+        state.mediaCanvasItems=[selected];
+        state.mediaCanvasActiveId=selected.id;
+        state.mediaCanvasSelectedIds=new Set([selected.id]);
+        state.mediaCanvasSelectionOrder=[selected.id];
+        state.referenceCanvasMode=false;
+        await host.main.gwCall('preview','renderDetailViewer');
+        const body=host.document.querySelector('.asset-detail-viewer-body');
+        assert.ok(body?.querySelector('.asset-detail-image-versions'),'非参考媒体画布继续显示原版本管理栏');
+        assert.equal(body.querySelector('.asset-detail-media-version-switcher'),null,'新切换条仅属于参考画布');    }finally{
+        host.dispose();
+        restoreDom();
+        restoreTimers();
+    }
+});
