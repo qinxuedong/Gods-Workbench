@@ -3160,10 +3160,11 @@ function loadDetailImageEditorImage(url){
 }
 async function openDetailImageEditor(itemId, options={}){
     const suppliedItem = options?.item || null;
+    const isRequestCurrent = typeof options?.isRequestCurrent === 'function' ? options.isRequestCurrent : null;
     const returnToCoverflow = options?.returnToCoverflow || null; const allowContextSwitch = Boolean(options?.allowContextSwitch);
     const requestedItemId = String(suppliedItem?.id || itemId || '').trim();
     if(detailImageEditorOpeningPromise && detailImageEditorOpeningItemId === requestedItemId) return detailImageEditorOpeningPromise; const generation = ++detailImageEditorOpenGeneration;
-    const opening = openDetailImageEditorNow(requestedItemId, suppliedItem, returnToCoverflow, allowContextSwitch, generation);
+    const opening = openDetailImageEditorNow(requestedItemId, suppliedItem, returnToCoverflow, allowContextSwitch, generation, isRequestCurrent);
     detailImageEditorOpeningPromise = opening;
     detailImageEditorOpeningItemId = requestedItemId;
     try {
@@ -3175,10 +3176,10 @@ async function openDetailImageEditor(itemId, options={}){
         }
     }
 }
-async function openDetailImageEditorNow(itemId, suppliedItem=null, returnToCoverflow=null, allowContextSwitch=false, generation=detailImageEditorOpenGeneration){
+async function openDetailImageEditorNow(itemId, suppliedItem=null, returnToCoverflow=null, allowContextSwitch=false, generation=detailImageEditorOpenGeneration, isRequestCurrent=null){
     const item = suppliedItem
         || detailMediaCanvasItems().find(value => value.id === itemId)
-        || detailViewerItem(detailViewerState.source, itemId); const viewerAtRequest = detailViewerState; const viewerIdAtRequest = String(detailViewerState.id || ''); const requestIsCurrent = () => generation === detailImageEditorOpenGeneration && detailViewerState === viewerAtRequest && (returnToCoverflow || allowContextSwitch || (viewerAtRequest.referenceCanvasMode ? detailMediaCanvasSingleSelectedImageItem()?.id === item.id : String(detailViewerState.id || '') === viewerIdAtRequest));
+        || detailViewerItem(detailViewerState.source, itemId); const viewerAtRequest = detailViewerState; const viewerIdAtRequest = String(detailViewerState.id || ''); const requestIsCurrent = () => generation === detailImageEditorOpenGeneration && detailViewerState === viewerAtRequest && (!isRequestCurrent || isRequestCurrent()) && (returnToCoverflow || allowContextSwitch || (viewerAtRequest.referenceCanvasMode ? detailMediaCanvasSingleSelectedImageItem()?.id === item.id : String(detailViewerState.id || '') === viewerIdAtRequest));
     if(!item || detailViewerType(detailViewerState.source,item) !== 'image') return;
     const abandonRequest = () => { if(generation === detailImageEditorOpenGeneration) setStatus('单图编辑入口已取消'); return false; }; setStatus('正在打开单图影院编辑器…');
     const currentAssetId = detailMediaCanvasPersistId(item);

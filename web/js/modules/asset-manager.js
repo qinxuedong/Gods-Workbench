@@ -10795,8 +10795,14 @@ document.addEventListener('keydown', event => {
                     return;
                 }
                 const item = candidate.item;
-                gwCall('preview', 'showDetailPreview', 'registry', item.id, {items:[item]})
-                    .then(() => gwCall('preview', 'openDetailImageEditor', item.id, {item}))
+                const contextCard=event.target?.closest?.('[data-registry-structure-card],[data-registry-card]')
+                    || document.activeElement?.closest?.('[data-registry-structure-card],[data-registry-card]');
+                const isContextCurrent=()=>Boolean(
+                    (contextCard && contextCard.isConnected!==false && (contextCard===document.activeElement || contextCard.contains?.(document.activeElement)))
+                    || String(selectedRegistryAssetId || '')===String(item.id || '')
+                    || (registrySelectedIds.size===1 && registrySelectedIds.has(String(item.id || '')))
+                );
+                gwCall('preview', 'openDetailImageEditor', item.id, {item,isRequestCurrent:isContextCurrent})
                     .catch(err => setStatus(err.message || '无法打开单图编辑器'));
                 return;
             }

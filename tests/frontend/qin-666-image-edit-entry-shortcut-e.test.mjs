@@ -323,6 +323,8 @@ test('网格 E/e 进入图片编辑、输入法事件不吞键、编辑器嵌入
         await wait(45);
         assert.equal(event.prevented,true);
         assert.equal(host.main.detailImageEditorState?.itemId,target.id,'网格 E 打开对应图片编辑器');
+        assert.equal(host.main.detailViewerState.open,false,'网格 E 直接进入编辑器，不先打开详情预览');
+        assert.equal(host.document.querySelector('.asset-detail-viewer'),null,'网格 E 不显示详情预览中间态');
         const editor=host.main.detailImageEditorState;
         const embedded=host.document.querySelector('.gw-coverflow--embedded');
         assert.ok(embedded,'图片编辑器挂载嵌入式 Coverflow');
@@ -335,6 +337,39 @@ test('网格 E/e 进入图片编辑、输入法事件不吞键、编辑器嵌入
         assert.equal(host.main.detailImageEditorState,editor,'E 不重开或替换当前编辑器');
         assert.equal(editor.tool,'eraser','编辑器内 E 继续切换橡皮擦');
     }finally{restore();host.dispose();restoreTimers();}
+});
+
+test('网格 E 慢加载期间焦点切换会取消旧图片请求',async()=>{
+    const restoreTimers=trackTimers();
+    const host=await createHost({tab:'registry'});
+    const restore=installCanvasAndImageStubs(host.document);
+    let loader;
+    try{
+        await loadCoverflow(host);
+        const first=image('qin-666-grid-stale-first'),second=image('qin-666-grid-stale-second');
+        host.main.setRegistryAssets([first,second]);
+        host.main.setSelectedRegistryAssetId(first.id);
+        const firstCard=host.document.createElement('div');
+        firstCard.dataset.registryCard=first.id;
+        const secondCard=host.document.createElement('div');
+        secondCard.dataset.registryCard=second.id;
+        host.root.append(firstCard,secondCard);
+        host.document.activeElement=firstCard;
+        loader=installImageLoader(()=>{});
+
+        const key=keyboard(firstCard,'e');
+        host.document.dispatchEvent(key);
+        await wait(15);
+        assert.equal(loader.instances.length,1);
+        host.main.setSelectedRegistryAssetId(second.id);
+        host.document.activeElement=secondCard;
+        loader.instances[0].onload?.();
+        await wait(20);
+
+        assert.equal(host.main.detailImageEditorState,null,'焦点切换后不打开旧素材编辑器');
+        assert.equal(host.main.detailViewerState.open,false,'取消请求不跳入旧素材详情');
+        assert.match(host.document.body.textContent,/单图编辑入口已取消/);
+    }finally{loader?.restore();restore();host.dispose();restoreTimers();}
 });
 
 test('版本结构卡 E 编辑 current_asset_id；真全屏 E 先退栈再打开预览与编辑器',async()=>{
@@ -355,6 +390,7 @@ test('版本结构卡 E 编辑 current_asset_id；真全屏 E 先退栈再打开
         versionCard.dataset.registryStructureType='version';
         versionCard.dataset.registryCard='structure:qin-666-version';
         host.root.appendChild(versionCard);
+        host.document.activeElement=versionCard;
         host.main.registrySelectedIds.add(older.id);
         host.main.registrySelectedIds.add(current.id);
         const versionKey=keyboard(versionCard,'e');
