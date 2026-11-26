@@ -316,7 +316,7 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
 # 任何票增删自己的分片都不需要重算下面这个常量，也就不会形成并行 PR 的热点。
 ADMISSION_METADATA_PATH = ADMISSION_BASE_METADATA_PATH
 ADMISSION_BASE_METADATA_SHA256 = (
-    "7bb4952c0ff9aaf8c0751062775a7433a13abc167c1a41548c85034b651191aa"
+    "d4c3709fbf06de46c950bc049b79ed793be68239b3042e2b4f80a1f710214f6f"
 )
 QUARANTINED_PROMPT_ORIGINAL_PATH = (
     "web/system-prompts/infinite-canvas-prompt-templates.md"
@@ -583,11 +583,6 @@ def test_github_issue_356_file_scope_is_registered(repo_root: Path):
         "gw/settings/native_picker.py",
         "web/js/modules/asset-manager.js",
         "web/css/pages/directory-settings.css",
-        "clients/desktop/Cargo.toml",
-        "clients/desktop/Cargo.lock",
-        "clients/desktop/src/main.rs",
-        "clients/desktop/capabilities/default.json",
-        "clients/desktop/README.md",
         "tests/contracts/settings/test_qin411_412_native_picker.py",
         "tests/e2e/test_api_settings_browser.py",
         "tests/frontend/qin-412-directory-settings.test.mjs",

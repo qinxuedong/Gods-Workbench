@@ -1,4 +1,4 @@
-/** C16-T3 PWA and Tauri desktop contract checks. */
+/** C16-T3 PWA contract checks (Tauri desktop checks moved to Gods-Workbench-Desktop). */
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
@@ -7,9 +7,6 @@ import vm from "node:vm";
 const manifest = JSON.parse(readFileSync("web/manifest.json", "utf8"));
 const page = readFileSync("web/pages/index.html", "utf8");
 const workerSource = readFileSync("web/sw.js", "utf8");
-const desktopConfig = JSON.parse(readFileSync("clients/desktop/tauri.conf.json", "utf8"));
-const desktopSource = readFileSync("clients/desktop/src/main.rs", "utf8");
-const desktopUi = readFileSync("clients/desktop/ui/app.js", "utf8");
 
 test("PWA manifest has an installable standalone entry and embedded SVG icon", () => {
   assert.equal(manifest.start_url, "/static/pages/index.html");
@@ -84,19 +81,4 @@ test("service worker caches only safe static shell requests", () => {
   assert.equal(context.isCacheableResponse(response("/static/pages/index.html", { "set-cookie": "session=secret" }), shellUrl), false);
   assert.equal(context.isCacheableResponse(response("/static/pages/index.html", {}, true), shellUrl), false);
   assert.equal(context.isCacheableResponse(response("/api/v1/projects"), shellUrl), false);
-});
-
-test("Tauri client probes NAS health, bounds discovery, persists only LAN URLs, and has a tray", () => {
-  assert.equal(desktopConfig.app.withGlobalTauri, true);
-  assert.equal(desktopConfig.app.windows[0].label, "main");
-  assert.match(desktopSource, /set_path\("\/healthz"\)/);
-  assert.match(desktopSource, /:2077/);
-  assert.match(desktopSource, /prefix\.max\(24\)/);
-  assert.match(desktopSource, /ensure_local_ui/);
-  assert.match(desktopSource, /WindowEvent::CloseRequested/);
-  assert.match(desktopSource, /TrayIconBuilder::new\(\)/);
-  assert.match(desktopSource, /set_query\(Some\("rescan=1"\)\)/);
-  assert.match(desktopUi, /discover_lan/);
-  assert.match(desktopUi, /connect_to_server/);
-  assert.match(desktopUi, /get\("rescan"\)/);
 });

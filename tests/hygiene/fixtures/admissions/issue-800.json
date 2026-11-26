@@ -3,6 +3,7 @@
   "issue": 800,
   "authorization_basis": "GitHub Issue #800 (QIN-646)",
   "files": [
-    "tests/runtime/test_qin_646_nsis_hooks_language.py"
-  ]
+    "tests/hygiene/fixtures/admissions/issue-800.json"
+  ],
+  "notes": "QIN-646：原 tests/runtime/test_qin_646_nsis_hooks_language.py 已于 QIN-672 迁出至桌面私有仓。"
 }

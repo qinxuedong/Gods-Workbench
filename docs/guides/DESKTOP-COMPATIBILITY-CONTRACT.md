@@ -41,7 +41,7 @@ PATCH /api/canvases/{canvas_id}
 
 ### 2.2 规范化与摘要
 
-能力摘要由 [`clients/desktop/packaging/compat_contract.py`](../../clients/desktop/packaging/compat_contract.py) 作为单一规范定义：把能力形状（profile、OpenAPI 标题与操作集合、健康与认证状态必需键、未认证 401 错误码、版本来源标记要求）规范化为键排序、紧致分隔的 JSON，再做 SHA-256。
+能力摘要由桌面发行版仓库（`qinxuedong/Gods-Workbench-Desktop`）中的 `clients/desktop/packaging/compat_contract.py` 作为单一规范定义，并与本核心仓 `run.py` 暴露的 `gw-compat-v1` 能力契约严格对齐：把能力形状（profile、OpenAPI 标题与操作集合、健康与认证状态必需键、未认证 401 错误码、版本来源标记要求）规范化为键排序、紧致分隔的 JSON，再做 SHA-256。
 
 当前基线：
 
@@ -97,11 +97,6 @@ cc47d8d4ac74adc87f073127886e13e71ffbcd3aef3248a11bb957d55c4086e2
 
 ## 7. 版本演进
 
-- 修改必需路径集合、必需键、401 错误包或摘要算法：必须提升 `capability_profile`，同步更新本文件、[`clients/desktop/packaging/compat_contract.py`](../../clients/desktop/packaging/compat_contract.py)、Rust 探针与契约测试。
+- 修改必需路径集合、必需键、401 错误包或摘要算法：必须提升 `capability_profile`，同步更新本文件以及桌面发行版私有仓（`qinxuedong/Gods-Workbench-Desktop`）中的 `compat_contract.py`、Rust 探针与桌面契约测试。
 - 不允许在 `gw-compat-v1` 下悄悄增删必需项；未知 profile 一律失败关闭。
-- 兼容契约的验证命令：
-
-```bash
-python -m pytest tests/runtime/test_qin_626_desktop_install_lifecycle.py -q
-python clients/desktop/packaging/compat_contract.py
-```
+- 桌面端兼容契约与打包验证命令由桌面发行版私有仓承载执行。

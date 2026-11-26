@@ -1,0 +1,28 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 847,
+  "authorization_basis": "GitHub Issue #847 (QIN-672), PM design approval 2026-11-26",
+  "files": [
+    ".github/workflows/ci.yml",
+    "README.md",
+    "README_EN.md",
+    "THIRD_PARTY_NOTICES.md",
+    "docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md",
+    "tests/contracts/auth/test_qin_630_trusted_local_owner.py",
+    "tests/contracts/settings/test_qin_638_installer_data_location.py",
+    "tests/frontend/c16-t3-pwa-installable.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/hygiene/fixtures/admissions/issue-520.json",
+    "tests/hygiene/fixtures/admissions/issue-698.json",
+    "tests/hygiene/fixtures/admissions/issue-761.json",
+    "tests/hygiene/fixtures/admissions/issue-774.json",
+    "tests/hygiene/fixtures/admissions/issue-783.json",
+    "tests/hygiene/fixtures/admissions/issue-800.json",
+    "tests/hygiene/fixtures/admissions/issue-847.json",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/hygiene/test_structure_guardrails.py",
+    "tests/runtime/test_qin_648_unified_data_dir.py"
+  ],
+  "notes": "QIN-672：将 clients/desktop/**、release-desktop.yml 与桌面打包测试迁出至独立私有仓 Gods-Workbench-Desktop，公开仓剥离 Rust 门禁并解耦跨边界测试与卫生登记。"
+}

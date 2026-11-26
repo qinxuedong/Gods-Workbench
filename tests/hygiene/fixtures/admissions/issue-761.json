@@ -3,32 +3,13 @@
   "issue": 761,
   "authorization_basis": "GitHub Issue #761, 2026-11-20",
   "files": [
-    ".github/workflows/release-desktop.yml",
     "THIRD_PARTY_NOTICES.md",
-    "clients/desktop/README.md",
-    "clients/desktop/packaging/acceptance/README.md",
-    "clients/desktop/packaging/acceptance/run_install_acceptance.ps1",
-    "clients/desktop/packaging/build_release.py",
-    "clients/desktop/packaging/compat_contract.py",
-    "clients/desktop/packaging/nsis/hooks.nsh",
-    "clients/desktop/packaging/nsis/upgrade.ps1",
-    "clients/desktop/packaging/runtime-lock.json",
-    "clients/desktop/packaging/verify_trusted_acl.py",
-    "clients/desktop/src/compat.rs",
-    "clients/desktop/src/main.rs",
-    "clients/desktop/src/sha256.rs",
-    "clients/desktop/src/trusted.rs",
-    "clients/desktop/ui/app.js",
-    "clients/desktop/ui/index.html",
-    "clients/desktop/ui/style.css",
     "docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md",
     "run.py",
     "tests/frontend/node-files.txt",
-    "tests/frontend/qin-626-desktop-installer-ui.test.mjs",
     "tests/hygiene/fixtures/admissions/issue-761.json",
     "tests/hygiene/test_admission_sharding.py",
     "tests/hygiene/test_cleanroom_hygiene.py",
-    "tests/runtime/test_qin_626_desktop_install_lifecycle.py",
     "web/js/controllers/settings.js",
     "web/pages/settings.html"
   ],
@@ -37,23 +18,10 @@
       "path": "docs/guides/DESKTOP-COMPATIBILITY-CONTRACT.md",
       "classification": "user_guide",
       "authorization_basis": "GitHub Issue #761, 2026-11-20",
-      "sha256": "1408a18524b50075f75f9732c46080c2ca5e802528c8c58fbf41a8fd79cf0883",
+      "sha256": "5092eb74561cd24bbd09288e75fa4de93274d79001a393d9ba78704d95e4723e",
       "admission": "accepted"
     }
   ],
-  "accepted_test_files": [
-    {
-      "path": "tests/runtime/test_qin_626_desktop_install_lifecycle.py",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "GitHub Issue #761, 2026-11-20",
-      "admission": "accepted"
-    },
-    {
-      "path": "tests/frontend/qin-626-desktop-installer-ui.test.mjs",
-      "classification": "curated_test_coverage",
-      "authorization_basis": "GitHub Issue #761, 2026-11-20",
-      "admission": "accepted"
-    }
-  ],
-  "notes": "QIN-626：Windows 标准安装版随版本内置后端、能力契约、一次性票据接线、ACL 校验与升级回退；只写本票分片，基础账本不动。"
+  "accepted_test_files": [],
+  "notes": "QIN-626：桌面客户端与 NSIS 打包文件（clients/desktop/、release-desktop.yml、test_qin_626、qin-626）已于 QIN-672 迁出至桌面私有仓，公开仓保留 gw-compat-v1 服务端兼容契约。"
 }

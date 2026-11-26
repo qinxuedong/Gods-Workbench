@@ -111,7 +111,6 @@ tests/frontend/qin-587-inbox-layout.test.mjs
 tests/frontend/qin-589-coverflow-visual.test.mjs
 tests/frontend/qin-590-asset-sidebar-collapse.test.mjs
 tests/frontend/qin-591-domain-gate.test.mjs
-tests/frontend/qin-593-desktop-auto-launch.test.mjs
 tests/frontend/qin-595-mounted-folder-empty-state.test.mjs
 tests/frontend/qin-596-resource-folder-add.test.mjs
 tests/frontend/qin-597-resource-folder-list.test.mjs
@@ -133,7 +132,6 @@ tests/frontend/qin-620-collab-center-data-ui-fix.test.mjs
 tests/frontend/qin-621-lut-library-import-delete-preview.test.mjs
 tests/frontend/qin-622-topbar-height-center-collapse.test.mjs
 tests/frontend/qin-625-resource-folder-regression.test.mjs
-tests/frontend/qin-626-desktop-installer-ui.test.mjs
 tests/frontend/qin-628-workspace-mapping-form.test.mjs
 tests/frontend/qin-628-workspace-task-context.test.mjs
 tests/frontend/qin-630-trusted-local.test.mjs
