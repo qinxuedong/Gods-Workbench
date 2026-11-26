@@ -25,7 +25,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
           path-to-signatures: '.github/cla-signatures.json'
-          branch: 'master'
+          branch: 'cla-signatures'
+          allowlist: 'qinxuedong,*[bot]'
           path-to-document: 'https://github.com/qinxuedong/Gods-Workbench/blob/master/CLA.md'
           custom-notsigned-prcomment: |
             感谢您向神工坊（Gods-Workbench）提交贡献！在合入您的代码前，请先阅读 [CLA.md](https://github.com/qinxuedong/Gods-Workbench/blob/master/CLA.md) 并在本 PR 下评论：
