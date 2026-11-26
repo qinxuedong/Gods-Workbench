@@ -97,6 +97,68 @@ test('QIN-597: shell 根菜单显示根动作并转发到共享资源文件夹�
   assert.ok(readOnlyButtons.every(button=>button.disabled), 'read-only users cannot invoke root actions');
 });
 
+test('QIN-656 AC3: shell 挂载根菜单仅在就绪且有权限时补跑镜头视觉向量', async () => {
+  const start = controller.indexOf('  function openShellOrganizeMenu(target, clientX, clientY) {');
+  const end = controller.indexOf('  function openShellCreateDialog(parentKey) {', start);
+  assert.ok(start >= 0 && end > start, 'shell organize menu function exists');
+  const source = controller.slice(start, end);
+  const calls = [];
+  const toasts = [];
+  const makeElement = () => ({
+    children: [], attributes: {}, listeners: {}, style: {}, isConnected: true,
+    setAttribute(name, value) { this.attributes[name] = value; },
+    addEventListener(name, listener) { this.listeners[name] = listener; },
+    appendChild(child) { this.children.push(child); },
+    remove() {},
+  });
+  const body = makeElement();
+  const document = {createElement:makeElement, getElementById:()=>null, body};
+  const window = {innerWidth:1200, innerHeight:800, lucide:{createIcons(){}}};
+  const bridge = {
+    canManageResourceFolders:()=>true,
+    canRunShotVectorJob:key=>key === 'mine:root:root_0123456789abcdef01234567',
+    getShotVectorStatus:async()=>({enabled:true,ready:true}),
+    runShotVectorJob:async (...args)=>{ calls.push(args); return {status:'succeeded',result:{assets:1,shots:2,frames:3}}; },
+    executeResourceFolderAction:async()=>{},
+  };
+  const factory = new Function('document','window','closeShellOrganizeMenu','organizeBridge','openShellCreateDialog','beginShellRename','openShellDeleteDialog','showShellOrganizeToast', `${source}; return openShellOrganizeMenu;`);
+  const openMenu = factory(document, window, ()=>{}, ()=>bridge, ()=>{}, ()=>{}, ()=>{}, text=>toasts.push(text));
+  const root = {isRoot:true,key:'mine:root:root_0123456789abcdef01234567',rootId:'root_0123456789abcdef01234567',id:'local_extra_test',aliases:['root_0123456789abcdef01234567'],name:'Film'};
+
+  openMenu(root, 20, 30);
+  const rootMenu = body.children.at(-1);
+  const vectors = rootMenu.children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-shot-vectors'));
+  assert.ok(vectors, 'shell mounted root menu exposes the vector rerun action');
+  assert.ok(vectors.disabled, 'vector action stays disabled until status is checked');
+  await Promise.resolve();
+  assert.equal(vectors.disabled, false, 'ready local model and enabled setting enable the action');
+  await vectors.listeners.click({stopPropagation(){}});
+  assert.deepEqual(calls, [[root.rootId, root.name]]);
+  assert.ok(toasts.some(text=>text.includes('补跑完成')));
+
+  openMenu({...root,isRoot:false}, 20, 30);
+  const childMenu = body.children.at(-1);
+  assert.equal(childMenu.children.some(button=>Object.hasOwn(button.attributes,'data-asset-organize-shot-vectors')), false);
+
+  const readOnlyBridge = {...bridge,canRunShotVectorJob:()=>false,getShotVectorStatus:async()=>{ throw new Error('status must not be requested'); }};
+  const readOnlyMenuFactory = new Function('document','window','closeShellOrganizeMenu','organizeBridge','openShellCreateDialog','beginShellRename','openShellDeleteDialog','showShellOrganizeToast', `${source}; return openShellOrganizeMenu;`);
+  const openReadOnlyMenu = readOnlyMenuFactory(document, window, ()=>{}, ()=>readOnlyBridge, ()=>{}, ()=>{}, ()=>{}, ()=>{});
+  openReadOnlyMenu(root, 20, 30);
+  const readOnlyVector = body.children.at(-1).children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-shot-vectors'));
+  assert.ok(readOnlyVector.disabled, 'read-only roots cannot run the vector action');
+
+  const notReadyBridge = {...bridge,getShotVectorStatus:async()=>({enabled:true,ready:false,message:'本地视觉模型或索引尚未就绪'})};
+  const openNotReadyMenu = factory(document, window, ()=>{}, ()=>notReadyBridge, ()=>{}, ()=>{}, ()=>{}, ()=>{});
+  openNotReadyMenu(root, 20, 30);
+  const notReadyVector = body.children.at(-1).children.find(button=>Object.hasOwn(button.attributes,'data-asset-organize-shot-vectors'));
+  await Promise.resolve();
+  assert.ok(notReadyVector.disabled, 'missing local model or index keeps the action disabled');
+  assert.match(notReadyVector.title, /尚未就绪/);
+  assert.match(manager, /canRunShotVectorJob,/);
+  assert.match(manager, /getShotVectorStatus,/);
+  assert.match(manager, /runShotVectorJob,/);
+});
+
 test('AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片拖拽移动', () => {
   // 文件夹拖拽属性与落点样式
   assert.match(controller, /data-asset-tree-drag/);

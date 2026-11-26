@@ -477,6 +477,8 @@ window.WorkbenchAssets = (() => {
     const canOrganize = Boolean(bridge?.canOrganize?.(target.key));
     const canToggleAssetsVisibility = Boolean(bridge?.canToggleAssetsVisibility?.(target.key));
     const canManageResourceFolders = Boolean(bridge?.canManageResourceFolders?.());
+    const canRunShotVectorJob = isRoot && Boolean(bridge?.canRunShotVectorJob?.(target.key));
+    let shotVectorButton = null;
     let hideEmptyFolders = false;
     try {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
@@ -499,6 +501,7 @@ window.WorkbenchAssets = (() => {
         title: toggleAssetsTitle,
       }] : []),
       ...(isRoot ? [
+        { id: 'shot-vectors', attr: 'data-asset-organize-shot-vectors', label: '补跑镜头视觉向量', icon: 'scan-search', disabled: true },
         {
           id: 'toggle-empty',
           attr: 'data-asset-organize-toggle-empty',
@@ -518,10 +521,33 @@ window.WorkbenchAssets = (() => {
       btn.setAttribute(item.attr, '');
       if (item.disabled) btn.disabled = true;
       if (item.title) btn.title = item.title;
+      if (item.id === 'shot-vectors') shotVectorButton = btn;
+      if (item.id === 'shot-vectors' && !canRunShotVectorJob) btn.title = '仅可对可管理的持久资源根补跑镜头视觉向量';
       if (item.danger) btn.className = 'is-danger';
       btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (item.id === 'shot-vectors') {
+          if (btn.disabled || !canRunShotVectorJob) return;
+          const currentBridge = organizeBridge();
+          if (typeof currentBridge?.runShotVectorJob !== 'function') return;
+          closeShellOrganizeMenu();
+          showShellOrganizeToast('正在提交镜头视觉向量补跑任务');
+          try {
+            const job = await currentBridge.runShotVectorJob(target.rootId, target.name);
+            if (job?.status === 'succeeded') {
+              const result = job.result || {};
+              showShellOrganizeToast(`补跑完成：${Number(result.assets || 0)} 项素材、${Number(result.shots || 0)} 个镜头、${Number(result.frames || 0)} 帧`);
+            } else if (['failed', 'cancelled', 'interrupted'].includes(job?.status)) {
+              showShellOrganizeToast('镜头视觉向量补跑失败，请查看任务状态');
+            } else {
+              showShellOrganizeToast('补跑任务已提交，仍在后台运行');
+            }
+          } catch (_) {
+            showShellOrganizeToast('镜头视觉向量补跑启动失败');
+          }
+          return;
+        }
         closeShellOrganizeMenu();
         const bridge = organizeBridge();
         if (item.id === 'toggle-empty') {
@@ -558,6 +584,19 @@ window.WorkbenchAssets = (() => {
       });
       menu.appendChild(btn);
     });
+
+    if (shotVectorButton && canRunShotVectorJob && typeof bridge?.getShotVectorStatus === 'function') {
+      bridge.getShotVectorStatus().then(status => {
+        if (!shotVectorButton.isConnected) return;
+        const ready = status?.enabled === true && status?.ready === true;
+        shotVectorButton.disabled = !ready;
+        shotVectorButton.title = ready
+          ? '在此资源根内异步补跑可见视频镜头的视觉向量'
+          : (status?.message || (status?.enabled === false ? '请先在设置中启用镜头视觉向量' : '本地视觉模型或索引尚未就绪'));
+      }).catch(() => {
+        if (shotVectorButton.isConnected) shotVectorButton.title = '无法读取本地视觉模型状态';
+      });
+    }
 
     menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - 230))}px`;
     menu.style.top = `${Math.max(8, Math.min(clientY, window.innerHeight - 240))}px`;
