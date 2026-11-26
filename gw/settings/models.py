@@ -69,6 +69,10 @@ class StorageSettingsSnapshot(BaseModel):
     local_library_read_only: dict[str, bool] = Field(
         default_factory=dict, exclude_if=lambda value: not value, description="来源内容只读策略"
     )
+    hidden_asset_root_keys: list[str] = Field(
+        default_factory=list,
+        description="隐藏素材挂载根目录路径键",
+    )
     local_libraries: list[dict[str, Any]] = Field(default_factory=list, description="本地素材库投影")
     data_status: str = Field(DATA_STATUS_NOT_CONFIGURED, description="ok 或 not_configured")
     data_gaps: list[str] = Field(default_factory=list, description="未接入 / 未配置原因")
@@ -84,6 +88,13 @@ class StorageSettingsPatchRequest(BaseModel):
     local_library_names: dict[str, str] | None = None
     local_library_order: list[str] | None = None
     local_library_read_only: dict[str, bool] | None = None
+    hidden_asset_root_keys: list[str] | None = None
+    hidden_asset_root_id: str | None = Field(
+        None, max_length=128, description="显隐命令的挂载根身份；由服务端展开为路径键"
+    )
+    hidden_asset_hidden: bool | None = Field(
+        None, description="显隐命令目标状态；与 hidden_asset_root_id 成对提供"
+    )
     expected_version: int | None = Field(None, ge=1, description="保存目录设置必须携带的 CAS 期望版本")
 
 

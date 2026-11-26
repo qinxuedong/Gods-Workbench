@@ -845,6 +845,7 @@ async function runAssetBoardOneTimeMigration(options={}){
 let resourceFolderActionSeq = 0;
 let resourceFolderActionBusy = '';
 let resourceFolderInternalViewSwitch = false;
+let mountedRootVisibilitySeq = 0;
 function invalidateResourceFolderAction(){
     if(!resourceFolderInternalViewSwitch){
         resourceFolderActionSeq += 1;
@@ -922,6 +923,40 @@ async function executeResourceFolderAction(rootTarget, action, options = {}){
     } finally {
         if(resourceFolderActionBusy === token) resourceFolderActionBusy = '';
     }
+}
+async function setMountedRootAssetsHidden(rootTarget, hidden){
+    if(!rootTarget?.isRoot || !rootTarget?.rootId){
+        return {status:'invalid-target'};
+    }
+    const token = ++mountedRootVisibilitySeq;
+    const current = () => mountedRootVisibilitySeq === token;
+    const identity = String(rootTarget.id || rootTarget.rootId);
+    for(let attempt = 0; attempt < 3; attempt += 1){
+        if(!current()) return {status:'stale'};
+        try {
+            const latest = await apiJsonResponse(assetManagerApi.getStorageSettings());
+            if(!current()) return {status:'stale'};
+            applyStorageSettingsData(latest || {});
+            const saved = await apiJsonResponse(assetManagerApi.setMountedRootVisibility(
+                identity,
+                Boolean(hidden),
+                Number(latest?.revision || storageSettingsState.revision || 0),
+            ));
+            if(!current()) return {status:'stale'};
+            applyStorageSettingsData(saved || {});
+            return {status:'saved'};
+        } catch(error){
+            if(!current()) return {status:'stale'};
+            if(attempt < 2 && /409|VERSION_CONFLICT|版本冲突/i.test(String(error?.message || ''))){
+                continue;
+            }
+            const message = error?.message || '挂载文件夹素材显隐设置失败';
+            setStatus(message);
+            showAssetOrganizeToast(message);
+            return {status:'failed', error};
+        }
+    }
+    return {status:'failed'};
 }
 function removeResourceFolderViewState(rootTarget, identity){
     registryAssetsQueryCache.clear();
@@ -3244,6 +3279,7 @@ GW_DEFERRED['organize'] = {
     assetOrganizePushUndo,
     cancelAssetBoardMigration,
     executeResourceFolderAction,
+    setMountedRootAssetsHidden,
     invalidateResourceFolderAction,
     assetOrganizeRefresh,
     beginAssetOrganizeRename,

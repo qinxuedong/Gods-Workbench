@@ -473,17 +473,27 @@ window.WorkbenchAssets = (() => {
     menu.appendChild(title);
 
     const isRoot = Boolean(target.isRoot);
-    const canManageResourceFolders = Boolean(organizeBridge()?.canManageResourceFolders?.());
+    const bridge = organizeBridge();
+    const canOrganize = Boolean(bridge?.canOrganize?.(target.key));
+    const canToggleAssetsVisibility = isRoot && Boolean(bridge?.canToggleAssetsVisibility?.(target.key));
+    const canManageResourceFolders = Boolean(bridge?.canManageResourceFolders?.());
     let hideEmptyFolders = false;
     try {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
     } catch (_) {}
     const items = [
-      { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: false },
-      { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
-      { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: false },
-      { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
+      { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: !canOrganize },
+      { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot || !canOrganize },
+      { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: !canOrganize },
+      { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot || !canOrganize, danger: true },
       ...(isRoot ? [
+        ...(canToggleAssetsVisibility ? [{
+          id: 'toggle-assets',
+          attr: 'data-asset-organize-toggle-assets',
+          label: target.assets_hidden ? '显示素材' : '隐藏素材',
+          icon: target.assets_hidden ? 'eye' : 'eye-off',
+          disabled: false,
+        }] : []),
         {
           id: 'toggle-empty',
           attr: 'data-asset-organize-toggle-empty',
@@ -519,6 +529,10 @@ window.WorkbenchAssets = (() => {
             }
           } catch (_) {}
           bridge?.setHideEmptyFolders?.(nextHide);
+          return;
+        }
+        if (item.id === 'toggle-assets') {
+          await bridge?.setMountedRootAssetsHidden?.(target, !Boolean(target.assets_hidden));
           return;
         }
         if (!bridge) return;
@@ -860,7 +874,7 @@ window.WorkbenchAssets = (() => {
   function shellNavButton(row, isSub = false) {
     const button = document.createElement('button');
     button.type = 'button';
-    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}`;
+    button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}${row.assets_hidden ? ' is-assets-hidden' : ''}`;
     if (row.active) button.setAttribute('aria-current', 'page');
     button.title = row.name;
     button.dataset.assetTreeEntry = row.key;
@@ -938,7 +952,7 @@ window.WorkbenchAssets = (() => {
     button.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (organizeBridge()?.canOrganize(row.key)) {
+      if (organizeBridge()?.canOrganize(row.key) || (row.isRoot && organizeBridge()?.canToggleAssetsVisibility?.(row.key))) {
         openShellOrganizeMenu(row, e.clientX, e.clientY);
       }
     });
@@ -1070,6 +1084,7 @@ window.WorkbenchAssets = (() => {
       icon: row.icon || '',
       offline: Boolean(row.offline),
       loading: Boolean(row.loading),
+      assets_hidden: Boolean(row.assets_hidden),
       hasChildren: Boolean(row.hasChildren),
       childKeys: (Array.isArray(row.children) ? row.children : []).map(child => child?.key || ''),
     });

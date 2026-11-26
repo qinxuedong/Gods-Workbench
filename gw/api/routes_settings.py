@@ -170,6 +170,7 @@ def _credential_vault() -> CredentialVault:
 @router.get(
     "/api/storage-settings",
     response_model=StorageSettingsSnapshot,
+    response_model_exclude_unset=True,
     summary="读取存储设置",
     status_code=status.HTTP_200_OK,
 )
@@ -247,6 +248,24 @@ def patch_storage_settings(
 ):
     """保存存储设置；要求 expected_version，版本不一致返回 409 VERSION_CONFLICT。"""
     require_edit_access(authorization, x_user_role)
+    has_root_id = payload.hidden_asset_root_id is not None
+    has_hidden_state = payload.hidden_asset_hidden is not None
+    if has_root_id or has_hidden_state:
+        if not has_root_id or not has_hidden_state or payload.hidden_asset_root_keys is not None:
+            raise CleanroomException(400, "INVALID_REQUEST", "挂载根显隐命令字段不完整或互相冲突")
+        from gw.asset_registry import index_jobs
+
+        identity_keys = set(index_jobs.root_identity_path_keys(payload.hidden_asset_root_id or ""))
+        current_keys = set(default_storage_settings_service.get_snapshot().hidden_asset_root_keys)
+        if payload.hidden_asset_hidden:
+            current_keys.update(identity_keys)
+        else:
+            current_keys.difference_update(identity_keys)
+        payload = payload.model_copy(update={
+            "hidden_asset_root_keys": sorted(current_keys),
+            "hidden_asset_root_id": None,
+            "hidden_asset_hidden": None,
+        })
     return default_storage_settings_service.patch(payload)
 
 

@@ -862,4 +862,14 @@ body:has(.observability-content) { background: var(--paper); }
 #assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub:is(.is-active, .active) :is(.asset-shell-nav-label, .asset-shell-nav-count) {
   color: #dfc384 !important;
 }
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button.is-assets-hidden:not(.is-active),
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub.is-assets-hidden:not(.is-active) {
+  filter: grayscale(0.72);
+  opacity: 0.68;
+}
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button.is-assets-hidden.is-active,
+#assetVaultSidebar #assetCategories .asset-shell-mount-section .asset-shell-nav-button-sub.is-assets-hidden.is-active {
+  filter: grayscale(0.18);
+  opacity: 0.9;
+}
 
