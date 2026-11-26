@@ -250,20 +250,33 @@ def patch_storage_settings(
     require_edit_access(authorization, x_user_role)
     has_root_id = payload.hidden_asset_root_id is not None
     has_hidden_state = payload.hidden_asset_hidden is not None
-    if has_root_id or has_hidden_state:
+    has_folder_path = payload.hidden_asset_folder_path is not None
+    if has_root_id or has_hidden_state or has_folder_path:
         if not has_root_id or not has_hidden_state or payload.hidden_asset_root_keys is not None:
             raise CleanroomException(400, "INVALID_REQUEST", "挂载根显隐命令字段不完整或互相冲突")
         from gw.asset_registry import index_jobs
 
-        identity_keys = set(index_jobs.root_identity_path_keys(payload.hidden_asset_root_id or ""))
+        identity_keys = set(
+            index_jobs.folder_identity_path_keys(
+                payload.hidden_asset_root_id or "",
+                payload.hidden_asset_folder_path,
+            )
+        )
         current_keys = set(default_storage_settings_service.get_snapshot().hidden_asset_root_keys)
         if payload.hidden_asset_hidden:
             current_keys.update(identity_keys)
         else:
+            if index_jobs.has_strict_hidden_ancestor(identity_keys, current_keys):
+                raise CleanroomException(
+                    409,
+                    "FOLDER_ANCESTOR_HIDDEN",
+                    "上级文件夹已隐藏，请先恢复上级显示",
+                )
             current_keys.difference_update(identity_keys)
         payload = payload.model_copy(update={
             "hidden_asset_root_keys": sorted(current_keys),
             "hidden_asset_root_id": None,
+            "hidden_asset_folder_path": None,
             "hidden_asset_hidden": None,
         })
     return default_storage_settings_service.patch(payload)

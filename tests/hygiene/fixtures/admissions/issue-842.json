@@ -1,0 +1,36 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 842,
+  "authorization_basis": "GitHub Issue #842 (QIN-670)",
+  "files": [
+    "gw/api/routes_settings.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/settings/models.py",
+    "tests/contracts/assets/test_qin670_folder_level_visibility.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-664-mounted-folder-visibility.test.mjs",
+    "tests/frontend/qin-670-folder-level-visibility.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-842.json",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/api.js",
+    "web/js/modules/asset-manager/organize.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin670_folder_level_visibility.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #842 (QIN-670)",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-670-folder-level-visibility.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #842 (QIN-670)",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-670 folder-level asset visibility with ancestor inheritance; base admission metadata unchanged."
+}

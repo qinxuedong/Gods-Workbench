@@ -208,13 +208,18 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
-        setMountedRootVisibility(rootId, hidden, expectedVersion, init = {}) {
+        setMountedRootVisibility(rootId, hidden, expectedVersion, init = {}, folderPath = '') {
+            const payload = {
+                hidden_asset_root_id: String(rootId || ''),
+                hidden_asset_hidden: Boolean(hidden),
+                expected_version: Number(expectedVersion),
+            };
+            const cleanFolder = String(folderPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+            if (cleanFolder) {
+                payload.hidden_asset_folder_path = cleanFolder;
+            }
             return transport.request('/api/storage-settings', {
-                ...jsonInit({
-                    hidden_asset_root_id: String(rootId || ''),
-                    hidden_asset_hidden: Boolean(hidden),
-                    expected_version: Number(expectedVersion),
-                }, {...init, method: 'PATCH'}),
+                ...jsonInit(payload, {...init, method: 'PATCH'}),
                 credentials: 'same-origin',
             });
         },

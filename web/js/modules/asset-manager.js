@@ -864,7 +864,7 @@ let canvasAssetManageMode = false;
 let searchCompositionActive = false;
 let searchRenderTimer = null;
 let lastSearchCompositionEndAt = 0;
-let storageSettingsState = {open:false, tab:'boards', focusSection:'', dirs:{}, defaults:{}, revision:null, extraLocalDirs:[], extraLocalEntries:[], localLibraryNames:{}, localLibraryReadOnly:{}, localLibraries:[]};
+let storageSettingsState = {open:false, tab:'boards', focusSection:'', dirs:{}, defaults:{}, revision:null, extraLocalDirs:[], extraLocalEntries:[], localLibraryNames:{}, localLibraryReadOnly:{}, hiddenAssetRootKeys:[], localLibraries:[]};
 let allowedRootSettingsState = {revision:null, roots:[], loading:false, saving:false, error:''};
 let serverDirectoryBrowserState = {open:false, path:null, parent:null, directories:[], loading:false, saving:false, error:'', key:'projects'};
 let assetAiSettingsState = {rule:'', defaultRule:'', loading:false, saving:false, message:'', backgroundTaskId:''};
@@ -7327,7 +7327,29 @@ function gwAssetTreeEntryKey(){
     }
     return '';
 }
-function serializeAssetRackFolderNode(rootId, node, depth=1, assetsHidden=false){
+function folderHiddenStatesForKey(rootId, relPath='', parentHidden=false, facetHidden=false){
+    const normKey = raw => String(raw || '').replace(/\\/g, '/').replace(/\/+$/g, '').toLowerCase();
+    const settingsObj = typeof storageSettingsState !== 'undefined' ? storageSettingsState : null;
+    const hiddenKeys = (Array.isArray(settingsObj?.hiddenAssetRootKeys) ? settingsObj.hiddenAssetRootKeys : [])
+        .map(normKey)
+        .filter(Boolean);
+    const cleanRel = String(relPath || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    const abs = typeof assetOrganizeAbsPath === 'function' ? assetOrganizeAbsPath(rootId, cleanRel) : '';
+    const selfKey = abs ? normKey(abs) : '';
+    const selfHidden = Boolean(
+        (selfKey && hiddenKeys.includes(selfKey)) ||
+        (!cleanRel && !hiddenKeys.length && facetHidden)
+    );
+    const inheritedHidden = Boolean(parentHidden) || Boolean(
+        selfKey && hiddenKeys.some(hk => hk !== selfKey && selfKey.startsWith(`${hk}/`))
+    );
+    return {
+        selfHidden,
+        inheritedHidden,
+        assetsHidden: Boolean(selfHidden || inheritedHidden),
+    };
+}
+function serializeAssetRackFolderNode(rootId, node, depth=1, parentHidden=false){
     const key = `mine:root:${rootId}::${node.path}`;
     const expanded = assetTreeExpanded.has(key);
     const totalCount = assetRackFolderTotalCount(rootId, node.path);
@@ -7352,12 +7374,17 @@ function serializeAssetRackFolderNode(rootId, node, depth=1, assetsHidden=false)
         return Array.isArray(targetNode?.children) && targetNode.children.some(child => nodeHasAssets(child));
     };
     const hasNonEmptyDescendant = nodeHasAssets(node);
+    const {selfHidden, inheritedHidden, assetsHidden} = typeof folderHiddenStatesForKey === 'function'
+        ? folderHiddenStatesForKey(rootId, node.path, parentHidden, false)
+        : {selfHidden: false, inheritedHidden: Boolean(parentHidden), assetsHidden: Boolean(parentHidden)};
     return {
         key,
         name: node.name,
         path: node.path,
         isRoot: false,
-        assets_hidden: Boolean(assetsHidden),
+        self_hidden: selfHidden,
+        inherited_hidden: inheritedHidden,
+        assets_hidden: assetsHidden,
         count: loading ? '' : totalCount,
         loading,
         hasNonEmptyDescendant,
@@ -7385,7 +7412,10 @@ function gwAssetTreeSnapshot(){
         const count = hasFacet ? Number(facetRoot.count) : (root.count != null ? Number(root.count) : '');
         const loading = !hasFacet && root.count == null;
         const offline = String(root.availability || '').toLowerCase() === 'offline' || String(facetRoot?.availability || '').toLowerCase() === 'offline';
-        const assetsHidden = Boolean(facetRoot?.assets_hidden || root.assets_hidden);
+        const facetHidden = Boolean(facetRoot?.assets_hidden || root.assets_hidden);
+        const {selfHidden, inheritedHidden, assetsHidden} = typeof folderHiddenStatesForKey === 'function'
+            ? folderHiddenStatesForKey(root.id, '', false, facetHidden)
+            : {selfHidden: facetHidden, inheritedHidden: false, assetsHidden: facetHidden};
 
         const resolvedPath = assetRackRootDiskPath(root.id);
         return {
@@ -7399,6 +7429,8 @@ function gwAssetTreeSnapshot(){
             count,
             loading,
             offline,
+            self_hidden: selfHidden,
+            inherited_hidden: inheritedHidden,
             assets_hidden: assetsHidden,
             key,
             writable: assetOrganizeWritableRoot(root.id),
@@ -7690,21 +7722,33 @@ function assetOrganizeVisibilityTargetFromKey(key){
     if(!assetOrganizeIsMineTree()) return null;
     const value = String(key || '');
     if(!value.startsWith('mine:root:')) return null;
-    const rootId = value.slice('mine:root:'.length);
-    if(!rootId || rootId.includes('::')) return null;
+    const body = value.slice('mine:root:'.length);
+    const sepIndex = body.indexOf('::');
+    const rootId = sepIndex > 0 ? body.slice(0, sepIndex) : body;
+    const relPath = sepIndex > 0 ? body.slice(sepIndex + 2).replace(/\\/g, '/').replace(/^\/+|\/+$/g, '') : '';
+    if(!rootId || (sepIndex > 0 && !relPath)) return null;
     const rootFacet = (registryFacets.roots || []).find(root =>
         [root.id, ...(root.aliases || [])].map(String).includes(rootId));
     if(!rootFacet) return null;
     const lowerRoot = rootId.toLowerCase();
     if(lowerRoot === 'video' || lowerRoot === 'image') return null;
+    const {selfHidden, inheritedHidden, assetsHidden} = folderHiddenStatesForKey(
+        rootId,
+        relPath,
+        false,
+        Boolean(rootFacet.assets_hidden),
+    );
     return {
         key:value,
         id:String(rootFacet.id || rootId),
         rootId,
+        path:relPath,
         aliases:Array.isArray(rootFacet.aliases) ? rootFacet.aliases.map(String) : [],
-        name:String(rootFacet.name || rootId),
-        isRoot:true,
-        assets_hidden:Boolean(rootFacet.assets_hidden),
+        name:relPath ? (relPath.split('/').pop() || relPath) : String(rootFacet.name || rootId),
+        isRoot:!relPath,
+        self_hidden:selfHidden,
+        inherited_hidden:inheritedHidden,
+        assets_hidden:assetsHidden,
     };
 }
 function assetOrganizePhysicalRootId(targetOrRootId){
@@ -11720,6 +11764,11 @@ async function gwSetMountedRootAssetsHidden(rootTarget, hidden){
     if(!target) return {status:'invalid-target'};
     const result = await gwCall('organize', 'setMountedRootAssetsHidden', target, Boolean(hidden));
     if(result?.status !== 'saved') return result || {status:'failed'};
+
+    // 显隐切换仅改变可见性过滤，不增删物理目录：同步目录作用域签名，避免后续
+    // refreshRegistryAssetsRequest 误判为目录变更并清空已展开的子目录树缓存。
+    if(typeof registryDirectoryScopeSignature === 'function') registryDirectoryScopeSettled = registryDirectoryScopeSignature();
+    notifyShellTreeSnapshot();
 
     // 存储设置 revision 独立于 registry revision：同时废弃缓存与在途旧列表代际。
     invalidateRegistryAssetCache('mounted-root-visibility');

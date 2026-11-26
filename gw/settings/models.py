@@ -92,6 +92,9 @@ class StorageSettingsPatchRequest(BaseModel):
     hidden_asset_root_id: str | None = Field(
         None, max_length=128, description="显隐命令的挂载根身份；由服务端展开为路径键"
     )
+    hidden_asset_folder_path: str | None = Field(
+        None, max_length=1024, description="显隐命令的根内相对文件夹路径；缺省或空串表示挂载根"
+    )
     hidden_asset_hidden: bool | None = Field(
         None, description="显隐命令目标状态；与 hidden_asset_root_id 成对提供"
     )
