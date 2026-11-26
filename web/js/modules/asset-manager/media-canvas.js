@@ -1028,7 +1028,21 @@ function renderDetailMediaCanvasImageVersionHistory(){
             const label=version.is_original?'原始素材':`V${number}`;
             return `<div class="registry-detail-image-version ${selected?'is-selected':''} ${version.is_hidden?'is-hidden':''}"><button type="button" data-detail-image-version-select="${escapeAttr(version.id)}" title="打开${escapeAttr(label)}"><span><b>${escapeHtml(label)}${version.is_hidden?' · 已隐藏':''}</b><small>${escapeHtml(formatDate(version.created_at))}</small></span><i data-lucide="chevron-right"></i></button><button type="button" data-detail-image-version-visibility="${escapeAttr(version.id)}" data-hidden="${version.is_hidden?'1':'0'}" title="${version.is_original?'原始素材不能隐藏':version.is_hidden?'显示此版本':'隐藏此版本'}" aria-label="${version.is_hidden?'显示':'隐藏'}${escapeAttr(label)}" ${version.is_original?'disabled':''}><i data-lucide="${version.is_hidden?'eye-off':'eye'}"></i></button><button type="button" data-detail-image-version-edit="${escapeAttr(version.id)}" title="编辑${escapeAttr(label)}" aria-label="编辑${escapeAttr(label)}"><i data-lucide="pencil"></i></button><button type="button" data-detail-image-version-delete="${escapeAttr(version.id)}" title="${version.is_original?'原始素材不能删除':`删除${label}`}" aria-label="删除${escapeAttr(label)}" ${version.is_original?'disabled':''}><i data-lucide="trash-2"></i></button></div>`;
         }).join('') || '<p class="asset-detail-media-version-status">当前仅有原始素材</p>';
-    return `<section class="registry-detail-block registry-image-versions asset-detail-media-version-history"><div class="registry-detail-heading"><strong>版本历史</strong><span>${versions.length || 0}</span></div>${content}</section>`;
+    const switchVersions=detailMediaCanvasSingleSelectedImageItem()?.id===item.id && !detailViewerState.imageVersionsLoading
+        ? versions.filter(version=>!version.is_hidden)
+        : [];
+    const switcher=switchVersions.length<2 ? '' : `<div class="asset-detail-media-version-switcher" data-detail-canvas-image-version-switcher role="group" aria-label="画布图片版本切换" ${detailViewerState.imageVersionSwitchPendingId?'aria-busy="true"':''}>
+        ${switchVersions.map(version=>{
+            const original=version.is_original || version.id==='original';
+            const label=original?'原始':`版本${Number(version.version_number||0)}`;
+            const selected=String(detailViewerState.imageVersionSelectedId)===String(version.id);
+            const pending=String(detailViewerState.imageVersionSwitchPendingId||'')===String(version.id);
+            return `<button type="button" class="${selected?'is-selected':''} ${pending?'is-pending':''}" data-detail-canvas-image-version-select="${escapeAttr(version.id)}" aria-pressed="${selected}" title="切换到${escapeAttr(label)}">${escapeHtml(label)}</button>`;
+        }).join('')}
+        ${detailViewerState.imageVersionSwitchPendingId?`<span class="asset-detail-media-version-switch-status" role="status">正在加载目标版本…</span>`:''}
+        ${detailViewerState.imageVersionSwitchError?`<span class="asset-detail-media-version-switch-status is-error" role="alert">${escapeHtml(detailViewerState.imageVersionSwitchError)}</span>`:''}
+    </div>`;
+    return `<section class="registry-detail-block registry-image-versions asset-detail-media-version-history"><div class="registry-detail-heading"><strong>版本历史</strong><span>${versions.length || 0}</span></div>${content}${switcher}</section>`;
 }
 function renderDetailMediaCanvasSidebarDetail(){
     const canvasItem=detailActiveImageItem();
@@ -1352,6 +1366,7 @@ function selectDetailMediaCanvasItem(id, event={}){
         order = [objectId];
     }
     detailViewerState.mediaCanvasSelectionOrder = order;
+    detailViewerState.cancelImageVersionSwitch?.({refresh:false});
     const mediaItem = detailMediaCanvasItems().find(value => value.id === id);
     if(selected.has(objectId) && mediaItem) detailViewerState.mediaCanvasActiveId = id;
     else if(!selected.has(objectId) && detailViewerState.mediaCanvasActiveId === id){
@@ -1599,6 +1614,9 @@ function activateDetailMediaCanvasItem(id, rerender=true, preserveSelection=fals
     if(!id) return;
     const item = detailMediaCanvasItems().find(value => value.id === id);
     if(!item) return;
+    if(detailViewerState.mediaCanvasActiveId && detailViewerState.mediaCanvasActiveId !== id){
+        detailViewerState.cancelImageVersionSwitch?.({refresh:false});
+    }
     if(detailViewerState.mediaCanvasActiveId && detailViewerState.mediaCanvasActiveId !== id){
         document.querySelectorAll('.asset-detail-viewer video.asset-detail-player').forEach(video => { if(video.closest('[data-detail-media-canvas-node]')?.dataset.detailMediaCanvasNode !== id) video.pause?.(); });
     }

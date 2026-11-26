@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 839,
+  "authorization_basis": "GitHub Issue #839 (QIN-668), design-approved 2026-11-26",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-668-reference-canvas-version-switcher.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-839.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/media-canvas.js",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-668-reference-canvas-version-switcher.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #839 (QIN-668), 2026-11-26",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-668：参考画布移除左侧图片版本列，在右侧版本历史下添加可见版本切换条，并验证异步加载成功、失败、乱序与关闭后的状态保护。"
+}

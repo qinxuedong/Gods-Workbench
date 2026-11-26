@@ -836,7 +836,7 @@ let detailViewerState = {
     mediaCanvasLibraryQuery:'', mediaCanvasLibrarySort:'newest', mediaCanvasLibraryScope:'all', mediaCanvasLibraryStorageRootId:'all', mediaCanvasLibraryScrollTop:0, mediaCanvasSidebarView:'detail',
     mediaCanvasScale:1, mediaCanvasX:0, mediaCanvasY:0, mediaCanvasFitted:false,
     videoRanges:{}, videoExportRootId:'', videoExportBusy:'', videoStoryboardExpandedId:'',
-    imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
+    imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionSwitchPendingId:'',imageVersionSwitchError:'',
     referenceCanvasId:'', referenceCanvasTitle:'参考画布', referenceCanvasMode:false, referenceCanvasStructureId:'', referenceCanvasSaving:false, originTab:'registry'
 };
 let detailViewerClickState = {source:'', id:'', at:0};
@@ -10185,6 +10185,7 @@ function detailImageVersionSelection(item,versions=[]){
     return String(versions.find(version=>version.is_original || version.id==='original')?.id || 'original');
 }
 async function loadDetailImageVersions(item=detailActiveImageItem(),force=false){
+    detailViewerState.cancelImageVersionSwitch?.({refresh:false});
     const assetId=detailImageVersionAssetId(item);
     if(!assetId){
         detailViewerState.imageVersions=[]; detailViewerState.imageVersionsAssetId=''; detailViewerState.imageVersionsLoading=false; detailViewerState.imageVersionSelectedId='';
@@ -10266,6 +10267,7 @@ function closeDetailPreview(force=false){
         setStatus('已取消正文编辑，再次关闭可退出详情');
         return false;
     }
+    detailViewerState.cancelImageVersionSwitch?.({refresh:false});
     const returnFocus = detailViewerState.returnFocus;
     const fullscreen = document.fullscreenElement;
     if(fullscreen?.closest?.('.asset-detail-viewer')){
@@ -10315,7 +10317,7 @@ function closeDetailPreview(force=false){
         mediaCanvasLibraryQuery:'', mediaCanvasLibrarySort:'newest', mediaCanvasLibraryScope:'all', mediaCanvasLibraryStorageRootId:'all', mediaCanvasLibraryScrollTop:0, mediaCanvasSidebarView:'detail',
         mediaCanvasScale:1, mediaCanvasX:0, mediaCanvasY:0, mediaCanvasFitted:false,
         videoRanges:{}, videoExportRootId:'', videoExportBusy:'', videoStoryboardExpandedId:'',
-        imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionPanelCollapsed:true,
+        imageVersions:[],imageVersionsAssetId:'',imageVersionsLoading:false,imageVersionSelectedId:'',imageVersionSwitchPendingId:'',imageVersionSwitchError:'',
         // 与打开处保持同一份字段表；少写一项，下次打开就拿到 undefined。
         lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
         mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
