@@ -5,7 +5,7 @@
 [![Language](https://img.shields.io/badge/Language-English%20%7C%20%E4%B8%AD%E6%96%87-blue.svg)](#-language-switcher)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-FSL--1.1--Apache--2.0-D22128.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-quick-start)
 [![Architecture](https://img.shields.io/badge/Design-Local--First-success.svg)](#-data-security--asset-sovereignty)
 
@@ -204,9 +204,13 @@ To guarantee that user assets remain completely untangled from source code revis
 
 ---
 
-## 📄 License
+## 📄 License, Trademarks & CLA
 
-This project is licensed under the [Apache License 2.0](LICENSE). For full licensing details and third-party attributions, please refer to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+- **Source License**: This project is licensed under [**FSL-1.1-Apache-2.0**](LICENSE) (Functional Source License, Version 1.1, Apache 2.0 Future License; Licensor: `qinxuedong`; Change Date: `2028-11-26`, automatically converting to Apache License 2.0 after two years). See [`LICENSE`](LICENSE) for the full text.
+- **Trademarks & Brand Notice**: "神工坊", "Gods' Workbench", "Gods-Workbench", and associated brand assets are reserved trademarks of the project owner. See [`NOTICE`](NOTICE) for full trademark and redistribution restrictions.
+- **Commercial Licensing**: For commercial licensing, Competing Use permissions, or brand authorization, contact `343996519@qq.com` / `qinxuedong321@gmail.com` or reach out via [Gods-Workbench](https://github.com/qinxuedong/Gods-Workbench).
+- **Contributor License Agreement (CLA)**: External contributors are required to read and sign [`CLA.md`](CLA.md) on pull requests.
+- **Third-Party Attributions**: For full third-party attributions, please refer to [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
 ---
 

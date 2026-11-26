@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 846,
+  "authorization_basis": "GitHub Issue #846 (QIN-671), PM design approval issuecomment-7189872163",
+  "files": [
+    "LICENSE",
+    "NOTICE",
+    "CLA.md",
+    ".github/workflows/cla.yml",
+    "README.md",
+    "README_EN.md",
+    "THIRD_PARTY_NOTICES.md",
+    "scripts/apply_license_headers.py",
+    "tests/hygiene/test_structure_guardrails.py",
+    "tests/hygiene/test_public_resource_integrity.py",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "tests/hygiene/fixtures/cleanroom_admission_metadata.json",
+    "tests/hygiene/fixtures/admissions/issue-846.json"
+  ],
+  "notes": "QIN-671 补齐商标 NOTICE 与自动化 CLA，切换主仓许可证为 FSL-1.1-Apache-2.0 并全覆盖等行数替换全仓 329 个自有源码文件顶部许可证头，同步更新卫生门禁。"
+}

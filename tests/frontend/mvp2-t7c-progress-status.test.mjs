@@ -1,8 +1,8 @@
 /**
- * Copyright 2026 Gods-Workbench Authors
- *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
+ * Copyright 2026 qinxuedong (Gods-Workbench Authors)
+ * SPDX-License-Identifier: FSL-1.1-Apache-2.0
+ * Licensed under the Functional Source License, Version 1.1, Apache 2.0
+ * Future License (the "License"); see LICENSE for details.
  */
 // MVP2-T7c（QIN-459 / #417）：任务进度步骤、失败原因（纯文本/防 XSS）、
 // 重启后状态一致、API 失败明确错误态。全程 mock fetch，不引入任何第三方依赖。

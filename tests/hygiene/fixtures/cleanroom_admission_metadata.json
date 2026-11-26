@@ -1105,7 +1105,7 @@
     {
       "path": "tests/contracts/assets/test_qin_431_restore_suffix_metadata.py",
       "authorization_basis": "QIN-431_Issue_354_2026-10-28",
-      "sha256": "60c6ccceb8223ad57a77d6c0ecd7691d2904133baf167c23fc4b8423894e9ba2"
+      "sha256": "17fb5c1e17172fae05d6b59423f8928f42a81477ae57108bad62e5f218b01ee1"
     },
     {
       "path": "tests/contracts/assets/test_mvp2_t2_provenance.py",
@@ -1115,27 +1115,27 @@
     {
       "path": "tests/contracts/assets/test_mvp1_t5_governance.py",
       "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "766199d0ad3de7ea50d6b59fdf115b4649b437711132a1c7664eb49660d31872"
+      "sha256": "0c91dca94e712bb487c1d18391b042022b93af358e1dfd13ed066a4ad9f2987a"
     },
     {
       "path": "tests/frontend/mvp1-t5-governance-list.test.mjs",
       "authorization_basis": "MVP1-T5_Cut_2026-10-26",
-      "sha256": "a2194765ddada12b557d786a93a5a18da453b4818cd942bbba5a62c9e44d8845"
+      "sha256": "415ded39bd375013e07ee6eec293f098c327ef9bef24a2a21f69031ac942fbdc"
     },
     {
       "path": "tests/contracts/agent/test_mvp2_t0_asset_search_tool.py",
       "authorization_basis": "MVP2-T0_GitHub_Issue_364_2026-10-28",
-      "sha256": "3ed7bd03e6297e3c13dad571e1b6452b88c8448053c134d651896e1ff7bd966b"
+      "sha256": "1015b5d23b4d595cdef9e757b5019b3db6a8f2461930d6f6968ecae3dfbefa61"
     },
     {
       "path": "tests/contracts/agent/test_mvp2_t4_pipeline_tools.py",
       "authorization_basis": "QIN-446_Issue_368_2026-10-28",
-      "sha256": "07239fdcf8f898bbfda116a98062ee66488653ae09c92e3521f31e997058183c"
+      "sha256": "d83c8c9e279652308eb074eae73b5fd6c393c3278a53fa4b862668c633a69f02"
     },
     {
       "path": "tests/contracts/agent/test_mvp2_t5b_timeline_tool.py",
       "authorization_basis": "QIN-461_Issue_419_2026-10-28",
-      "sha256": "172f85c52f145ce4d0fec8f5aab8d85d22e059e37100d481a0212fe738e48c51"
+      "sha256": "bb0fdbfa136c1b8b41cd36921e66465c979da42574ede1681e16553b5e14587c"
     }
   ]
 }

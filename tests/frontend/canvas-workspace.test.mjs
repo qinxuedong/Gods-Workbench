@@ -1,6 +1,6 @@
 /**
- * Copyright 2026 Gods-Workbench Authors
- * Licensed under the Apache License, Version 2.0
+ * Copyright 2026 qinxuedong (Gods-Workbench Authors)
+ * Licensed under the Functional Source License, Version 1.1 (FSL-1.1-Apache-2.0)
  * 
  * canvas-workspace.test.mjs
  * 验证画布工作台引擎与工作流样式/动效完全对齐
