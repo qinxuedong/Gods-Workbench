@@ -81,6 +81,7 @@ endpoints:
         extra_local_entries: array
         local_library_names: object
         local_library_order: array
+        hidden_asset_root_keys: "array（隐藏素材挂载根目录路径键列表）"
         local_libraries: array
         data_status: "string（not_configured | ok）"
         data_gaps: array
@@ -97,6 +98,9 @@ endpoints:
       extra_local_entries: "array | optional"
       local_library_names: "object | optional"
       local_library_order: "array | optional"
+      hidden_asset_root_keys: "array | optional（直接替换隐藏素材挂载根目录路径键列表；不可与命令字段混用）"
+      hidden_asset_root_id: "string | optional（显隐命令的挂载根身份，由服务端展开为路径键；须与 hidden_asset_hidden 成对提供）"
+      hidden_asset_hidden: "boolean | optional（显隐命令目标状态；与 hidden_asset_root_id 成对提供）"
       expected_version: "integer | optional（缺省时不校验 revision）"
       expected_revision: "integer | optional（前端既有别名，等价 expected_version）"
     status:
@@ -113,10 +117,11 @@ endpoints:
         extra_local_entries: array
         local_library_names: object
         local_library_order: array
+        hidden_asset_root_keys: array
         data_status: string
         data_gaps: array
     errors:
-      400: "expected_version 非法或字段类型不合法"
+      400: "expected_version 非法、字段类型不合法或挂载根显隐命令字段不完整/互斥"
       401: "未认证"
       403: "无写权限（只读角色）"
       409: "VERSION_CONFLICT revision 不一致"

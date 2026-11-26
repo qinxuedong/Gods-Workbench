@@ -15,7 +15,7 @@ decisions:
   cas: "所有写操作接受 expected_version；与当前 revision 不一致返回 409 VERSION_CONFLICT，附 expected_version/current_version，禁止静默覆盖；目录模板记录写以template_cas为准。"
   asset_list_query: "GET assets支持kind、archived、名称query/search、project_id、tag（tag_id或标签名）、include_tags/exclude_tags（逗号分隔，包含取全部匹配），category为image/video/audio/document/model/font/other按kind归类。sort支持newest/oldest/name/size_desc；省略时保持asset_id升序。view仅card/grid/list布局提示，不改变数据，其他值400。未知分类返回空结果，不忽略过滤。"
   additional_filters: "recent_days为1到36500的整数，筛选UTC当日零点往前指定天数后创建的记录，日期边界绑定游标指纹。root_id/collection_id未建立关联模型，非空时400 UNSUPPORTED_OPTION，不静默忽略。"
-  facets_counts: "facets的kinds/categories返回name/count实际计数组，tags附真实引用数count；前端统计不得从字符串条目推断为零。"
+  facets_counts: "facets的kinds/categories返回name/count实际计数组，tags附真实引用数count，roots每项附assets_hidden（boolean，按hidden_asset_root_keys判定该挂载根组素材是否隐藏）；前端统计不得从字符串条目推断为零。"
   asset_list_cursor: "next_cursor为绑定查询指纹和集合revision的base64url(JSON)分页位置；格式错误/查询不一致400 INVALID_CURSOR，集合变更409 VERSION_CONFLICT；cursor与非零offset同时提供时必须一致；不使用未验证的客户端游标授权访问。"
   template_cas: "目录模板使用记录级version（旧记录缺字段时为1），PATCH/归档/默认必须携带expected_version；过期409，缺失或非整数400；成功递增真实记录版本。创建时expected_version若提供仍校验集合revision。默认切换会递增被取消默认记录的version。"
   template_fields: "name/project_type/directory_tree/slot_mapping创建、更新、GET保持一致落盘；folders是directory_tree兼容别名，同时提供且不一致返回400；目录为相对路径字符串数组，映射值须指向已声明目录；未知更新字段400。"
@@ -203,7 +203,7 @@ interfaces:
     path: /api/asset-registry/facets
     body: null
     status: [200, 400, 401, 403, 404, 409, 413, 503]
-    response_200: "返回由真实资产/标签聚合出的筛选维度"
+    response_200: "返回由真实资产/标签/挂载根聚合出的筛选维度（roots 条目含 id/name/count/availability/aliases/assets_hidden）"
     acceptance: "统一错误包 {detail:{code,message,...}}；写入必须可读回，删除必须不再返回；缺依赖 503 不得静默假成功"
   - name: get_api_asset_registry_folders
     method: GET
