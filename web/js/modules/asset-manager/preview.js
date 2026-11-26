@@ -232,7 +232,7 @@ import {
     addSelectedAssetsToDetailMediaCanvas,
     adjustDetailMediaCanvasZoom,
     applyDetailMediaCanvasAnnotationColor,
-    beginDetailMediaCanvasAnnotationEdit,
+    beginDetailMediaCanvasAnnotationEdit, detailMediaCanvasSingleSelectedImageItem,
     closeDetailMediaCanvasContextMenu,
     deleteDetailMediaCanvasSelection,
     detailMediaCanvasInitialLibraryScope,
@@ -331,7 +331,7 @@ let registryDetailPanelResizeState = null;
 let detailImageEditorOpeningPromise = null;
 let detailImageEditorOpeningItemId = '';
 let detailImageEditorPointer = null;
-let detailCinemaClickState = {id:'', at:0};
+let detailImageEditorOpenGeneration = 0;
 let detailMediaCanvasPositionRaf = 0;
 let detailViewerFontFace = null;
 let detailViewerFontLoadToken = 0;
@@ -660,9 +660,9 @@ function closeRegistryAssetFullscreenViewer({restoreFocus=true}={}){
     document.removeEventListener('fullscreenchange', state.onFullscreenChange);
     if(document.fullscreenElement && document.exitFullscreen){
         const exitPromise = document.exitFullscreen();
-        if(exitPromise && typeof exitPromise.catch === 'function'){
-            exitPromise.catch(err => console.warn('[AssetManager] 退出真全屏失败:', err));
-        }
+        state.exitFullscreenPromise = exitPromise && typeof exitPromise.catch === 'function'
+            ? exitPromise.catch(err => console.warn('[AssetManager] 退出真全屏失败:', err))
+            : Promise.resolve();
     }
     state.overlay?.remove();
     if(restoreFocus && state.trigger?.focus) state.trigger.focus({preventScroll:true});
@@ -746,7 +746,7 @@ function openRegistryAssetFullscreenViewer(trigger=null, options={}){
     document.addEventListener('fullscreenchange', state.onFullscreenChange);
     state.onKeydown = event => {
         const key = String(event.key || '');
-        if(['ArrowLeft','ArrowRight'].includes(key)){
+        if(key.toLowerCase() === 'e' && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && !event.repeat && !event.target?.closest?.('input,textarea,select,[contenteditable="true"]')) handleRegistryFullscreenViewerEdit(event,state); else if(['ArrowLeft','ArrowRight'].includes(key)){
             event.preventDefault();
             event.stopPropagation();
             registryFullscreenViewerShow(state, state.index + (key === 'ArrowRight' ? 1 : -1));
@@ -3159,11 +3159,11 @@ function loadDetailImageEditorImage(url){
     });
 }
 async function openDetailImageEditor(itemId, options={}){
-    const suppliedItem = options?.item || null;
-    const returnToCoverflow = options?.returnToCoverflow || null;
+    const suppliedItem = options?.item || null; const isRequestCurrent = typeof options?.isRequestCurrent === 'function' ? options.isRequestCurrent : null;
+    const returnToCoverflow = options?.returnToCoverflow || null; const allowContextSwitch = Boolean(options?.allowContextSwitch);
     const requestedItemId = String(suppliedItem?.id || itemId || '').trim();
-    if(detailImageEditorOpeningPromise && detailImageEditorOpeningItemId === requestedItemId) return detailImageEditorOpeningPromise;
-    const opening = openDetailImageEditorNow(requestedItemId, suppliedItem, returnToCoverflow);
+    if(detailImageEditorOpeningPromise && detailImageEditorOpeningItemId === requestedItemId) return detailImageEditorOpeningPromise; const generation = ++detailImageEditorOpenGeneration;
+    const opening = openDetailImageEditorNow(requestedItemId, suppliedItem, returnToCoverflow, allowContextSwitch, generation, isRequestCurrent);
     detailImageEditorOpeningPromise = opening;
     detailImageEditorOpeningItemId = requestedItemId;
     try {
@@ -3175,23 +3175,23 @@ async function openDetailImageEditor(itemId, options={}){
         }
     }
 }
-async function openDetailImageEditorNow(itemId, suppliedItem=null, returnToCoverflow=null){
+async function openDetailImageEditorNow(itemId, suppliedItem=null, returnToCoverflow=null, allowContextSwitch=false, generation=detailImageEditorOpenGeneration, isRequestCurrent=null){
     const item = suppliedItem
         || detailMediaCanvasItems().find(value => value.id === itemId)
-        || detailViewerItem(detailViewerState.source, itemId);
+        || detailViewerItem(detailViewerState.source, itemId); const viewerAtRequest = detailViewerState; const viewerIdAtRequest = String(detailViewerState.id || ''); const requestIsCurrent = () => generation === detailImageEditorOpenGeneration && detailViewerState === viewerAtRequest && (!isRequestCurrent || isRequestCurrent()) && (returnToCoverflow || allowContextSwitch || (viewerAtRequest.referenceCanvasMode ? detailMediaCanvasSingleSelectedImageItem()?.id === item.id : String(detailViewerState.id || '') === viewerIdAtRequest));
     if(!item || detailViewerType(detailViewerState.source,item) !== 'image') return;
+    const abandonRequest = () => { if(generation === detailImageEditorOpenGeneration) setStatus('单图编辑入口已取消'); return false; }; setStatus('正在打开单图影院编辑器…');
     const currentAssetId = detailMediaCanvasPersistId(item);
     let stored = item.reference_edit && typeof item.reference_edit === 'object' ? item.reference_edit : {};
     const explicitVersion=String(item.image_version_selection || '');
     if(currentAssetId && !explicitVersion && !Object.keys(stored).length){
-        const versionData=await apiJsonResponse(assetManagerApi.getRegistryImageVersions(currentAssetId,1)).catch(()=>null);
+        const versionData=await apiJsonResponse(assetManagerApi.getRegistryImageVersions(currentAssetId,1)).catch(()=>null); if(!requestIsCurrent()) return abandonRequest();
         const latest=versionData?.versions?.[0];
         if(latest?.edit) stored=latest.edit;
     }
     const sourceAssetId = String(stored.source_asset_id || currentAssetId || '');
     const sourceUrl = sourceAssetId ? `/api/asset-registry/assets/${encodeURIComponent(sourceAssetId)}/media` : String(stored.source_url || detailViewerUrl(detailViewerState.source,item) || '');
-    setStatus('正在打开单图影院编辑器…');
-    const sourceImage = await loadDetailImageEditorImage(sourceUrl);
+    let sourceImage; try{sourceImage = await loadDetailImageEditorImage(sourceUrl);}catch(error){if(generation !== detailImageEditorOpenGeneration || !requestIsCurrent()) return abandonRequest();throw error;} if(!requestIsCurrent()) return abandonRequest();
     const sourceWidth = Math.max(1,Number(stored.source_width || sourceImage.naturalWidth || 1));
     const sourceHeight = Math.max(1,Number(stored.source_height || sourceImage.naturalHeight || 1));
     const rawCrop = stored.crop && typeof stored.crop === 'object' ? stored.crop : {};
@@ -3994,7 +3994,12 @@ document.addEventListener('click', event => {
         if(registryRelationDelete){ removeRegistryAssetRelation(registryRelationDelete.dataset.assetId || '', registryRelationDelete.dataset.registryRelationDelete || '').catch(err => setStatus(err.message || '解除关联失败')); return; }
     }
     const mediaCanvasContextAction = event.target.closest?.('[data-detail-media-context-action]');
-    if(mediaCanvasContextAction){ handleDetailMediaCanvasContextAction(mediaCanvasContextAction.dataset.detailMediaContextAction || ''); return; }
+    if(mediaCanvasContextAction){
+        const action = mediaCanvasContextAction.dataset.detailMediaContextAction || '';
+        if(action === 'edit-image') enterCurrentDetailEditableContent();
+        else handleDetailMediaCanvasContextAction(action);
+        return;
+    }
     const detailVideoAction = event.target.closest?.('[data-detail-video-action]');
     if(detailVideoAction){ handleDetailVideoControl(detailVideoAction).catch(err => { setStatus(err.message || '视频操作失败'); showAssetFailure('视频操作失败',err); }); return; }
     if(event.target.closest?.('[data-detail-media-coverflow-toggle]')){ setDetailMediaCanvasCoverflowVisible(!detailMediaCanvasCoverflowVisible); return; }
@@ -4151,12 +4156,27 @@ document.addEventListener('dblclick', event => {
         if(layer) beginDetailImageEditorInlineText(layer.id,false);
         return;
     }
-    const cinemaImage = event.target.closest?.('[data-detail-media-canvas-node]');
-    if(cinemaImage && !cinemaImage.closest?.('.asset-detail-media-minimap')){
-        const item = detailMediaCanvasItems().find(value => value.id === (cinemaImage.dataset.detailMediaCanvasNode || ''));
-        if(item && detailViewerType(detailViewerState.source,item) === 'image'){
+    const pointTarget = Number.isFinite(event.clientX) && Number.isFinite(event.clientY)
+        ? document.elementFromPoint(event.clientX,event.clientY)
+        : null;
+    const cinemaImage = event.target.closest?.('[data-detail-media-canvas-node]')
+        || pointTarget?.closest?.('[data-detail-media-canvas-node]');
+    const cinemaControl = event.target.closest?.('.asset-detail-media-minimap,[data-detail-media-resize],button,a,input,textarea,select,video,.asset-detail-video-controls')
+        || pointTarget?.closest?.('.asset-detail-media-minimap,[data-detail-media-resize],button,a,input,textarea,select,video,.asset-detail-video-controls');
+    if(cinemaImage && !cinemaControl && !cinemaImage.closest?.('.asset-detail-media-minimap')){
+        const id = cinemaImage.dataset.detailMediaCanvasNode || '';
+        const latest = detailViewerState.mediaCanvasLastGesture;
+        const previous = detailViewerState.mediaCanvasPreviousGesture;
+        const bothClicksWithoutMovement = latest?.id === id && latest.mode === 'move' && !latest.moved
+            && previous?.id === id && previous.mode === 'move' && !previous.moved
+            && Date.now()-Number(latest.at || 0) <= 1200;
+        const item = detailMediaCanvasItems().find(value => value.id === id);
+        if(bothClicksWithoutMovement && item && detailViewerType(detailViewerState.source,item) === 'image'){
             event.preventDefault(); event.stopPropagation();
-            openDetailImageEditor(item.id).catch(err => setStatus(err.message || '无法打开单图编辑模式'));
+            document.querySelectorAll('.asset-detail-viewer .is-moving,.asset-detail-viewer .is-resizing').forEach(node => node.classList.remove('is-moving','is-resizing'));
+            detailViewerState.mediaCanvasLastGesture = null;
+            detailViewerState.mediaCanvasPreviousGesture = null;
+            openDetailImageEditor(item.id,{item}).catch(err => setStatus(err.message || '无法打开单图编辑模式'));
             return;
         }
     }
@@ -4180,25 +4200,17 @@ document.addEventListener('dblclick', event => {
     event.preventDefault(); event.stopPropagation();
     beginDetailMediaCanvasAnnotationEdit(annotation.dataset.detailMediaAnnotationNode || '');
 });
-function handleDetailCinemaPointer(event){
-    if(event.button !== 0 || event.shiftKey || event.ctrlKey || event.metaKey || event.altKey || detailImageEditorState) return;
-    const node = event.target.closest?.('[data-detail-media-canvas-node]');
-    if(!node || node.closest?.('.asset-detail-media-minimap') || event.target.closest?.('[data-detail-media-resize],button,a,input,textarea,select,.asset-detail-video-controls')) return;
-    const id = node.dataset.detailMediaCanvasNode || '';
-    const item = detailMediaCanvasItems().find(value => value.id === id);
-    if(!item || detailViewerType(detailViewerState.source,item) !== 'image') return;
-    const now = Date.now();
-    if(detailCinemaClickState.id === id && now-detailCinemaClickState.at < 420){
-        event.preventDefault();
-        event.stopImmediatePropagation();
-        detailCinemaClickState = {id:'',at:0};
-        openDetailImageEditor(id).catch(err => setStatus(err.message || '无法打开单图编辑模式'));
-        return;
-    }
-    detailCinemaClickState = {id,at:now};
-}
 function enterCurrentDetailEditableContent(){
     if(!detailViewerState.open) return false;
+    if(detailViewerState.referenceCanvasMode){
+        const selected = detailMediaCanvasSingleSelectedImageItem();
+        if(!selected){
+            if(detailViewerState.mediaCanvasSelectedIds?.size) setStatus('请选择唯一一张图片进入单图编辑器');
+            return false;
+        }
+        openDetailImageEditor(selected.id,{item:selected}).catch(err => setStatus(err.message || '无法打开单图编辑器'));
+        return true;
+    }
     const item = detailViewerState.items[detailViewerState.index]
         || detailViewerItem(detailViewerState.source,detailViewerState.id);
     if(!item) return false;
@@ -4345,7 +4357,6 @@ document.addEventListener('pointerdown', beginDetailImageEditorPointer, true);
 document.addEventListener('pointermove', moveDetailImageEditorPointer);
 document.addEventListener('pointerup', endDetailImageEditorPointer);
 document.addEventListener('pointercancel', endDetailImageEditorPointer);
-document.addEventListener('pointerdown', handleDetailCinemaPointer, true);
 document.addEventListener('pointerdown', beginRegistryDetailPanelResize);
 document.addEventListener('pointermove', updateRegistryDetailPanelResize);
 document.addEventListener('pointerup', endRegistryDetailPanelResize);
@@ -4778,3 +4789,20 @@ export {
     toggleDetailInspector,
     toggleRegistryDetailPanel,
 };
+
+function handleRegistryFullscreenViewerEdit(event,state){
+    event.preventDefault();
+    event.stopPropagation();
+    const item = state.items[state.index];
+    if(!item || detailViewerType('registry',item) !== 'image'){
+        setStatus('当前素材不是图片，不能进入单图编辑器');
+        return;
+    }
+    const viewerBefore = detailViewerState;
+    closeRegistryAssetFullscreenViewer({restoreFocus:false});
+    Promise.resolve(state.exitFullscreenPromise).then(() => {
+        if(registryFullscreenViewerState || detailViewerState !== viewerBefore) return;
+        showDetailPreview('registry',item.id,{items:[item]});
+        return openDetailImageEditor(item.id,{item}).catch(err => setStatus(err.message || '无法打开单图编辑器'));
+    }).catch(err => setStatus(err.message || '无法退出真全屏查看器'));
+}

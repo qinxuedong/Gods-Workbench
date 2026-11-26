@@ -745,9 +745,9 @@ function detailMediaCanvasSelectedAnnotationColor(kind){
 function renderDetailMediaCanvasContextMenu(){
     const menu = detailViewerState.mediaCanvasContextMenu;
     if(!menu?.open) return '';
-    const selectedCount = detailMediaCanvasSelectedIds().size || detailMediaCanvasObjectIds().length;
+    const selectedCount = detailMediaCanvasSelectedIds().size || detailMediaCanvasObjectIds().length; const editableImage = detailMediaCanvasSingleSelectedImageItem();
     return `<div class="asset-detail-media-context-menu" data-detail-media-context-menu style="left:${Number(menu.x || 0)}px;top:${Number(menu.y || 0)}px" role="menu" aria-label="参考画布菜单">
-        <button type="button" data-detail-media-context-action="annotation" role="menuitem"><i data-lucide="message-square-text"></i><span>注释</span><small>增加输入文本</small></button>
+        <button type="button" data-detail-media-context-action="edit-image" aria-label="编辑图片" role="menuitem" ${editableImage ? '' : 'disabled'} title="${editableImage ? '编辑当前选中图片' : '仅支持单选一张图片'}"><i data-lucide="pencil"></i><span>编辑图片</span><small>${editableImage ? '进入单图编辑器' : '仅支持单选一张图片'}</small></button><button type="button" data-detail-media-context-action="annotation" role="menuitem"><i data-lucide="message-square-text"></i><span>注释</span><small>增加输入文本</small></button>
         <button type="button" data-detail-media-context-action="export" role="menuitem"><i data-lucide="download"></i><span>导出</span><small>选择保存位置</small></button>
         <button type="button" data-detail-media-context-action="save-image" role="menuitem"><i data-lucide="image-down"></i><span>保存图片</span><small>保存到当前库</small></button>
         <section><header><span>排列</span><small>当前摆放顺序</small></header><div><button type="button" data-detail-media-context-action="arrange-grid" title="网格排列"><i data-lucide="grid-2x2"></i></button><button type="button" data-detail-media-context-action="arrange-horizontal" title="水平排列"><i data-lucide="rows-3"></i></button><button type="button" data-detail-media-context-action="arrange-vertical" title="垂直排列"><i data-lucide="columns-3"></i></button></div></section>
@@ -1561,6 +1561,11 @@ function endDetailMediaCanvasPan(event){
     }
     const state = detailMediaCanvasEditState;
     if(!state || event.pointerId !== state.pointerId) return;
+    if(['move','resize'].includes(state.mode)){
+        const previous = detailViewerState.mediaCanvasLastGesture;
+        detailViewerState.mediaCanvasPreviousGesture = previous?.id === state.id ? previous : null;
+        detailViewerState.mediaCanvasLastGesture = {id:state.id,mode:state.mode,moved:Boolean(state.moved),at:Date.now()};
+    }
     if(state.mode === 'marquee'){
         const end = detailMediaCanvasWorldPoint(event.clientX,event.clientY,state.viewport);
         const bounds = {left:Math.min(state.startWorld.x,end.x),right:Math.max(state.startWorld.x,end.x),top:Math.min(state.startWorld.y,end.y),bottom:Math.max(state.startWorld.y,end.y)};
@@ -1883,6 +1888,17 @@ async function convertDetailMediaCanvasImageToPng(url){
 function detailMediaCanvasSelectedImageItems(){
     const selectedIds = new Set(detailMediaCanvasExpandedObjectIds(detailMediaCanvasSelectionOrder()));
     return detailMediaCanvasItems().filter(item => selectedIds.has(item.id) && detailViewerType(detailViewerState.source,item) === 'image');
+}
+function detailMediaCanvasSingleSelectedImageItem(){
+    const selected = detailMediaCanvasSelectedIds();
+    const order = detailMediaCanvasSelectionOrder();
+    if(selected.size !== 1 || order.length !== 1) return null;
+    const [objectId] = order;
+    if(detailMediaCanvasGroup(objectId)) return null;
+    const [id] = detailMediaCanvasExpandedObjectIds(order);
+    if(!id || id !== objectId) return null;
+    const item = detailMediaCanvasItems().find(value => value.id === id);
+    return item && detailViewerType(detailViewerState.source,item) === 'image' ? item : null;
 }
 async function copyDetailMediaCanvasSelectionToClipboard(){
     const images = detailMediaCanvasSelectedImageItems();
@@ -2510,12 +2526,14 @@ function renderDetailMediaCanvasToolbar(source, currentItem){
     const activeItem = items.find(item => item.id === activeId) || items[0] || null;
     const canPersist = items.length > 0 || Boolean(detailViewerState.referenceCanvasId);
     const item = currentItem || detailViewerState.items[detailViewerState.index] || detailViewerItem(source, detailViewerState.id) || activeItem || {};
+    const editableImage = detailMediaCanvasSingleSelectedImageItem();
     return `<div class="asset-detail-media-canvas-toolbar">
         <div class="asset-detail-media-toolbar-primary">
             <label><i data-lucide="map"></i><input type="text" data-detail-reference-title value="${escapeAttr(detailViewerState.referenceCanvasTitle || '参考画布')}" maxlength="80" aria-label="参考画布"></label>
             <span class="asset-detail-media-canvas-filename" title="${escapeAttr(item.name || '')}"><strong>${escapeHtml(item.name || '未命名素材')}</strong></span>
             <span><b>${items.length}</b> 个素材</span>
             <div>
+            <button class="hw-btn" type="button" data-detail-media-context-action="edit-image" aria-label="编辑图片" ${editableImage ? '' : 'disabled'} title="${editableImage ? '编辑当前选中图片' : '仅支持单选一张图片'}"><i data-lucide="pencil"></i><span>编辑图片</span></button>
             <button class="hw-btn" type="button" data-detail-reference-add-selection title="将当前多选图片或视频加入画布"><i data-lucide="images"></i><span>加选</span></button>
             <button class="hw-btn" type="button" data-detail-media-canvas-remove="${escapeAttr(activeId)}" ${!detailMediaCanvasSelectedIds().size ? 'disabled' : ''}><i data-lucide="trash-2"></i><span>移除选中</span></button>
             <button class="hw-btn" type="button" data-detail-media-canvas-zoom="0"><i data-lucide="scan"></i><span>自适应</span></button>
@@ -2563,6 +2581,7 @@ export {
     renderDetailMediaCanvasLibrary,
     renderDetailMediaCanvasToolbar,
     saveDetailReferenceCanvas,
+    detailMediaCanvasSingleSelectedImageItem,
     selectDetailMediaCanvasItem,
     selectDetailMediaCanvasLibraryItem,
     setDetailMediaCanvasMinimapVisible,
