@@ -475,25 +475,30 @@ window.WorkbenchAssets = (() => {
     const isRoot = Boolean(target.isRoot);
     const bridge = organizeBridge();
     const canOrganize = Boolean(bridge?.canOrganize?.(target.key));
-    const canToggleAssetsVisibility = isRoot && Boolean(bridge?.canToggleAssetsVisibility?.(target.key));
+    const canToggleAssetsVisibility = Boolean(bridge?.canToggleAssetsVisibility?.(target.key));
     const canManageResourceFolders = Boolean(bridge?.canManageResourceFolders?.());
     let hideEmptyFolders = false;
     try {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
     } catch (_) {}
+    const isAncestorHidden = Boolean(target.inherited_hidden);
+    const isEffectiveHidden = Boolean(target.assets_hidden || target.self_hidden || isAncestorHidden);
+    const toggleAssetsDisabled = isAncestorHidden;
+    const toggleAssetsTitle = isAncestorHidden ? '上级文件夹已隐藏，请先恢复上级显示' : '';
     const items = [
       { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: isRoot && !canOrganize },
       { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
       { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: isRoot && !canOrganize },
       { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
+      ...(canToggleAssetsVisibility ? [{
+        id: 'toggle-assets',
+        attr: 'data-asset-organize-toggle-assets',
+        label: isEffectiveHidden ? '显示素材' : '隐藏素材',
+        icon: isEffectiveHidden ? 'eye' : 'eye-off',
+        disabled: toggleAssetsDisabled,
+        title: toggleAssetsTitle,
+      }] : []),
       ...(isRoot ? [
-        ...(canToggleAssetsVisibility ? [{
-          id: 'toggle-assets',
-          attr: 'data-asset-organize-toggle-assets',
-          label: target.assets_hidden ? '显示素材' : '隐藏素材',
-          icon: target.assets_hidden ? 'eye' : 'eye-off',
-          disabled: false,
-        }] : []),
         {
           id: 'toggle-empty',
           attr: 'data-asset-organize-toggle-empty',
@@ -512,6 +517,7 @@ window.WorkbenchAssets = (() => {
       btn.setAttribute('role', 'menuitem');
       btn.setAttribute(item.attr, '');
       if (item.disabled) btn.disabled = true;
+      if (item.title) btn.title = item.title;
       if (item.danger) btn.className = 'is-danger';
       btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
       btn.addEventListener('click', async (e) => {
@@ -871,10 +877,19 @@ window.WorkbenchAssets = (() => {
   }
 
   // 侧栏卡片渲染：支持折叠箭头、子目录树、拖拽与右键整理
-  function shellNavButton(row, isSub = false) {
+  function shellNavButton(row, isSub = false, parentHidden = false) {
+    const effectiveInherited = Boolean(row.inherited_hidden || parentHidden);
+    const effectiveAssetsHidden = Boolean(row.assets_hidden || row.self_hidden || effectiveInherited);
+    const effectiveRow = (effectiveInherited !== Boolean(row.inherited_hidden) || effectiveAssetsHidden !== Boolean(row.assets_hidden))
+      ? { ...row, inherited_hidden: effectiveInherited, assets_hidden: effectiveAssetsHidden }
+      : row;
+    row = effectiveRow;
     const button = document.createElement('button');
     button.type = 'button';
     button.className = `asset-shell-nav-button tree-node-card${row.active ? ' is-active active' : ''}${isSub ? ' asset-shell-nav-button-sub' : ''}${row.assets_hidden ? ' is-assets-hidden' : ''}`;
+    button.dataset.assetsHidden = row.assets_hidden ? 'true' : 'false';
+    button.dataset.selfHidden = row.self_hidden ? 'true' : 'false';
+    button.dataset.inheritedHidden = row.inherited_hidden ? 'true' : 'false';
     if (row.active) button.setAttribute('aria-current', 'page');
     button.title = row.name;
     button.dataset.assetTreeEntry = row.key;
@@ -954,7 +969,7 @@ window.WorkbenchAssets = (() => {
       e.stopPropagation();
       if (organizeBridge()?.canOrganize(row.key)) {
         openShellOrganizeMenu(row, e.clientX, e.clientY);
-      } else if (row.isRoot && organizeBridge()?.canToggleAssetsVisibility?.(row.key)) {
+      } else if (organizeBridge()?.canToggleAssetsVisibility?.(row.key)) {
         openShellOrganizeMenu(row, e.clientX, e.clientY);
       }
     });
@@ -971,7 +986,7 @@ window.WorkbenchAssets = (() => {
       sublist.className = 'asset-shell-nav-subtree';
       sublist.setAttribute('role', 'group');
       row.children.forEach(child => {
-        sublist.append(shellNavButton(child, true));
+        sublist.append(shellNavButton(child, true, Boolean(row.assets_hidden)));
       });
       wrapper.append(sublist);
       return wrapper;
@@ -1087,6 +1102,8 @@ window.WorkbenchAssets = (() => {
       offline: Boolean(row.offline),
       loading: Boolean(row.loading),
       assets_hidden: Boolean(row.assets_hidden),
+      self_hidden: Boolean(row.self_hidden),
+      inherited_hidden: Boolean(row.inherited_hidden),
       hasChildren: Boolean(row.hasChildren),
       childKeys: (Array.isArray(row.children) ? row.children : []).map(child => child?.key || ''),
     });

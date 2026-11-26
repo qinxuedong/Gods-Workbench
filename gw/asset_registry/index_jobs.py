@@ -901,6 +901,86 @@ def root_identity_path_keys(root_id: str) -> list[str]:
     return keys
 
 
+def _normalize_relative_folder_parts(folder_path: str | None) -> tuple[str, ...]:
+    """校验并拆解挂载根内的相对文件夹路径，拒绝绝对路径与 .. 越界段。"""
+    raw = str(folder_path or "").strip()
+    if not raw or raw == "__root__":
+        return ()
+    normalized = raw.replace("\\", "/").strip("/")
+    if not normalized:
+        return ()
+    if normalized.startswith("/") or (len(normalized) >= 2 and normalized[1] == ":"):
+        raise CleanroomException(400, "INVALID_PATH", "文件夹路径必须是根内相对路径")
+    parts = [part for part in normalized.split("/") if part and part != "."]
+    if any(part == ".." for part in parts):
+        raise CleanroomException(400, "INVALID_PATH", "文件夹路径包含非法上级目录段")
+    return tuple(parts)
+
+
+def folder_identity_path_keys(root_id: str, folder_path: str | None = None) -> list[str]:
+    """返回指定挂载根或根内子文件夹及 QIN-596 别名身份组的规范路径键。"""
+    parts = _normalize_relative_folder_parts(folder_path)
+    if not parts:
+        return root_identity_path_keys(root_id)
+    identity = str(root_id or "").strip()
+    if not identity:
+        raise CleanroomException(400, "INVALID_REQUEST", "挂载根身份不能为空")
+    aliases, _ = _cached_root_snapshot()
+    facet = next(
+        (
+            item for item in root_facets()
+            if identity in {str(item.get("id") or ""), *(str(v) for v in item.get("aliases") or [])}
+        ),
+        None,
+    )
+    if facet is None:
+        raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
+    member_ids = {str(facet.get("id") or ""), *(str(v) for v in facet.get("aliases") or [])}
+    keys: set[str] = set()
+    for member_id in member_ids:
+        alias = aliases.get(member_id) if isinstance(aliases, dict) else None
+        physical_root = alias.get("root") if isinstance(alias, dict) else None
+        if physical_root is None:
+            continue
+        prefix = str(alias.get("prefix") or "")
+        base = physical_root.joinpath(*Path(prefix).parts) if prefix else physical_root
+        target = base.joinpath(*parts)
+        try:
+            keys.add(storage.directory_path_key(str(target)))
+        except CleanroomException:
+            continue
+    if not keys:
+        raise CleanroomException(409, "MOUNT_ROOT_PATH_UNAVAILABLE", "素材来源根没有可用的保存路径")
+    return sorted(keys)
+
+
+def has_strict_hidden_ancestor(candidate_keys, hidden_keys) -> bool:
+    """判断候选目录是否存在处于隐藏态的严格祖先目录（不含自身）。"""
+    normalized_hidden = [str(k or "").rstrip("\\/") for k in (hidden_keys or []) if str(k or "").strip()]
+    for raw_cand in candidate_keys or []:
+        cand = str(raw_cand or "").rstrip("\\/")
+        if not cand:
+            continue
+        for parent in normalized_hidden:
+            if cand != parent and _path_key_within_any(cand, [parent]):
+                return True
+    return False
+
+
+def path_key_is_self_or_inherited_hidden(path_key: str, hidden_keys) -> tuple[bool, bool]:
+    """返回单个目录路径键的 (self_hidden, inherited_hidden) 二元组。"""
+    cand = str(path_key or "").rstrip("\\/")
+    if not cand or not hidden_keys:
+        return (False, False)
+    normalized_hidden = [str(k or "").rstrip("\\/") for k in hidden_keys if str(k or "").strip()]
+    self_hidden = cand in normalized_hidden
+    inherited_hidden = any(
+        cand != parent and _path_key_within_any(cand, [parent])
+        for parent in normalized_hidden
+    )
+    return (self_hidden, inherited_hidden)
+
+
 def asset_path_key(asset, aliases=None):
     """由已索引资产的根身份和规范相对路径还原比较键，不依赖在线文件。"""
     if not isinstance(asset, dict):

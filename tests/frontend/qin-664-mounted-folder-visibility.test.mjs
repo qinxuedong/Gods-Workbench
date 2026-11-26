@@ -158,11 +158,13 @@ test('readonly 根可显隐；灰态子树仍可交互且不影响空目录偏�
   const showAssets = menu.children.find(n => Object.hasOwn(n.attributes, 'data-asset-organize-toggle-assets'));
   assert.match(showAssets.innerHTML, /显示素材/);
 
-  // 在线隐藏子目录仍可右键整理；目录显隐与空目录显示偏好是两个独立操作。
+  // 在线隐藏子目录仍可右键整理；父级根已隐藏时，子目录显隐开关处于禁用态且不误改空目录偏好。
   rightClick(folder);
   menu = bodyEl.children.find(n => n.id === 'assetOrganizeMenu');
   assert.ok(menu, '灰态子目录仍能打开右键菜单');
-  assert.equal(menu.children.some(n => Object.hasOwn(n.attributes, 'data-asset-organize-toggle-assets')), false, '显隐开关仅在根菜单出现');
+  const folderToggle = menu.children.find(n => Object.hasOwn(n.attributes, 'data-asset-organize-toggle-assets'));
+  assert.ok(folderToggle, 'QIN-670 起子目录菜单也提供显隐开关');
+  assert.equal(folderToggle.disabled, true, '祖先根已隐藏时子目录不能单独恢复显示');
 
   // 对离线根点击空目录偏好开关，仍只写原 localStorage 键并派发原事件。
   rightClick(root);

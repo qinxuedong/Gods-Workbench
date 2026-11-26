@@ -3321,7 +3321,13 @@ GW_DEFERRED['organize'] = {
 
 let mountedRootVisibilitySeq = 0;
 async function setMountedRootAssetsHidden(rootTarget, hidden){
-    if(!rootTarget?.isRoot || !rootTarget?.rootId){
+    if(!rootTarget?.rootId){
+        return {status:'invalid-target'};
+    }
+    const folderPath = rootTarget?.isRoot
+        ? ''
+        : String(rootTarget?.path || '').replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if(!rootTarget?.isRoot && !folderPath){
         return {status:'invalid-target'};
     }
     const token = ++mountedRootVisibilitySeq;
@@ -3337,16 +3343,20 @@ async function setMountedRootAssetsHidden(rootTarget, hidden){
                 identity,
                 Boolean(hidden),
                 Number(latest?.revision || storageSettingsState.revision || 0),
+                {},
+                folderPath,
             ));
             if(!current()) return {status:'stale'};
             applyStorageSettingsData(saved || {});
             return {status:'saved'};
         } catch(error){
             if(!current()) return {status:'stale'};
-            if(attempt < 2 && /409|VERSION_CONFLICT|版本冲突/i.test(String(error?.message || ''))){
+            const errText = String(error?.code || '') + ' ' + String(error?.message || '');
+            const isAncestorBlocked = /FOLDER_ANCESTOR_HIDDEN|上级文件夹已隐藏/.test(errText);
+            if(!isAncestorBlocked && attempt < 2 && /409|VERSION_CONFLICT|版本冲突/i.test(errText)){
                 continue;
             }
-            const message = error?.message || '挂载文件夹素材显隐设置失败';
+            const message = error?.message || '文件夹素材显隐设置失败';
             setStatus(message);
             showAssetOrganizeToast(message);
             return {status:'failed', error};

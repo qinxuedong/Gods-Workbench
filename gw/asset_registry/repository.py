@@ -2595,7 +2595,46 @@ def folders(root_id: Optional[str]) -> Dict[str, Any]:
         {"root_id": source, "path": path, "total_count": total}
         for (source, path), total in sorted(totals.items())
     ]
+    self_hidden_paths: list[str] = []
+    root_assets_hidden = False
+    if root_id:
+        from gw.asset_registry import index_jobs
+        from gw.settings.service import default_storage_settings_service
+
+        hidden_root_keys = list(
+            getattr(default_storage_settings_service.get_snapshot(), "hidden_asset_root_keys", []) or []
+        )
+        if hidden_root_keys:
+            try:
+                aliases, _ = index_jobs._cached_root_snapshot()
+            except CleanroomException:
+                aliases = {}
+            hidden_rel_set: set[str] = set()
+            for sid in members:
+                alias = aliases.get(sid) if isinstance(aliases, dict) else None
+                physical_root = alias.get("root") if isinstance(alias, dict) else None
+                if physical_root is None:
+                    continue
+                prefix = str(alias.get("prefix") or "")
+                physical = physical_root.joinpath(*Path(prefix).parts) if prefix else physical_root
+                try:
+                    root_key = storage.directory_path_key(str(physical))
+                except CleanroomException:
+                    continue
+                self_h, inherited_h = index_jobs.path_key_is_self_or_inherited_hidden(root_key, hidden_root_keys)
+                if self_h or inherited_h:
+                    root_assets_hidden = True
+                sep = "\\" if "\\" in root_key else "/"
+                root_prefix = root_key.rstrip("\\/") + sep
+                for raw_hkey in hidden_root_keys:
+                    hkey = str(raw_hkey or "").rstrip("\\/")
+                    if hkey.startswith(root_prefix):
+                        rel = hkey[len(root_prefix):].replace("\\", "/").strip("/")
+                        if rel:
+                            hidden_rel_set.add(rel)
+            self_hidden_paths = sorted(hidden_rel_set)
     return {"folders": items, "indexed_folders": indexed_folders, "folder_totals": folder_totals,
+            "self_hidden_paths": self_hidden_paths, "root_assets_hidden": root_assets_hidden,
             "root_id": root_id, "revision": raw["revision"],
             "data_status": DATA_STATUS_OK, "data_gaps": []}
 
