@@ -992,7 +992,7 @@ function normalizeLocalLibrariesFromSettings(data={}){
 function applyStorageSettingsData(data={}){
     storageSettingsState.dirs = data.dirs || storageSettingsState.dirs || {};
     if(Number.isFinite(Number(data.revision))) storageSettingsState.revision = Number(data.revision);
-    storageSettingsState.defaults = data.defaults || storageSettingsState.defaults || {};
+    storageSettingsState.hiddenAssetRootKeys = Array.isArray(data.hidden_asset_root_keys) ? data.hidden_asset_root_keys.map(String) : storageSettingsState.hiddenAssetRootKeys || []; storageSettingsState.defaults = data.defaults || storageSettingsState.defaults || {};
     storageSettingsState.extraLocalDirs = Array.isArray(data.extra_local_dirs) ? data.extra_local_dirs : storageSettingsState.extraLocalDirs || [];
     storageSettingsState.extraLocalEntries = Array.isArray(data.extra_local_entries)
         ? data.extra_local_entries.map((entry, index) => ({

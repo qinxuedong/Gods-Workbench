@@ -309,7 +309,9 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
     return frozen
 
 
-def visible_asset_from_snapshot(raw: Dict[str, Any], asset_id: str) -> Optional[Dict[str, Any]]:
+def visible_asset_from_snapshot(
+    raw: Dict[str, Any], asset_id: str, *, hidden_filter=None
+) -> Optional[Dict[str, Any]]:
     """从只读快照取单条可见登记；缺失或不可见返回 ``None``。
 
     供镜头检索下钻使用：与 ``get_asset`` 相同的 ``_visible`` 判定，但跳过详情
@@ -317,9 +319,32 @@ def visible_asset_from_snapshot(raw: Dict[str, Any], asset_id: str) -> Optional[
     """
     assets = raw.get("assets") if isinstance(raw, dict) else None
     record = assets.get(asset_id) if isinstance(assets, dict) else None
-    if not isinstance(record, dict) or not _visible(record):
+    if hidden_filter is None:
+        hidden_filter = mounted_asset_hidden_filter()
+    if not isinstance(record, dict) or not _visible(record) or hidden_filter(record):
         return None
     return record
+
+
+def mounted_asset_hidden_filter():
+    """构造单次读取共用的挂载目录隐藏判断器。"""
+    from gw.settings.service import default_storage_settings_service
+
+    hidden_keys = tuple(default_storage_settings_service.get_snapshot().hidden_asset_root_keys)
+    if not hidden_keys:
+        return lambda _asset: False
+    from gw.asset_registry import index_jobs
+
+    try:
+        aliases, _ = index_jobs._cached_root_snapshot()
+    except CleanroomException:
+        # 身份映射暂时不可用时，对本地挂载资产失败关闭，避免隐藏配置失效泄漏。
+        return lambda asset: bool(
+            isinstance(asset, dict)
+            and not asset.get("is_remote")
+            and (asset.get("root_id") or asset.get("storage_root_id"))
+        )
+    return lambda asset: index_jobs.asset_hidden_by_mounted_root(asset, hidden_keys, aliases)
 
 
 #: 词面召回索引缓存：与某个只读注册表快照对象绑定，文件改写后快照对象随之更换，
@@ -439,6 +464,8 @@ def keyword_recalled_asset_ids(
     candidate_limit = min(max(limit * 3, limit), 100)
     needle = query.casefold()
     removed_ids = _removed_root_ids_for_search()
+    hidden_filter = mounted_asset_hidden_filter()
+    assets_by_id = raw.get("assets", {}) if isinstance(raw, dict) else {}
     matched: List[Tuple[Any, str]] = []
     for (sort_key, asset_id, fields, visible, hidden, root_id,
          storage_root_id, removed_marker) in _shot_lexical_rows(raw):
@@ -448,7 +475,7 @@ def keyword_recalled_asset_ids(
             storage_root_id and storage_root_id in removed_ids
         ):
             continue
-        if any(needle in field for field in fields):
+        if any(needle in field for field in fields) and not hidden_filter(assets_by_id.get(asset_id)):
             matched.append((sort_key, asset_id))
     matched.sort(key=lambda row: str(row[0]))
     asset_ids: List[str] = []
@@ -1585,9 +1612,10 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         offset = decoded["offset"]
     from gw.core.asset_visibility import asset_visible
     removed_ids = set() if include_removed else _removed_root_ids()
+    hidden_filter = mounted_asset_hidden_filter()
     items = [
         dict(a) for a in raw["assets"].values()
-        if asset_visible(a) and not _hidden_builtin(a)
+        if asset_visible(a) and not _hidden_builtin(a) and not hidden_filter(a)
         and (include_removed or not _is_removed_asset(a, removed_ids))
     ]
     root_facets = []
@@ -2138,10 +2166,11 @@ def _list_structured_assets(
     from gw.core.asset_visibility import asset_visible
 
     removed_ids = set() if include_removed else _removed_root_ids()
+    hidden_filter = mounted_asset_hidden_filter()
     items = [
         dict(asset)
         for asset in raw["assets"].values()
-        if asset_visible(asset) and not _hidden_builtin(asset)
+        if asset_visible(asset) and not _hidden_builtin(asset) and not hidden_filter(asset)
         and (include_removed or not _is_removed_asset(asset, removed_ids))
     ]
     needle = normalized["text"].casefold()
@@ -2406,9 +2435,10 @@ def project_asset_counts() -> Dict[str, int]:
     raw = state().read()
     from gw.core.asset_visibility import asset_visible
     removed_ids = _removed_root_ids()
+    hidden_filter = mounted_asset_hidden_filter()
     counts: Counter[str] = Counter()
     for a in raw["assets"].values():
-        if not asset_visible(a) or _is_removed_asset(a, removed_ids):
+        if not asset_visible(a) or hidden_filter(a) or _is_removed_asset(a, removed_ids):
             continue
         pids = set(a.get("project_ids") or [])
         if a.get("project_id"):
@@ -2423,10 +2453,11 @@ def facets() -> Dict[str, Any]:
     raw = state().read()
     from gw.core.asset_visibility import asset_visible
     removed_ids = _removed_root_ids()
+    hidden_filter = mounted_asset_hidden_filter()
     assets = [
         a for a in raw["assets"].values()
         if asset_visible(a) and not _hidden_builtin(a)
-        and not _is_removed_asset(a, removed_ids)
+        and not hidden_filter(a) and not _is_removed_asset(a, removed_ids)
     ]
     kinds = Counter(_asset_category(asset) for asset in assets)
     categories = Counter(_asset_category(asset) for asset in assets)

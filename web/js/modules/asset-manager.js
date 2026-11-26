@@ -3601,12 +3601,12 @@ function setRegistryAssetCache(key, value){
 // 【QIN-603 AC4】热切换读缓存：只有「同 revision」的条目才算命中。
 // 写入 / 索引任务完成会推进 revision（或直接整表清空），旧条目因此不会再被复用。
 function registryCacheRevision(){
-    return Number(registryStatus?.revision || 0);
+    return `${Number(registryStatus?.revision || 0)}:${Number(storageSettingsState?.revision || 0)}`;
 }
 function readRegistryAssetCache(queryKey){
     const entry = registryAssetsQueryCache.get(queryKey);
     if(!entry) return null;
-    if(Number(entry[REGISTRY_CACHE_REVISION_FIELD] || 0) !== registryCacheRevision()){
+    if(String(entry[REGISTRY_CACHE_REVISION_FIELD] || '') !== registryCacheRevision()){
         registryAssetsQueryCache.delete(queryKey);
         return null;
     }
@@ -7327,7 +7327,7 @@ function gwAssetTreeEntryKey(){
     }
     return '';
 }
-function serializeAssetRackFolderNode(rootId, node, depth=1){
+function serializeAssetRackFolderNode(rootId, node, depth=1, assetsHidden=false){
     const key = `mine:root:${rootId}::${node.path}`;
     const expanded = assetTreeExpanded.has(key);
     const totalCount = assetRackFolderTotalCount(rootId, node.path);
@@ -7357,6 +7357,7 @@ function serializeAssetRackFolderNode(rootId, node, depth=1){
         name: node.name,
         path: node.path,
         isRoot: false,
+        assets_hidden: Boolean(assetsHidden),
         count: loading ? '' : totalCount,
         loading,
         hasNonEmptyDescendant,
@@ -7365,7 +7366,7 @@ function serializeAssetRackFolderNode(rootId, node, depth=1){
         expanded,
         draggable: true,
         children: expanded && Array.isArray(node.children)
-            ? node.children.map(child => serializeAssetRackFolderNode(rootId, child, depth + 1))
+            ? node.children.map(child => serializeAssetRackFolderNode(rootId, child, depth + 1, assetsHidden))
             : [],
     };
 }
@@ -7384,6 +7385,7 @@ function gwAssetTreeSnapshot(){
         const count = hasFacet ? Number(facetRoot.count) : (root.count != null ? Number(root.count) : '');
         const loading = !hasFacet && root.count == null;
         const offline = String(root.availability || '').toLowerCase() === 'offline' || String(facetRoot?.availability || '').toLowerCase() === 'offline';
+        const assetsHidden = Boolean(facetRoot?.assets_hidden || root.assets_hidden);
 
         const resolvedPath = assetRackRootDiskPath(root.id);
         return {
@@ -7397,12 +7399,13 @@ function gwAssetTreeSnapshot(){
             count,
             loading,
             offline,
+            assets_hidden: assetsHidden,
             key,
             writable: assetOrganizeWritableRoot(root.id),
             expanded,
             hasChildren: true,
             draggable: assetOrganizeWritableRoot(root.id),
-            children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1)) : [],
+            children: expanded ? tree.map(node => serializeAssetRackFolderNode(root.id, node, 1, assetsHidden)) : [],
         };
     });
 
@@ -7682,6 +7685,27 @@ function assetOrganizeTargetFromKey(key){
         target.aliases = Array.isArray(rootFacet.aliases) ? rootFacet.aliases : [];
     }
     return target;
+}
+function assetOrganizeVisibilityTargetFromKey(key){
+    if(!assetOrganizeIsMineTree()) return null;
+    const value = String(key || '');
+    if(!value.startsWith('mine:root:')) return null;
+    const rootId = value.slice('mine:root:'.length);
+    if(!rootId || rootId.includes('::')) return null;
+    const rootFacet = (registryFacets.roots || []).find(root =>
+        [root.id, ...(root.aliases || [])].map(String).includes(rootId));
+    if(!rootFacet) return null;
+    const lowerRoot = rootId.toLowerCase();
+    if(lowerRoot === 'video' || lowerRoot === 'image') return null;
+    return {
+        key:value,
+        id:String(rootFacet.id || rootId),
+        rootId,
+        aliases:Array.isArray(rootFacet.aliases) ? rootFacet.aliases.map(String) : [],
+        name:String(rootFacet.name || rootId),
+        isRoot:true,
+        assets_hidden:Boolean(rootFacet.assets_hidden),
+    };
 }
 function assetOrganizePhysicalRootId(targetOrRootId){
     const rootId = typeof targetOrRootId === 'string' ? targetOrRootId : String(targetOrRootId?.rootId || '');
@@ -11691,10 +11715,43 @@ async function gwAssetTreeMoveAssets(assetIds, targetKey){
     await gwCall('organize', 'assetOrganizeMoveAssets', assetIds, target.rootId, target.path);
     return true;
 }
+async function gwSetMountedRootAssetsHidden(rootTarget, hidden){
+    const target = assetOrganizeVisibilityTargetFromKey(rootTarget?.key);
+    if(!target) return {status:'invalid-target'};
+    const result = await gwCall('organize', 'setMountedRootAssetsHidden', target, Boolean(hidden));
+    if(result?.status !== 'saved') return result || {status:'failed'};
+
+    // 存储设置 revision 独立于 registry revision：同时废弃缓存与在途旧列表代际。
+    invalidateRegistryAssetCache('mounted-root-visibility');
+    registryRequestSeq += 1;
+    abortRegistryAssetRequests();
+    registryPendingNewItems.clear();
+    registryPendingNewIds = new Set();
+    registryPendingVanishedIds = new Set();
+    registryReconcilePageIds = new Set();
+    const refreshes = await Promise.allSettled([
+        refreshRegistryAssets(true, {invalidateCache:true}),
+        refreshRegistryFacetData(),
+    ]);
+    notifyShellTreeSnapshot();
+    const refreshFailed = refreshes.some(item => item.status === 'rejected');
+    if(refreshFailed){
+        const message = '显隐设置已保存，但浏览状态刷新失败，请手动刷新素材库';
+        setStatus(message);
+        gwCall('organize', 'showAssetOrganizeToast', message);
+        return {status:'saved-refresh-failed', error:refreshes.find(item => item.status === 'rejected')?.reason};
+    }
+    // 分面统计在列表请求后异步更新；两者完成后重绘，确保顶部统计读取新分面。
+    render();
+    setStatus(hidden ? '已隐藏该文件夹素材' : '已显示该文件夹素材');
+    return {status:'saved'};
+}
 window.GWAssetOrganizeBridge = Object.freeze({
     toggleExpand: toggleAssetTreeNode,
     canOrganize: key => Boolean(assetOrganizeTargetFromKey(key)),
     getTarget: key => assetOrganizeTargetFromKey(key),
+    canToggleAssetsVisibility: key => Boolean(assetOrganizeVisibilityTargetFromKey(key)),
+    setMountedRootAssetsHidden: gwSetMountedRootAssetsHidden,
     canManageResourceFolders: canManageAllowedRoots,
     executeResourceFolderAction: (rootTarget, action) => gwCall('organize', 'executeResourceFolderAction', rootTarget, action, {source:'sidebar'}),
     openInSystem: gwAssetTreeOpenInSystem,

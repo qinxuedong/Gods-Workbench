@@ -827,6 +827,129 @@ def _cached_root_snapshot():
         return value
 
 
+def _alias_mount_path(alias, source_id, local_paths, allowed_paths):
+    """从来源别名或持久登记中取路径；离线时仍保留其已保存目录。"""
+    if isinstance(alias, dict) and alias.get("root") is not None:
+        root = Path(alias["root"])
+        prefix = str(alias.get("prefix") or "")
+        return root.joinpath(*Path(prefix).parts) if prefix else root
+    if source_id in local_paths:
+        return Path(local_paths[source_id])
+    if source_id in allowed_paths:
+        return Path(allowed_paths[source_id])
+    return None
+
+
+def _root_group_path_keys(member_ids, aliases):
+    """归一化身份组的挂载路径，包含离线登记和已确认路径别名。"""
+    from gw.settings.service import default_storage_settings_service
+
+    settings = default_storage_settings_service.get_snapshot()
+    local_paths = {
+        str(item.get("id") or ""): str(item.get("path") or "")
+        for item in settings.local_libraries
+        if item.get("id") and item.get("path")
+    }
+    allowed_paths = {}
+    for record in storage._allowed_roots_state().get("roots", []):
+        path = str(record.get("path") or "")
+        if not path:
+            continue
+        for identity in {str(record.get("id") or ""), *(str(v) for v in record.get("aliases") or [])}:
+            if identity:
+                allowed_paths[identity] = path
+    keys = set()
+    for member_id in member_ids:
+        alias = aliases.get(str(member_id)) if isinstance(aliases, dict) else None
+        path = _alias_mount_path(alias, str(member_id), local_paths, allowed_paths)
+        if path is None:
+            continue
+        try:
+            keys.add(storage.directory_path_key(str(path)))
+        except CleanroomException:
+            continue
+        # Confirmed mount aliases are physical paths in the same QIN-596 identity group.
+        if isinstance(alias, dict):
+            scan_path = alias.get("scan_path")
+            if scan_path:
+                try:
+                    keys.add(storage.directory_path_key(str(scan_path)))
+                except CleanroomException:
+                    pass
+    return keys
+
+
+def root_identity_path_keys(root_id: str) -> list[str]:
+    """返回指定挂载根及 QIN-596 别名身份组的路径键；未知身份失败关闭。"""
+    identity = str(root_id or "").strip()
+    if not identity:
+        raise CleanroomException(400, "INVALID_REQUEST", "挂载根身份不能为空")
+    aliases, _ = _cached_root_snapshot()
+    facet = next(
+        (
+            item for item in root_facets()
+            if identity in {str(item.get("id") or ""), *(str(v) for v in item.get("aliases") or [])}
+        ),
+        None,
+    )
+    if facet is None:
+        raise CleanroomException(404, "ROOT_NOT_FOUND", "素材来源根不存在")
+    member_ids = {str(facet.get("id") or ""), *(str(v) for v in facet.get("aliases") or [])}
+    keys = sorted(_root_group_path_keys(member_ids, aliases))
+    if not keys:
+        raise CleanroomException(409, "MOUNT_ROOT_PATH_UNAVAILABLE", "素材来源根没有可用的保存路径")
+    return keys
+
+
+def asset_path_key(asset, aliases=None):
+    """由已索引资产的根身份和规范相对路径还原比较键，不依赖在线文件。"""
+    if not isinstance(asset, dict):
+        return ""
+    explicit = str(asset.get("path") or "")
+    if explicit:
+        try:
+            return storage.directory_path_key(explicit)
+        except CleanroomException:
+            pass
+    if aliases is None:
+        aliases, _ = _cached_root_snapshot()
+    root_id = str(asset.get("root_id") or "")
+    alias = aliases.get(root_id) if isinstance(aliases, dict) else None
+    root = alias.get("root") if isinstance(alias, dict) else None
+    if root is None:
+        return ""
+    relative = str(asset.get("canonical_relpath") or asset.get("relative_path") or "")
+    if not relative:
+        return ""
+    try:
+        physical = Path(root).joinpath(*Path(relative.replace("\\", "/")).parts)
+        return storage.directory_path_key(str(physical))
+    except (CleanroomException, OSError, ValueError):
+        return ""
+
+
+def _path_key_within_any(candidate_key, parent_keys):
+    candidate = str(candidate_key or "")
+    for raw_parent in parent_keys:
+        parent = str(raw_parent or "").rstrip("\\/")
+        if not parent:
+            continue
+        if candidate == parent:
+            return True
+        separator = "\\" if "\\" in parent else "/"
+        if candidate.startswith(parent + separator):
+            return True
+    return False
+
+
+def asset_hidden_by_mounted_root(asset, hidden_root_keys, aliases=None):
+    """按规范物理路径判断资产是否落在隐藏挂载根或其后代中。"""
+    if not hidden_root_keys:
+        return False
+    path_key = asset_path_key(asset, aliases)
+    return bool(path_key and _path_key_within_any(path_key, hidden_root_keys))
+
+
 def root_facets():
     """返回可筛选来源及资产数，不暴露服务器绝对路径。
 
@@ -841,6 +964,9 @@ def root_facets():
         aliases, alias_status = _cached_root_snapshot()
     except CleanroomException:
         return []
+    from gw.settings.service import default_storage_settings_service
+
+    hidden_root_keys = getattr(default_storage_settings_service.get_snapshot(), "hidden_asset_root_keys", [])
     # QIN-604：root_facets 是 /assets 每次请求的下游读点，改走快照后整段只读一次。
     raw = repo.readonly_registry_snapshot()
 
@@ -955,6 +1081,10 @@ def root_facets():
             "availability_reason": best[1],
             "availability_message": best[2],
             "aliases": list(ids),
+            "assets_hidden": any(
+                _path_key_within_any(path_key, hidden_root_keys)
+                for path_key in _root_group_path_keys(ids, aliases)
+            ),
         }
     removed_root_ids = {
         str(record.get("id") or "")
@@ -970,6 +1100,10 @@ def root_facets():
                 "availability": "removed",
                 "availability_reason": "MOUNT_ROOT_REMOVED",
                 "availability_message": "允许根已移除；已有索引与源文件保留",
+                "assets_hidden": any(
+                    _path_key_within_any(path_key, hidden_root_keys)
+                    for path_key in _root_group_path_keys({source_id}, aliases)
+                ),
             }
     return sorted(facets.values(), key=lambda item: item["id"])
 

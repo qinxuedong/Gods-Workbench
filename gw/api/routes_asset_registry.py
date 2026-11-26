@@ -210,11 +210,12 @@ def get_registry_root(
     _read_auth(authorization, x_user_role)
     raw = repo.state().read()
     from gw.core.asset_visibility import asset_visible
+    hidden_filter = repo.mounted_asset_hidden_filter()
     return {
         "registry": "asset-registry",
         "revision": raw["revision"],
         "assets": repo.annotate_asset_provenance(
-            [a for a in raw["assets"].values() if asset_visible(a)], raw=raw
+            [a for a in raw["assets"].values() if asset_visible(a) and not hidden_filter(a)], raw=raw
         ),
         "features": repo.features_snapshot()["features"],
         "backend": "json-state",
@@ -231,7 +232,11 @@ def get_registry_status(
     actor = _read_auth(authorization, x_user_role)
     raw = repo.readonly_registry_snapshot()
     from gw.core.asset_visibility import asset_visible
-    visible_count = sum(asset_visible(asset) for asset in raw['assets'].values())
+    hidden_filter = repo.mounted_asset_hidden_filter()
+    visible_count = sum(
+        asset_visible(asset) and not hidden_filter(asset)
+        for asset in raw['assets'].values()
+    )
     snapshot = repo.features_snapshot()
     combined_jobs = sorted(
         index_jobs.service().listing(actor) + dedup_confirm.service().listing(actor),
@@ -451,12 +456,21 @@ def search_registry_shots(
     # 同一请求只读一次注册表：候选补齐与逐资产下钻共用同一份只读快照，
     # 避免每个候选资产都触发一次整表 JSON 反序列化（QIN-565）。
     registry_snapshot = repo.readonly_registry_snapshot()
+    hidden_filter = repo.mounted_asset_hidden_filter()
+
+    def _asset_is_visible(asset_id: str) -> bool:
+        return repo.visible_asset_from_snapshot(
+            registry_snapshot, asset_id, hidden_filter=hidden_filter
+        ) is not None
+
     located: Dict[str, Dict[str, Any]] = {}
     with SQLiteVecEngine(db_path) as engine:
 
         def _shot_provider(asset_id: str) -> List[Dict[str, Any]]:
             """返回该资产已登记镜头；顺带补齐索引中的内容哈希。"""
-            record = repo.visible_asset_from_snapshot(registry_snapshot, asset_id)
+            record = repo.visible_asset_from_snapshot(
+                registry_snapshot, asset_id, hidden_filter=hidden_filter
+            )
             if record is None:
                 return []
             located[asset_id] = record
@@ -478,6 +492,7 @@ def search_registry_shots(
             query,
             limit=bounded_limit,
             shot_provider=_shot_provider,
+            asset_filter=_asset_is_visible,
             extra_asset_ids=_keyword_recalled_assets(
                 query, bounded_limit, raw=registry_snapshot
             ),

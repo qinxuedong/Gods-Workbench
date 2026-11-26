@@ -1,0 +1,40 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 831,
+  "authorization_basis": "GitHub Issue #831 (QIN-664)",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/api/routes_settings.py",
+    "gw/asset_registry/hybrid_search.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/settings/models.py",
+    "gw/settings/service.py",
+    "tests/contracts/assets/test_qin664_mounted_folder_visibility.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-664-mounted-folder-visibility.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-831.json",
+    "web/css/base/workspace-pages.css",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/api.js",
+    "web/js/modules/asset-manager/organize.js",
+    "web/js/modules/asset-manager/settings.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin664_mounted_folder_visibility.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #831 (QIN-664)",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-664-mounted-folder-visibility.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #831 (QIN-664)",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-664 mounted root visibility behavior and contract tests; keep base admission metadata unchanged."
+}

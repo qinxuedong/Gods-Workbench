@@ -3245,6 +3245,7 @@ GW_DEFERRED['organize'] = {
     cancelAssetBoardMigration,
     executeResourceFolderAction,
     invalidateResourceFolderAction,
+    setMountedRootAssetsHidden,
     assetOrganizeRefresh,
     beginAssetOrganizeRename,
     cancelAssetOrganizeRename,
@@ -3317,6 +3318,42 @@ GW_DEFERRED['organize'] = {
     togglePreviewDeleteCategory,
 };
 
+
+let mountedRootVisibilitySeq = 0;
+async function setMountedRootAssetsHidden(rootTarget, hidden){
+    if(!rootTarget?.isRoot || !rootTarget?.rootId){
+        return {status:'invalid-target'};
+    }
+    const token = ++mountedRootVisibilitySeq;
+    const current = () => mountedRootVisibilitySeq === token;
+    const identity = String(rootTarget.id || rootTarget.rootId);
+    for(let attempt = 0; attempt < 3; attempt += 1){
+        if(!current()) return {status:'stale'};
+        try {
+            const latest = await apiJsonResponse(assetManagerApi.getStorageSettings());
+            if(!current()) return {status:'stale'};
+            applyStorageSettingsData(latest || {});
+            const saved = await apiJsonResponse(assetManagerApi.setMountedRootVisibility(
+                identity,
+                Boolean(hidden),
+                Number(latest?.revision || storageSettingsState.revision || 0),
+            ));
+            if(!current()) return {status:'stale'};
+            applyStorageSettingsData(saved || {});
+            return {status:'saved'};
+        } catch(error){
+            if(!current()) return {status:'stale'};
+            if(attempt < 2 && /409|VERSION_CONFLICT|版本冲突/i.test(String(error?.message || ''))){
+                continue;
+            }
+            const message = error?.message || '挂载文件夹素材显隐设置失败';
+            setStatus(message);
+            showAssetOrganizeToast(message);
+            return {status:'failed', error};
+        }
+    }
+    return {status:'failed'};
+}
 function syncRemovedResourceFolderLibraries(ids){
     const libMatchesRemoved = lib => {
         const candidates = [lib?.id, lib?.root_id, lib?.storage_root_id, ...(Array.isArray(lib?.aliases) ? lib.aliases : [])]

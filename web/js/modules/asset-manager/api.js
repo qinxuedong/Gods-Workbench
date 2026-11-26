@@ -208,6 +208,16 @@ export function createAssetManagerApi(http) {
                 credentials: 'same-origin',
             });
         },
+        setMountedRootVisibility(rootId, hidden, expectedVersion, init = {}) {
+            return transport.request('/api/storage-settings', {
+                ...jsonInit({
+                    hidden_asset_root_id: String(rootId || ''),
+                    hidden_asset_hidden: Boolean(hidden),
+                    expected_version: Number(expectedVersion),
+                }, {...init, method: 'PATCH'}),
+                credentials: 'same-origin',
+            });
+        },
         getProjectDirectoryTemplates(projectType = '', init = {}) {
             const query = new URLSearchParams();
             if (String(projectType || '').trim()) query.set('project_type', String(projectType).trim());

@@ -247,6 +247,7 @@ class HybridAssetSearcher:
         query_vector: Sequence[float] | None = None,
         limit: int = 20,
         candidate_limit: int | None = None,
+        asset_filter: Callable[[str], bool] | None = None,
     ) -> HybridSearchResults:
         """合并两轨排名。
 
@@ -266,9 +267,12 @@ class HybridAssetSearcher:
         )
 
         candidates: dict[str, _Candidate] = {}
-        for rank, match in enumerate(
-            self.engine.search_fts(query, limit=candidate_limit), start=1
-        ):
+        lexical_rank = 0
+        for match in self.engine.search_fts(query, limit=candidate_limit):
+            if asset_filter is not None and not asset_filter(match.asset_id):
+                continue
+            lexical_rank += 1
+            rank = lexical_rank
             candidate = candidates.setdefault(match.asset_id, _Candidate(match.asset_id))
             candidate.score += 1.0 / (self.rrf_k + rank)
             candidate.lexical_score = match.score
@@ -276,9 +280,12 @@ class HybridAssetSearcher:
 
         vector_track_degraded = False
         if query_vector is not None:
-            for rank, match in enumerate(
-                self.engine.search_vectors(query_vector, limit=candidate_limit), start=1
-            ):
+            vector_rank = 0
+            for match in self.engine.search_vectors(query_vector, limit=candidate_limit):
+                if asset_filter is not None and not asset_filter(match.asset_id):
+                    continue
+                vector_rank += 1
+                rank = vector_rank
                 candidate = candidates.setdefault(match.asset_id, _Candidate(match.asset_id))
                 candidate.score += 1.0 / (self.rrf_k + rank)
                 candidate.vector_distance = match.distance
@@ -312,6 +319,7 @@ class HybridAssetSearcher:
         asset_limit: int | None = None,
         shot_provider: Callable[[str], Sequence[Mapping[str, Any]]] | None = None,
         extra_asset_ids: Sequence[str] = (),
+        asset_filter: Callable[[str], bool] | None = None,
     ) -> ShotSearchResults:
         """把资产级双轨召回下钻为镜头级命中。
 
@@ -333,12 +341,22 @@ class HybridAssetSearcher:
             query,
             query_vector=query_vector,
             limit=asset_limit,
-            candidate_limit=candidate_limit,
+            candidate_limit=(
+                candidate_limit
+                if candidate_limit is not None
+                else MAX_SEARCH_LIMIT if asset_filter is not None else None
+            ),
+            asset_filter=asset_filter,
         )
         recalled = [(result.asset_id, result) for result in asset_results]
         seen_ids = {asset_id for asset_id, _ in recalled}
         for asset_id in extra_asset_ids:
-            if not isinstance(asset_id, str) or not asset_id or asset_id in seen_ids:
+            if (
+                not isinstance(asset_id, str)
+                or not asset_id
+                or asset_id in seen_ids
+                or (asset_filter is not None and not asset_filter(asset_id))
+            ):
                 continue
             seen_ids.add(asset_id)
             recalled.append((asset_id, None))

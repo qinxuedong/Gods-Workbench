@@ -218,6 +218,7 @@ class StorageSettingsService:
             "local_library_names": {},
             "local_library_order": [],
             "local_library_read_only": {},
+            "hidden_asset_root_keys": [],
         }
 
     # ------------------------------------------------------------------
@@ -369,7 +370,7 @@ class StorageSettingsService:
         order = list(state.get("local_library_order") or [])
         extra_dirs = [entry.get("path", "") for entry in entries]
         gaps = [] if configured else [GAP_STORAGE_SETTINGS_SOURCE]
-        return StorageSettingsSnapshot(
+        snapshot_data = dict(
             configured=configured,
             revision=revision,
             dirs=dirs,
@@ -383,6 +384,9 @@ class StorageSettingsService:
             data_status=DATA_STATUS_OK if configured else DATA_STATUS_NOT_CONFIGURED,
             data_gaps=gaps,
         )
+        if configured:
+            snapshot_data["hidden_asset_root_keys"] = list(state.get("hidden_asset_root_keys") or [])
+        return StorageSettingsSnapshot(**snapshot_data)
 
     @staticmethod
     def _build_local_libraries(
@@ -417,6 +421,8 @@ class StorageSettingsService:
     # ------------------------------------------------------------------
     def patch(self, payload: StorageSettingsPatchRequest) -> StorageSettingsSnapshot:
         """更新存储设置；CAS 冲突失败关闭，成功则 revision 递增。"""
+        if payload.hidden_asset_root_id is not None or payload.hidden_asset_hidden is not None:
+            raise CleanroomException(400, "INVALID_REQUEST", "挂载根显隐命令必须经由存储设置 API 解析")
         expected = _resolve_expected_version(payload)
         _require_positive_version(expected, "存储设置")
         removed_sources: list[tuple[str, str]] = []
@@ -437,6 +443,7 @@ class StorageSettingsService:
             names = dict(state.get("local_library_names") or {})
             order = list(state.get("local_library_order") or [])
             read_only = dict(state.get("local_library_read_only") or {})
+            hidden_root_keys = list(state.get("hidden_asset_root_keys") or [])
             if payload.dirs is not None:
                 dirs = self._normalize_directory_mapping(payload.dirs)
             if payload.extra_local_entries is not None:
@@ -467,12 +474,15 @@ class StorageSettingsService:
                 order = [str(item) for item in payload.local_library_order]
             if payload.local_library_read_only is not None:
                 read_only = dict(payload.local_library_read_only)
+            if payload.hidden_asset_root_keys is not None:
+                hidden_root_keys = _normalize_hidden_asset_root_keys(payload.hidden_asset_root_keys)
             state.update({
                 "dirs": dirs,
                 "extra_local_entries": entries,
                 "local_library_names": names,
                 "local_library_order": order,
                 "local_library_read_only": read_only,
+                "hidden_asset_root_keys": hidden_root_keys,
                 "configured": True,
                 "revision": revision + 1,
             })
@@ -735,12 +745,18 @@ class StorageSettingsService:
                 for k, v in (state.get("local_library_read_only") or {}).items()
                 if str(k) not in purged_ids
             }
+            hidden_root_keys = [
+                key
+                for key in (state.get("hidden_asset_root_keys") or [])
+                if not _path_matches_target_keys(str(key), target_keys)
+            ]
             changed = (
                 len(next_entries) != len(entries)
                 or len(next_removed) != len(removed)
                 or names != (state.get("local_library_names") or {})
                 or order != (state.get("local_library_order") or [])
                 or read_only != (state.get("local_library_read_only") or {})
+                or hidden_root_keys != (state.get("hidden_asset_root_keys") or [])
             )
             if not changed:
                 return
@@ -752,6 +768,7 @@ class StorageSettingsService:
             state["local_library_names"] = names
             state["local_library_order"] = order
             state["local_library_read_only"] = read_only
+            state["hidden_asset_root_keys"] = hidden_root_keys
             state["revision"] = int(state.get("revision", 1)) + 1
 
         self._state.mutate(update)
@@ -800,6 +817,23 @@ def _normalized_target_keys(paths: Iterable[str]) -> list[str]:
         except CleanroomException:
             key = text.replace("\\", "/").rstrip("/").casefold()
         if key and key not in seen:
+            seen.add(key)
+            keys.append(key)
+    return keys
+
+
+def _normalize_hidden_asset_root_keys(paths: Iterable[str]) -> list[str]:
+    """显隐配置只存绝对目录比较键，并按平台路径规则去重。"""
+    keys: list[str] = []
+    seen: set[str] = set()
+    for raw_path in paths:
+        if not isinstance(raw_path, str) or not raw_path.strip():
+            raise CleanroomException(400, "INVALID_PATH", "隐藏素材根必须是绝对目录路径")
+        try:
+            key = storage.directory_path_key(raw_path)
+        except CleanroomException:
+            raise CleanroomException(400, "INVALID_PATH", "隐藏素材根必须是绝对目录路径") from None
+        if key not in seen:
             seen.add(key)
             keys.append(key)
     return keys
