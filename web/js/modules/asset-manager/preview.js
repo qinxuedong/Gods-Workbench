@@ -242,7 +242,7 @@ import {
     fitDetailMediaCanvas,
     fitDetailMediaCanvasAnnotationToText,
     handleDetailMediaCanvasContextAction,
-    initialDetailMediaCanvasDrawings,
+    beginDetailReferenceTitleEdit, cancelDetailReferenceTitleEdit, commitDetailReferenceTitleEdit, toggleDetailMediaSelectMenu, closeDetailMediaSelectMenus, applyDetailMediaSelectValue, initialDetailMediaCanvasDrawings,
     initialDetailMediaCanvasGroups,
     initialDetailMediaCanvasItems,
     initialDetailMediaCanvasLayout,
@@ -2576,7 +2576,7 @@ function showDetailPreview(source, id, options={}){
         // 强度取不到值就会退化成 0（等于没套），这里漏一个字段就是「预览看起来没生效」。
         lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
         mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
-        referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
+        referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasTitleEditing:false, referenceCanvasTitleEditOriginal:'', referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
         originTab:options.originTab || activeTab, returnFocus:options.returnFocus || document.activeElement
     });
     stopAssetHoverPreview();
@@ -4040,6 +4040,19 @@ document.addEventListener('click', event => {
         if(event.target.closest?.('[data-detail-media-node-lut-save]')){ saveDetailMediaNodeLutVersion(targetId).catch(() => {}); return; }
         if(event.target.closest?.('[data-detail-media-node-lut-clear]')){ clearDetailMediaNodeLut(targetId); return; }
     }
+    const detailMediaSelectOpt = event.target.closest?.('[data-detail-media-select-option]');
+    if(detailMediaSelectOpt){
+        event.preventDefault(); event.stopPropagation();
+        applyDetailMediaSelectValue(detailMediaSelectOpt.dataset.detailMediaSelectKind || '', detailMediaSelectOpt.dataset.detailMediaSelectOption || '');
+        return;
+    }
+    const detailMediaSelectTrigger = event.target.closest?.('[data-detail-media-select-trigger]');
+    if(detailMediaSelectTrigger){
+        event.preventDefault(); event.stopPropagation();
+        toggleDetailMediaSelectMenu(detailMediaSelectTrigger);
+        return;
+    }
+    if(!event.target.closest?.('[data-detail-media-select-capsule]')) closeDetailMediaSelectMenus();
     // 分割线只管拖，别让它多选一次节点；刚拖完补上的那次 click 也一并跳过。
     if(event.target.closest?.('[data-detail-media-lut-split]') || Date.now() - detailMediaLutSplitDragEndedAt < 400) return;
     // 【QIN-580】点空白处（面板和角标之外的任何地方）自动收起调节浮窗。
@@ -4148,6 +4161,12 @@ document.addEventListener('click', event => {
     }
 });
 document.addEventListener('dblclick', event => {
+    const referenceTitleDisplay = event.target.closest?.('[data-detail-reference-title-display]');
+    if(referenceTitleDisplay){
+        event.preventDefault(); event.stopPropagation();
+        beginDetailReferenceTitleEdit();
+        return;
+    }
     const editorCanvas=event.target.closest?.('[data-image-editor-canvas]');
     if(detailImageEditorState && editorCanvas){
         event.preventDefault(); event.stopPropagation();
@@ -4349,6 +4368,42 @@ document.addEventListener('change', event => {
     if(detailMediaCanvasColorSnapshot) pushDetailMediaCanvasHistory(detailMediaCanvasColorSnapshot);
     setDetailMediaCanvasColorSnapshot(null);
 });
+document.addEventListener('focusout', event => {
+    if(detailViewerState.referenceCanvasTitleEditing && event.target?.matches?.('[data-detail-reference-title]')){
+        requestAnimationFrame(() => {
+            if(!detailViewerState.referenceCanvasTitleEditing) return;
+            if(document.activeElement?.matches?.('[data-detail-reference-title]')) return;
+            commitDetailReferenceTitleEdit(true);
+        });
+    }
+});
+document.addEventListener('keydown', event => {
+    if(!detailViewerState.open) return;
+    if(event.key === 'Escape'){
+        const openCapsule = [...document.querySelectorAll('[data-detail-media-select-capsule="basis"]'), ...document.querySelectorAll('[data-detail-media-select-capsule="scope"]')].find(el => el.classList.contains('is-open'));
+        if(openCapsule){
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const trigger = openCapsule.querySelector('[data-detail-media-select-trigger]');
+            closeDetailMediaSelectMenus();
+            trigger?.focus?.({preventScroll:true});
+            return;
+        }
+    }
+    if(!detailViewerState.referenceCanvasTitleEditing) return;
+    if(!event.target?.matches?.('[data-detail-reference-title]')) return;
+    if(event.key === 'Escape'){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        cancelDetailReferenceTitleEdit();
+        return;
+    }
+    if(event.key === 'Enter'){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        commitDetailReferenceTitleEdit(true);
+    }
+}, true);
 document.addEventListener('dragstart', beginDetailMediaLibraryDrag);
 ['loadedmetadata','durationchange','timeupdate','play','pause','ended','volumechange','ratechange'].forEach(type => document.addEventListener(type,handleDetailVideoMediaEvent,true));
 document.addEventListener('input', updateDetailImageEditorProperty);

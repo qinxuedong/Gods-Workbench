@@ -160,6 +160,7 @@ tests/frontend/qin-661-detail-sidebar-layout.test.mjs
 tests/frontend/qin-664-mounted-folder-visibility.test.mjs
 tests/frontend/qin-666-image-edit-entry-shortcut-e.test.mjs
 tests/frontend/qin-667-reference-canvas-save-index.test.mjs
+tests/frontend/qin-669-reference-canvas-title-select-annotation-bg.test.mjs
 tests/frontend/qin-670-folder-level-visibility.test.mjs
 tests/frontend/settings-workbench-visual.test.mjs
 tests/frontend/test_c18_omnibar_hotkeys.mjs

@@ -151,24 +151,6 @@ export const FROZEN_BASELINE_SELECTS = [
   },
   {
     "file": "web/js/modules/asset-manager/media-canvas.js",
-    "line": 724,
-    "col": 90,
-    "pattern": "data-detail-media-normalize-basis"
-  },
-  {
-    "file": "web/js/modules/asset-manager/media-canvas.js",
-    "line": 735,
-    "col": 88,
-    "pattern": "data-detail-media-export-scope"
-  },
-  {
-    "file": "web/js/modules/asset-manager/media-canvas.js",
-    "line": 756,
-    "col": 42,
-    "pattern": "data-detail-media-normalize-basis"
-  },
-  {
-    "file": "web/js/modules/asset-manager/media-canvas.js",
     "line": 1014,
     "col": 37,
     "pattern": "data-detail-media-library-library"
@@ -1168,14 +1150,14 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
     assert.equal(secondKeydownAttached, false, '重复 enhance 时必须由幂等标记守护，不得二次重复绑定');
   });
 
-  test('AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 65 处历史存量节点实例）', () => {
+  test('AC5 & AC6: 逐项精确白名单门禁与精准行号匹配（当前仓库 62 处历史存量节点实例）', () => {
     const unenhancedMatches = collectUnenhancedSelects(REPO_ROOT);
-    assert.equal(unenhancedMatches.length, 65, '当前全仓库未经改造的原生 select 节点实例必须严格保持 65 处存量（含同行多节点）');
+    assert.equal(unenhancedMatches.length, 62, '当前全仓库未经改造的原生 select 节点实例必须严格保持 62 处存量（含同行多节点）');
 
     // 逐项精确比对（文件、精确行号与 pattern 全部一致）
     assert.doesNotThrow(
       () => validateSelectCompliance(unenhancedMatches, FROZEN_BASELINE_SELECTS),
-      '所有 65 处存量控件实例必须全部精确命中白名单基线（含精准行号）'
+      '所有 62 处存量控件实例必须全部精确命中白名单基线（含精准行号）'
     );
   });
 
@@ -1196,7 +1178,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
 
   test('AC6 & 必改2反证: 旧基线行号被篡改（如改成 99999）或移位必被拦截（精确行号门禁反证）', () => {
     const unenhancedMatches = collectUnenhancedSelects(REPO_ROOT);
-    assert.equal(unenhancedMatches.length, 65);
+    assert.equal(unenhancedMatches.length, 62);
 
     // 构造篡改基线：将第 1 个条目的行号篡改为 99999
     const tamperedBaseline = FROZEN_BASELINE_SELECTS.map((b, idx) => idx === 0 ? { ...b, line: 99999 } : b);
@@ -1224,7 +1206,7 @@ describe('QIN-631 原生公共下拉组件最小试点契约测试', () => {
       text: '<select id="bypassSneakySelect" class="bg-black"></select>'
     });
 
-    assert.equal(hackedMatches.length, 65, '样本总数与冻结基线数完全相同 (65)');
+    assert.equal(hackedMatches.length, 62, '样本总数与冻结基线数完全相同 (62)');
 
     assert.throws(
       () => validateSelectCompliance(hackedMatches, FROZEN_BASELINE_SELECTS),
