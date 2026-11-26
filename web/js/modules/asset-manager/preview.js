@@ -4493,7 +4493,7 @@ function openComfyPromptDialog(trigger, assetId){
     overlay.style.zIndex = '2147483647';
     overlay.dataset.comfyAssetId = String(assetId || '');
     overlay.innerHTML = `<section class="hw-modal-dialog" data-floating-content role="dialog" aria-modal="true" aria-labelledby="comfyPromptDialogTitle" tabindex="-1" style="width:min(680px,calc(100vw - 24px));padding:20px;color:#e2e8f0;">
-        <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;"><h2 id="comfyPromptDialogTitle" class="gw-type-title-sm" style="margin:0;">生成提示词</h2><button class="hw-btn hw-btn-icon" type="button" data-comfy-dialog-close aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <header style="margin-bottom:16px;"><h2 id="comfyPromptDialogTitle" class="gw-type-title-sm" style="margin:0;">生成提示词</h2></header>
         ${generation.truncated ? '<p class="gw-type-label-md" role="status">已保存的提示词可能被截断，内容不完整。</p>' : ''}
         ${prompt ? `<section style="margin:12px 0;"><strong class="gw-type-label-md">正向提示词</strong><pre style="max-height:32vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;padding:12px;background:rgba(0,0,0,.3);">${escapeHtml(prompt)}</pre></section>` : ''}
         ${negative ? `<section style="margin:12px 0;"><strong class="gw-type-label-md">反向提示词</strong><pre style="max-height:24vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;padding:12px;background:rgba(0,0,0,.3);">${escapeHtml(negative)}</pre></section>` : ''}
@@ -4506,6 +4506,35 @@ function openComfyPromptDialog(trigger, assetId){
     hostWindow.FloatingDismissal?.scan?.(overlay);
     hostWindow.lucide?.createIcons?.({root:overlay});
     overlay.querySelector('[role="dialog"]')?.focus?.({preventScroll:true});
+}
+function copyComfyPromptText(text){
+    const hostWindow = comfyDialogHostWindow();
+    const hostDocument = hostWindow.document || document;
+    const clipboards = [...new Set([hostWindow.navigator?.clipboard, window.navigator?.clipboard])];
+    let clipboardIndex = 0;
+    const tryClipboard = () => {
+        while(clipboardIndex < clipboards.length){
+            const clipboard = clipboards[clipboardIndex++];
+            if(typeof clipboard?.writeText !== 'function') continue;
+            try { return Promise.resolve(clipboard.writeText(text)).catch(tryClipboard); }
+            catch(_) {}
+        }
+        const input = hostDocument.createElement('textarea');
+        input.value = text;
+        input.setAttribute('readonly', '');
+        input.style.position = 'fixed';
+        input.style.left = '-9999px';
+        input.style.opacity = '0';
+        hostDocument.body.appendChild(input);
+        input.focus?.();
+        input.select?.();
+        let copied = false;
+        try { copied = hostDocument.execCommand('copy'); }
+        catch(_) {}
+        input.remove();
+        return copied ? Promise.resolve() : Promise.reject(new Error('剪贴板不可用'));
+    };
+    return tryClipboard();
 }
 function createAssetWorkflowImportNonce(){
     const cryptoApi = window.crypto;
@@ -4619,10 +4648,20 @@ function handleComfyAssetDialogClick(event){
         const assetId = dialog?.dataset?.comfyAssetId;
         const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
         const text = [generation?.prompt, generation?.negative_prompt].filter(Boolean).join('\n\n');
-        Promise.resolve().then(() => {
-            if(!text || !navigator.clipboard?.writeText) throw new Error('剪贴板不可用');
-            return navigator.clipboard.writeText(text);
-        }).then(() => setStatus('提示词已复制')).catch(() => setStatus('复制失败，请检查浏览器剪贴板权限'));
+        const label = copyButton.querySelector('span');
+        if(!text){
+            if(label) label.textContent = '没有可复制的提示词';
+            return;
+        }
+        copyButton.disabled = true;
+        if(label) label.textContent = '正在复制…';
+        copyComfyPromptText(text).then(() => {
+            if(label) label.textContent = '已复制';
+            setStatus('提示词已复制');
+        }).catch(() => {
+            if(label) label.textContent = '复制失败';
+            setStatus('复制失败，请检查浏览器剪贴板权限');
+        }).finally(() => { copyButton.disabled = false; });
         return;
     }
 }

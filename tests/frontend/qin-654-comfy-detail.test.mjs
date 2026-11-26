@@ -59,7 +59,13 @@ test('QIN-654 AC2：提示词浮窗安全区分正负向、标注截断并复制
     try {
         const preview = await loadPreview(host);
         const topDocument = new host.document.constructor();
-        globalThis.top = {document: topDocument, location: {origin: location.origin}};
+        let copied = '';
+        globalThis.top = {
+            document: topDocument,
+            location: {origin: location.origin},
+            navigator: {clipboard: {writeText: async value => { copied = value; }}},
+        };
+        navigator.clipboard.writeText = async () => { throw new Error('iframe 剪贴板权限被拒绝'); };
         const image = comfyImage({metadata: {generation: {
             prompt: '<img src=x onerror=alert(1)>', negative_prompt: 'blurry', truncated: true,
             comfyui: {source: 'embedded', has_workflow: true},
@@ -78,12 +84,26 @@ test('QIN-654 AC2：提示词浮窗安全区分正负向、标注截断并复制
         assert.match(dialog.innerHTML, /&lt;img src=x onerror=alert\(1\)&gt;/);
         assert.doesNotMatch(dialog.innerHTML, /<img src=x/);
 
-        let copied = '';
-        navigator.clipboard.writeText = async value => { copied = value; };
         const copy = dialog.querySelector('[data-comfy-prompt-copy]');
         click(topDocument, copy);
         await new Promise(resolve => setImmediate(resolve));
         assert.equal(copied, '<img src=x onerror=alert(1)>\n\nblurry');
+        assert.equal(copy.querySelector('span').textContent, '已复制');
+        assert.equal(dialog.querySelector('header [data-comfy-dialog-close]'), null, '提示词弹窗右上角不显示关闭按钮');
+        assert.ok(dialog.querySelector('footer [data-comfy-dialog-close]'), '底部关闭按钮继续保留');
+
+        let fallbackCopied = '';
+        globalThis.top.navigator.clipboard.writeText = async () => { throw new Error('顶层剪贴板权限被拒绝'); };
+        navigator.clipboard.writeText = async () => { throw new Error('iframe 剪贴板权限被拒绝'); };
+        topDocument.execCommand = () => {
+            fallbackCopied = topDocument.querySelector('textarea')?.value || '';
+            return true;
+        };
+        click(topDocument, copy);
+        await new Promise(resolve => setImmediate(resolve));
+        assert.equal(fallbackCopied, '<img src=x onerror=alert(1)>\n\nblurry', '剪贴板 API 被拒绝时使用同步复制回退');
+        assert.equal(topDocument.querySelector('textarea'), null, '复制回退后移除临时文本框');
+        assert.equal(copy.querySelector('span').textContent, '已复制');
     } finally {
         host.dispose();
     }
