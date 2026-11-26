@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 838,
+  "authorization_basis": "GitHub Issue #838 (QIN-667)",
+  "files": [
+    "tests/frontend/qin-667-reference-canvas-save-index.test.mjs"
+  ]
+}

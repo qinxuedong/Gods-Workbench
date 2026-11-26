@@ -2323,12 +2323,13 @@ function deleteDetailMediaCanvasSelection(){
     setStatus(`已从当前画布移除 ${mediaIds.length+noteIds.length+drawingIds.length} 个对象，素材库原文件不受影响`);
 }
 async function saveDetailReferenceCanvas(){
+    const saveState = detailViewerState;
     const items = detailMediaCanvasItems();
-    if(detailViewerState.referenceCanvasSaving) return;
+    if(saveState.referenceCanvasSaving) return;
     syncDetailReferenceTitleFromDom();
-    const existingId = detailViewerState.referenceCanvasId || '';
+    const existingId = saveState.referenceCanvasId || '';
     const actionLabel = existingId ? '更新参考画布' : '保存参考画布';
-    const canvasTitle = detailViewerState.referenceCanvasTitle || '未命名参考画布';
+    const canvasTitle = saveState.referenceCanvasTitle || '未命名参考画布';
     if(!items.length && !existingId){
         const reason='参考画布中没有可保存的素材';
         const error=new Error(reason);
@@ -2338,15 +2339,15 @@ async function saveDetailReferenceCanvas(){
         showAssetFailure(failureMessage,error);
         throw error;
     }
-    detailViewerState.referenceCanvasSaving = true;
+    saveState.referenceCanvasSaving = true;
     renderDetailViewer();
     try {
         const itemPayload = items.map(item => {
-            const box = detailViewerState.mediaCanvasLayout?.[item.id] || {};
+            const box = saveState.mediaCanvasLayout?.[item.id] || {};
             const natural = detailMediaCanvasNaturalSize(item);
             const assetId = detailMediaCanvasPersistId(item);
             const referenceKey = detailMediaCanvasPersistKey(item);
-            const sourceUrl = String(item.assetUrl || item.asset_url || item.public_url || item.source_url || item.url || detailViewerUrl(detailViewerState.source,item) || '').trim();
+            const sourceUrl = String(item.assetUrl || item.asset_url || item.public_url || item.source_url || item.url || detailViewerUrl(saveState.source,item) || '').trim();
             return {
                 id:referenceKey,
                 node_id:item.node_id || '',
@@ -2356,21 +2357,21 @@ async function saveDetailReferenceCanvas(){
                 storage_root_id:String(item.assetStorageRootId || item.asset_storage_root_id || item.storage_root_id || ''),
                 relative_path:String(item.assetRelativePath || item.asset_relative_path || item.relative_path || ''),
                 name:String(item.name || '未命名素材').slice(0,500),
-                media_kind:detailViewerType(detailViewerState.source,item),
+                media_kind:detailViewerType(saveState.source,item),
                 source_url:sourceUrl,
-                url:String(detailViewerUrl(detailViewerState.source,item) || sourceUrl),
+                url:String(detailViewerUrl(saveState.source,item) || sourceUrl),
                 x:Number(box.x || 0), y:Number(box.y || 0),
                 w:Number(box.width || 0), h:Number(box.height || 0),
                 natural_w:Number(item.natural_w || item.naturalWidth || item.metadata?.width || natural.width || 0),
                 natural_h:Number(item.natural_h || item.naturalHeight || item.metadata?.height || natural.height || 0),
-                reference_edit:item.reference_edit && detailViewerType(detailViewerState.source,item) === 'image' ? item.reference_edit : null,
+                reference_edit:item.reference_edit && detailViewerType(saveState.source,item) === 'image' ? item.reference_edit : null,
             };
         });
         const data = await apiJsonResponse(assetManagerApi.saveReferenceCanvas({
             canvas_id:existingId,
-            title:detailViewerState.referenceCanvasTitle,
+            title:saveState.referenceCanvasTitle,
             items:itemPayload,
-            annotations:(detailViewerState.mediaCanvasAnnotations || []).map(note => ({id:note.id,x:Number(note.x||0),y:Number(note.y||0),w:Number(note.width||280),h:Number(note.height||120),text:String(note.text||'').slice(0,2000),background_color:note.backgroundColor||'#202622',text_color:note.textColor||'#ffffff',font_size:Number(note.fontSize||15),padding:Number(note.padding||10)})),
+            annotations:(saveState.mediaCanvasAnnotations || []).map(note => ({id:note.id,x:Number(note.x||0),y:Number(note.y||0),w:Number(note.width||280),h:Number(note.height||120),text:String(note.text||'').slice(0,2000),background_color:note.backgroundColor||'#202622',text_color:note.textColor||'#ffffff',font_size:Number(note.fontSize||15),padding:Number(note.padding||10)})),
             drawings:detailMediaCanvasDrawings().map(drawing => {
                 const boundItem = items.find(value => value.id === drawing.boundTo);
                 return {id:drawing.id,color:drawing.color||signalFlowAccentColor(),width:Number(drawing.width||3),bound_to:boundItem ? detailMediaCanvasPersistKey(boundItem) : '',standalone:Boolean(drawing.standalone || !boundItem),points:(drawing.points||[]).slice(0,5000).map(point => ({x:Number(point.x||0),y:Number(point.y||0)}))};
@@ -2386,26 +2387,29 @@ async function saveDetailReferenceCanvas(){
                 transparent:Boolean(group.transparent),
             })),
             viewport:{
-                x:Number(detailViewerState.mediaCanvasX || 0),
-                y:Number(detailViewerState.mediaCanvasY || 0),
-                scale:Number(detailViewerState.mediaCanvasScale || 1),
+                x:Number(saveState.mediaCanvasX || 0),
+                y:Number(saveState.mediaCanvasY || 0),
+                scale:Number(saveState.mediaCanvasScale || 1),
             },
         }));
-        const savedId = String(data.canvas?.id || existingId || '').trim();
+        if(detailViewerState !== saveState) return data;
+        const savedId = String(data.canvas?.canvas_id || data.canvas?.id || existingId || '').trim();
         if(!savedId) throw new Error('服务端没有返回参考画布 ID，保存结果无法确认');
-        detailViewerState.referenceCanvasId = savedId;
+        saveState.referenceCanvasId = savedId;
         const index = await apiJsonResponse(assetManagerApi.getCanvasAssets()).catch(() => null);
+        if(detailViewerState !== saveState) return data;
         if(!index) throw new Error('画布已写入，但资产索引刷新失败；请刷新后检查参考画布分类');
+        const canvases = Array.isArray(index.canvases) ? index.canvases : [];
         setCanvasAssetsData({
             categories:Array.isArray(index.categories) ? index.categories : [],
-            canvases:Array.isArray(index.canvases) ? index.canvases : [],
+            canvases,
             items:Array.isArray(index.items) ? index.items : [],
         });
-        const savedCanvas = canvasAssetsData.canvases.find(canvas => String(canvas.id || '') === savedId);
+        const savedCanvas = canvases.find(canvas => String(canvas.canvas_id || canvas.id || '') === savedId);
         if(!savedCanvas || (savedCanvas.kind || 'classic') !== 'reference'){
             throw new Error('画布已写入，但未进入“参考画布”索引；请刷新后重试');
         }
-        detailViewerState.referenceCanvasId = savedId;
+        saveState.referenceCanvasId = savedId;
         setActiveCanvasAssetCategory('reference');
         setActiveCanvasAssetCanvasId(savedId);
         normalizeCanvasAssetState();
@@ -2414,14 +2418,15 @@ async function saveDetailReferenceCanvas(){
         showAssetNotice(successMessage,'success',8000);
         return data;
     } catch(err) {
+        if(detailViewerState !== saveState) return null;
         const failureMessage = `${actionLabel}：${canvasTitle} 失败！`;
         setStatus(failureMessage);
         showAssetNotice(failureMessage,'error',8000);
         showAssetFailure(failureMessage,err);
         throw err;
     } finally {
-        detailViewerState.referenceCanvasSaving = false;
-        renderDetailViewer();
+        saveState.referenceCanvasSaving = false;
+        if(detailViewerState === saveState) renderDetailViewer();
     }
 }
 function replaceDetailImageEditorCanvasItem(asset,referenceEdit){
