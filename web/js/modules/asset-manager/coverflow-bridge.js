@@ -267,7 +267,7 @@ async function openRegistryCoverflowAssetInEditor(detail={}){
     if(referenceCanvasItem || referenceCanvasLibraryItem || detailMediaCanvasItem){
         const item = referenceCanvasItem || referenceCanvasLibraryItem || detailMediaCanvasItem;
         if(detail.mode === 'fullscreen') window.dispatchEvent(new CustomEvent('gw:asset-coverflow-close', {detail:{mode:'fullscreen'}}));
-        await openDetailImageEditor(item.id, {item,returnToCoverflow});
+        await openDetailImageEditor(item.id, {item,returnToCoverflow,allowContextSwitch:true});
         return;
     }
     if(detail.mode === 'fullscreen') window.dispatchEvent(new CustomEvent('gw:asset-coverflow-close', {detail:{mode:'fullscreen'}}));
@@ -278,8 +278,8 @@ async function openRegistryCoverflowAssetInEditor(detail={}){
         setSelectedRegistryAssetId(id);
         setRegistryDetail(registryAssets.find(value => value.id === id) || item);
     }
-    if(!detailMediaCanvasItem) showDetailPreview(source, id);
-    await openDetailImageEditor(id, {item,returnToCoverflow});
+    if(!detailMediaCanvasItem && !detailViewerState.referenceCanvasMode) showDetailPreview(source, id);
+    await openDetailImageEditor(id, {item,returnToCoverflow,allowContextSwitch:true});
 }
 function registryGroupMemberSelectionIds(structure){
     return registryGroupStructureMembers(structure).map(value => value.asset.id);

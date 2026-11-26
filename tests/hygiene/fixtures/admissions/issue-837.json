@@ -1,0 +1,28 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 837,
+  "authorization_basis": "GitHub Issue #837 (QIN-666), design-approved 2026-11-26",
+  "files": [
+    "docs/guides/KEYBOARD-SHORTCUTS.md",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-666-image-edit-entry-shortcut-e.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-556.json",
+    "tests/hygiene/fixtures/admissions/issue-837.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/coverflow-bridge.js",
+    "web/js/modules/asset-manager/coverflow.js",
+    "web/js/modules/asset-manager/media-canvas.js",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-666-image-edit-entry-shortcut-e.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #837 (QIN-666), 2026-11-26",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-666：参考画布单图编辑入口、原生双击修复与跨表面 E/e 快捷键回归；同步快捷键指南并更新 Issue #556 已准入指南哈希。"
+}

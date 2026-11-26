@@ -222,7 +222,11 @@ function announceChange(view, reason) {
 
 function requestEdit(view) {
     const item = viewItem(view);
-    if (!item || item.mediaKind !== 'image') return;
+    if (!item) return;
+    if (item.mediaKind !== 'image') {
+        status(view, '当前素材不是图片，不能进入单图编辑器');
+        return;
+    }
     emit(REQUEST_EDIT_EVENT, {
         mode: view.mode,
         source: view.source,
@@ -732,6 +736,13 @@ function handleKeydown(view, event) {
         event.preventDefault();
         event.stopPropagation();
         void move(view, 1, 'keyboard', {focusCurrent: true});
+    } else if (String(event.key || '').toLowerCase() === 'e'
+        && !event.ctrlKey && !event.metaKey && !event.altKey
+        && !event.isComposing && !event.repeat
+        && (view.mode === 'fullscreen' || !document.querySelector('[data-image-editor-overlay]'))) {
+        event.preventDefault();
+        event.stopPropagation();
+        requestEdit(view);
     } else if (view.mode === 'fullscreen'
         && !event.ctrlKey && !event.metaKey && !event.altKey
         && String(event.key || '').toLowerCase() === 'f') {
@@ -857,7 +868,12 @@ function createSurface(view) {
     container.addEventListener('keydown', event => {
         const parentEditorShortcut = event.key === 'Escape'
             || event.key === '·'
-            || event.code === 'Backquote';
+            || event.code === 'Backquote'
+            || (view.mode === 'editor'
+                && document.querySelector('[data-image-editor-overlay]')
+                && String(event.key || '').toLowerCase() === 'e'
+                && !event.ctrlKey && !event.metaKey && !event.altKey
+                && !event.isComposing && !event.repeat);
         if (view.mode === 'editor' && !parentEditorShortcut) event.stopPropagation();
         handleKeydown(view, event);
     });

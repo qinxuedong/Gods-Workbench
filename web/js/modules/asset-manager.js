@@ -10229,6 +10229,39 @@ function currentDetailViewerReference(){
     }
     return null;
 }
+function registryEditImageCandidate(target){
+    const board = assetBoardById(activeTab);
+    if(activeTab !== 'registry' && board?.system !== false) return null;
+    const focused = target?.closest?.('[data-registry-structure-card],[data-registry-card]')
+        || document.activeElement?.closest?.('[data-registry-structure-card],[data-registry-card]');
+    const structureType = focused?.dataset.registryStructureType || '';
+    if(structureType === 'group') return {kind:'group'};
+    if(structureType === 'version'){
+        const structureId = String(focused.dataset.registryStructureCard || '').trim();
+        const structure = registryAssetStructures.get(structureId);
+        const assetId = String(structure?.current_asset_id || '').trim();
+        return {kind:assetId ? 'asset' : 'missing', item:structure && assetId
+            ? registryStructureMemberAsset(structure,assetId) || registryAssets.find(item => item.id === assetId) || null
+            : null};
+    }
+    if(registrySelectedIds.size > 1) return {kind:'multiple'};
+    const directId = String(focused?.dataset.registryCard || '').trim();
+    if(directId.startsWith('structure:')) return {kind:'group'};
+    const selectedId = directId || selectedRegistryAssetId || [...registrySelectedIds][0] || '';
+    if(!selectedId) return null;
+    const items = board?.system === false ? customAssetLibraryItems(board) : registryAssets;
+    const item = items.find(value => String(value.id || value.asset_id || '') === selectedId)
+        || registryAssets.find(value => String(value.id || value.asset_id || '') === selectedId)
+        || (registryDetail?.id === selectedId ? registryDetail : null);
+    return {kind:item ? 'asset' : 'missing',item};
+}
+function editImageShortcutModalOpen(){
+    return Boolean(storageSettingsState.open || registryRecycleBinState.open || thumbnailGeneratorState.open
+        || projectDirectoryTemplateManagerState.open || boardSourceState.open || boardFolderCreateState.open
+        || thumbnailCacheSwitchState.open || serverDirectoryBrowserState.open || assetPreviewAllState.confirming
+        || assetPreviewAllState.deleteOpen || detailViewerState.mediaLutMenu?.open
+        || document.querySelector('[data-video-storyboard-overlay],[data-detail-media-lut-layer],#storageSettingsOverlay,#boardCreateOverlay,#boardSourceOverlay,#boardEditOverlay,#boardFolderCreateOverlay,#thumbnailGeneratorOverlay,#registryRecycleOverlay,#registryRecycleBinOverlay,#projectDirectoryTemplateManagerOverlay,#assetOrganizeDialog'));
+}
 function rectsIntersect(a, b){
     return a.left < b.right && a.right > b.left && a.top < b.bottom && a.bottom > b.top;
 }
@@ -10709,12 +10742,65 @@ document.addEventListener('keydown', event => {
         else if(event.key==='Delete' || event.key==='Backspace'){ event.preventDefault(); gwCall('preview', 'deleteDetailImageEditorLayers'); }
         else if(!event.ctrlKey && !event.metaKey && !event.altKey && key==='q'){ event.preventDefault(); gwCall('preview', 'setDetailImageEditorTool', 'select'); }
         else if(!event.ctrlKey && !event.metaKey && !event.altKey && key==='b'){ event.preventDefault(); gwCall('preview', 'setDetailImageEditorTool', 'brush'); }
-        else if(!event.ctrlKey && !event.metaKey && !event.altKey && key==='e'){ event.preventDefault(); gwCall('preview', 'setDetailImageEditorTool', 'eraser'); }
+        else if(!event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && !event.repeat && key==='e'){ event.preventDefault(); gwCall('preview', 'setDetailImageEditorTool', 'eraser'); }
         else if(!event.ctrlKey && !event.metaKey && !event.altKey && key==='c'){ event.preventDefault(); gwCall('preview', 'setDetailImageEditorTool', 'crop'); }
         else if(!event.ctrlKey && !event.metaKey && !event.altKey && key==='t'){ event.preventDefault(); gwCall('preview', 'addDetailImageEditorText'); }
         else if(['+','=','add'].includes(key) && ['brush','eraser'].includes(state.tool)){ event.preventDefault(); state.brushWidth=Math.min(300,state.brushWidth+1); gwCall('preview', 'renderDetailImageEditor'); }
         else if(['-','subtract'].includes(key) && ['brush','eraser'].includes(state.tool)){ event.preventDefault(); state.brushWidth=Math.max(1,state.brushWidth-1); gwCall('preview', 'renderDetailImageEditor'); }
         return;
+    }
+    const keyboardEditing = ['INPUT','TEXTAREA','SELECT'].includes(String(event.target?.tagName || '').toUpperCase())
+        || event.target?.isContentEditable
+        || Boolean(event.target?.closest?.('[contenteditable]'));
+    const interactiveTarget = event.target?.closest?.('button,a,input,textarea,select');
+    const editKey = String(event.key || '').toLowerCase() === 'e';
+    if(editKey && !event.ctrlKey && !event.metaKey && !event.altKey && !event.isComposing && !event.repeat
+        && !keyboardEditing
+        && !['assetTreeEditInput','workflowTreeEditInput','promptTreeEditInput'].includes(event.target?.id || '')
+        && !editImageShortcutModalOpen()
+        && !detailViewerState.textEditing && !detailViewerState.textVersionEditing
+        && !detailViewerState.mediaCanvasEditingAnnotationId){
+        if(detailViewerState.open){
+            if(detailViewerState.referenceCanvasMode){
+                if(!detailViewerState.mediaCanvasSelectedIds?.size) return;
+                event.preventDefault();
+                gwCall('preview', 'enterCurrentDetailEditableContent').catch(err => setStatus(err.message || '无法打开单图编辑器'));
+                return;
+            }
+            const item = detailViewerState.items[detailViewerState.index]
+                || detailViewerItem(detailViewerState.source,detailViewerState.id);
+            if(!item) return;
+            event.preventDefault();
+            if(detailViewerType(detailViewerState.source,item) !== 'image'){
+                setStatus('当前素材不是图片，不能进入单图编辑器');
+                return;
+            }
+            gwCall('preview', 'openDetailImageEditor', item.id, {item})
+                .catch(err => setStatus(err.message || '无法打开单图编辑器'));
+            return;
+        }
+        if(!editImageShortcutModalOpen()){
+            const candidate = registryEditImageCandidate(event.target);
+            if(candidate?.kind === 'multiple' || candidate?.kind === 'group' || candidate?.kind === 'missing'){
+                event.preventDefault();
+                setStatus(candidate.kind === 'multiple'
+                    ? '请只选择一张图片进入单图编辑器'
+                    : candidate.kind === 'group' ? '图片组不能直接进入单图编辑器' : '当前素材不可用，不能进入单图编辑器');
+                return;
+            }
+            if(candidate?.kind === 'asset'){
+                event.preventDefault();
+                if(registryVisualType(candidate.item || {}) !== 'image'){
+                    setStatus('当前素材不是图片，不能进入单图编辑器');
+                    return;
+                }
+                const item = candidate.item;
+                gwCall('preview', 'showDetailPreview', 'registry', item.id, {items:[item]})
+                    .then(() => gwCall('preview', 'openDetailImageEditor', item.id, {item}))
+                    .catch(err => setStatus(err.message || '无法打开单图编辑器'));
+                return;
+            }
+        }
     }
     const libraryResizer = event.target?.closest?.('[data-detail-media-library-resizer]');
     if(libraryResizer && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')){
@@ -10728,8 +10814,6 @@ document.addEventListener('keydown', event => {
         gwCall('media-canvas', 'selectDetailMediaCanvasLibraryItem', mediaLibraryItem.dataset.detailMediaLibraryItem || '');
         return;
     }
-    const keyboardEditing = ['INPUT','TEXTAREA','SELECT'].includes(String(event.target?.tagName || '').toUpperCase()) || event.target?.isContentEditable;
-    const interactiveTarget = event.target?.closest?.('button,a,input,textarea,select');
     const detailToggleShortcut = isBackquoteShortcut(event);
     const focusedRegistryVersionStructure = event.target?.closest?.('[data-registry-structure-card][data-registry-structure-type="version"]')
         || document.activeElement?.closest?.('[data-registry-structure-card][data-registry-structure-type="version"]');

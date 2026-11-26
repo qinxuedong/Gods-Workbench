@@ -1346,12 +1346,12 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-minimap-toggle:not(.is-active) .asset-detail-minimap-hidden { display:inline-flex; }
 .asset-detail-media-context-menu { position:absolute; z-index:7; width:240px; max-height:calc(100% - 16px); border:1px solid #657169; background:#202622; color:#edf1eb; padding:5px; overflow-y:auto; }
 .asset-detail-media-context-menu > button { width:100%; min-height:34px; padding:5px 7px; background:transparent; color:inherit; display:grid; grid-template-columns:22px minmax(0,1fr) auto; align-items:center; gap:6px; text-align:left; }
-.asset-detail-media-context-menu > button:hover,.asset-detail-media-context-menu > button:focus-visible { background:var(--sf-cyan); color:#fff; outline:none; }
+.asset-detail-media-context-menu > button:hover:not(:disabled),.asset-detail-media-context-menu > button:focus-visible:not(:disabled) { background:var(--sf-cyan); color:#fff; outline:none; }
 .asset-detail-media-context-menu > button svg { width:14px; height:14px; }
 .asset-detail-media-context-menu > button span { font-size: var(--gw-type-label-md); font-weight:900; }
 .asset-detail-media-context-menu section header select { max-width:92px; }
 .asset-detail-media-context-menu > button small { color:#aeb8b0; font-size: var(--gw-type-label-md); font-weight:750; }
-.asset-detail-media-context-menu > button:hover small,.asset-detail-media-context-menu > button:focus-visible small { color:#fff; }
+.asset-detail-media-context-menu > button:hover:not(:disabled) small,.asset-detail-media-context-menu > button:focus-visible:not(:disabled) small { color:#fff; }
 .asset-detail-media-context-menu section { margin-top:4px; padding-top:5px; border-top:1px solid #465148; }
 .asset-detail-media-context-menu section > header { height:22px; padding:0 5px; display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .asset-detail-media-context-menu section > header span { font-size: var(--gw-type-label-md); font-weight:900; }
