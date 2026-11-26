@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import subprocess
 from pathlib import Path
 
 PROMPT_REQUIRED_FIELDS = {
@@ -177,3 +178,81 @@ def test_vendor_assets_match_recorded_source_and_local_hashes() -> None:
     assert "根级 `LICENSE` 已存在" in licenses_text
     assert "根级 `LICENSE` **有意未提供**" not in licenses_text
     assert "BLOCKED" not in licenses_text
+
+
+def test_fsl_license_notice_cla_and_source_headers() -> None:
+    """主仓已切换为 FSL-1.1-Apache-2.0，NOTICE/CLA 齐备且自有源码无旧协议头残留。"""
+    repo_root = _repo_root()
+
+    license_text = (repo_root / "LICENSE").read_text(encoding="utf-8")
+    for token in (
+        "FSL-1.1-Apache-2.0",
+        "Licensor: qinxuedong",
+        "Change Date: 2028-11-26",
+        "Competing Use",
+        "Grant of Future License",
+        "Apache License, Version 2.0",
+    ):
+        assert token in license_text, f"LICENSE 缺少关键条款或字段: {token}"
+
+    notice_path = repo_root / "NOTICE"
+    assert notice_path.is_file(), "根目录缺少 NOTICE 文件"
+    notice_text = notice_path.read_text(encoding="utf-8")
+    for token in (
+        "神工坊",
+        "Gods' Workbench",
+        "Gods-Workbench",
+        "qinxuedong",
+        "343996519@qq.com",
+        "qinxuedong321@gmail.com",
+        "THIRD_PARTY_NOTICES.md",
+    ):
+        assert token in notice_text, f"NOTICE 缺少关键声明: {token}"
+
+    cla_path = repo_root / "CLA.md"
+    assert cla_path.is_file(), "根目录缺少 CLA.md"
+    cla_text = cla_path.read_text(encoding="utf-8")
+    assert "I have read the CLA Document and I hereby sign the CLA" in cla_text
+    assert "FSL-1.1-Apache-2.0" in cla_text
+
+    cla_workflow = repo_root / ".github" / "workflows" / "cla.yml"
+    assert cla_workflow.is_file(), "缺少自动化 CLA 工作流 .github/workflows/cla.yml"
+    cla_workflow_text = cla_workflow.read_text(encoding="utf-8")
+    assert "contributor-assistant/github-action" in cla_workflow_text
+    assert ".github/cla-signatures.json" in cla_workflow_text
+    assert "CLA.md" in cla_workflow_text
+
+    for doc_name in ("README.md", "README_EN.md", "THIRD_PARTY_NOTICES.md"):
+        doc_text = (repo_root / doc_name).read_text(encoding="utf-8")
+        assert "FSL-1.1-Apache-2.0" in doc_text, f"{doc_name} 未同步 FSL-1.1-Apache-2.0"
+        assert "NOTICE" in doc_text, f"{doc_name} 未引用 NOTICE"
+
+    for doc_name in ("README.md", "README_EN.md"):
+        doc_text = (repo_root / doc_name).read_text(encoding="utf-8")
+        assert "CLA.md" in doc_text, f"{doc_name} 未引用 CLA.md"
+
+    # 全仓自有源码文件（排除 web/vendor/ 与 apply_license_headers.py 自身检测正则）不得残留旧 Apache 头。
+    legacy_marker = "Licensed under the " + "Apache License, Version 2.0"
+    tracked = subprocess.check_output(
+        ["git", "ls-files", "-z"],
+        cwd=repo_root,
+    ).split(b"\0")
+    residual_files: list[str] = []
+    source_suffixes = (".py", ".rs", ".js", ".mjs", ".css", ".sh")
+    for raw in tracked:
+        if not raw:
+            continue
+        rel = raw.decode("utf-8").replace("\\", "/")
+        if rel.startswith("web/vendor/") or rel == "scripts/apply_license_headers.py":
+            continue
+        if not (
+            rel.endswith(source_suffixes)
+            or rel.startswith("deploy/docker/Dockerfile")
+        ):
+            continue
+        candidate = repo_root / rel
+        if not candidate.is_file():
+            continue
+        if legacy_marker in candidate.read_text(encoding="utf-8"):
+            residual_files.append(rel)
+    assert not residual_files, f"发现未替换为 FSL-1.1-Apache-2.0 的自有源码头: {residual_files}"

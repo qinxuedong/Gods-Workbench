@@ -1,10 +1,10 @@
-# Copyright 2026 Gods-Workbench Authors
+# Copyright 2026 qinxuedong (Gods-Workbench Authors)
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Functional Source License, Version 1.1, Apache 2.0
+# Future License (the "License"); you may not use this file except in
+# compliance with the License. You may obtain a copy of the License at
+#     https://fsl.software/
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -14,7 +14,7 @@
 
 """安全注入开源协议头部版权声明脚本。
 
-针对 gw/ (*.py), run.py, scripts/ (*.py), web/js/ (*.js) 安全注入 Apache License 2.0 声明。
+针对 gw/ (*.py), run.py, scripts/ (*.py), web/js/ (*.js) 安全注入 FSL-1.1-Apache-2.0 声明。
 绝不触碰 web/vendor/ 下的第三方制品。
 安全保护已有的 shebang、编码声明（# -*- coding: utf-8 -*-）及第三方许可证。
 """
@@ -29,13 +29,13 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-PYTHON_LICENSE_HEADER = """# Copyright 2026 Gods-Workbench Authors
+PYTHON_LICENSE_HEADER = """# Copyright 2026 qinxuedong (Gods-Workbench Authors)
+# SPDX-License-Identifier: FSL-1.1-Apache-2.0
 #
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Functional Source License, Version 1.1, Apache 2.0
+# Future License (the "License"); you may not use this file except in
+# compliance with the License. You may obtain a copy of the License at
+#     https://fsl.software/
 #
 # Unless required by applicable law or agreed to in writing, software
 # distributed under the License is distributed on an "AS IS" BASIS,
@@ -44,13 +44,13 @@ PYTHON_LICENSE_HEADER = """# Copyright 2026 Gods-Workbench Authors
 # limitations under the License."""
 
 JS_LICENSE_HEADER = """/**
- * Copyright 2026 Gods-Workbench Authors
+ * Copyright 2026 qinxuedong (Gods-Workbench Authors)
+ * SPDX-License-Identifier: FSL-1.1-Apache-2.0
  *
- * Licensed under the Apache License, Version 2.0 (the "License");
- * you may not use this file except in compliance with the License.
- * You may obtain a copy of the License at
- *
- *     http://www.apache.org/licenses/LICENSE-2.0
+ * Licensed under the Functional Source License, Version 1.1, Apache 2.0
+ * Future License (the "License"); you may not use this file except in
+ * compliance with the License. You may obtain a copy of the License at
+ *     https://fsl.software/
  *
  * Unless required by applicable law or agreed to in writing, software
  * distributed under the License is distributed on an "AS IS" BASIS,
@@ -69,7 +69,7 @@ def detect_newline(raw_bytes: bytes) -> str:
 def has_existing_license_or_copyright(text: str) -> bool:
     return bool(
         re.search(
-            r"Licensed under the Apache License|Copyright 2026 Gods-Workbench Authors|Copyright\s+\(c\)",
+            r"SPDX-License-Identifier:|Licensed under the Functional Source License|Licensed under the Apache License|Copyright 2026 .*Gods-Workbench Authors|Copyright\s+\(c\)",
             text,
             re.IGNORECASE,
         )
@@ -210,7 +210,7 @@ def process_files(
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="Inject Apache License 2.0 headers into source files."
+        description="Inject FSL-1.1-Apache-2.0 headers into source files."
     )
     parser.add_argument(
         "--dry-run",

@@ -32,6 +32,8 @@ _ROOT_ALLOWLIST = frozenset(
         "AGENTS.md",
         "JULES.md",
         "LICENSE",
+        "NOTICE",
+        "CLA.md",
         "THIRD_PARTY_NOTICES.md",
         "Changelog.md",
         "README.md",

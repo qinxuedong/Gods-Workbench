@@ -123,8 +123,11 @@ Direct dependencies for the Tauri client are pinned in [`clients/desktop/Cargo.l
 
 ## 5. License Texts
 
-### Apache License Version 2.0
-See [`LICENSE`](LICENSE) for the full Apache-2.0 license text.
+### Project License (FSL-1.1-Apache-2.0)
+See [`LICENSE`](LICENSE) for the full Functional Source License, Version 1.1, Apache 2.0 Future License (`FSL-1.1-Apache-2.0`) text governing Gods-Workbench source code, and [`NOTICE`](NOTICE) for trademark and brand reservations.
+
+### Apache License Version 2.0 (Third-Party Dependencies)
+Applies to third-party components explicitly listed under `Apache-2.0` above (for example `Playwright`, `cryptography`, `python-multipart`, `didyoumean`, and Rust `Tauri` ecosystem crates) and as the future license of Gods-Workbench after the Change Date specified in [`LICENSE`](LICENSE). Full text: https://www.apache.org/licenses/LICENSE-2.0.
 
 ### SIL Open Font License 1.1
 Full OFL-1.1 text is available in [`web/vendor/LICENSES.md`](web/vendor/LICENSES.md#4-sil-open-font-license-11).
@@ -196,6 +199,6 @@ You are free to share and adapt the material for any purpose, even commercially,
 
 - `backend/runtime-inventory.json`：记录 CPython 归档 URL 与 SHA-256、依赖锁文件、每个 wheel 的精确文件名、SHA-256、字节数与随包许可文件路径。
 - `backend/licenses/RUNTIME-COMPONENTS.md`：由构建脚本读取实际 wheel 元数据生成，逐项登记组件、版本、许可、版权/维护者、来源与随包许可引用；并不把第三方 wheel 泛称为 PSF 许可。
-- `backend/licenses/Gods-Workbench/LICENSE`：本项目的 Apache License 2.0 全文。
+- `backend/licenses/Gods-Workbench/LICENSE`：本项目的 `FSL-1.1-Apache-2.0` 主代码许可全文。
 
 随包边界：安装包不包含 ComfyUI、FFmpeg / ffprobe 可执行文件、AI 模型权重或视频素材；FFmpeg 仍由运行期定位并在缺失时失败关闭。升级与卸载默认保留用户数据根与许可清单，不静默迁移用户素材或模型。

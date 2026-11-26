@@ -1,6 +1,6 @@
 /**
- * Copyright 2026 Gods-Workbench Authors
- * Licensed under the Apache License, Version 2.0
+ * Copyright 2026 qinxuedong (Gods-Workbench Authors)
+ * Licensed under the Functional Source License, Version 1.1 (FSL-1.1-Apache-2.0)
  *
  * canvas-gate-node.js — God-Canvas System 1 Gate 节点渲染与分支联动契约。
  */

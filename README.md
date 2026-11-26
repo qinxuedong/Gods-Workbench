@@ -5,7 +5,7 @@
 [![Language](https://img.shields.io/badge/Language-English%20%7C%20%E4%B8%AD%E6%96%87-blue.svg)](#-语言切换--language)
 [![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB.svg?logo=python&logoColor=white)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115%2B-009688.svg?logo=fastapi&logoColor=white)](https://fastapi.tiangolo.com/)
-[![License](https://img.shields.io/badge/License-Apache%202.0-D22128.svg)](LICENSE)
+[![License](https://img.shields.io/badge/License-FSL--1.1--Apache--2.0-D22128.svg)](LICENSE)
 [![Platform](https://img.shields.io/badge/Platform-Windows-0078D6.svg?logo=windows&logoColor=white)](#-快速上手)
 [![Architecture](https://img.shields.io/badge/Design-Local--First-success.svg)](#-数据安全与资产主权)
 
@@ -261,9 +261,13 @@ RH 链接解析不要求先保存或云端运行；平台未提供完整原图�
 
 ---
 
-## 📄 开源许可证
+## 📄 开源许可证与商标声明
 
-本项目基于 [Apache License 2.0](LICENSE) 许可证正式开源发布。关于第三方依赖、组件、字体与数据集的完整许可声明，请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
+- **核心代码许可**：本项目主代码采用 [**FSL-1.1-Apache-2.0**](LICENSE)（Functional Source License, Version 1.1, Apache 2.0 Future License，Licensor: `qinxuedong`，Change Date: `2028-11-26`，自生效日起满两年后自动转为 Apache License 2.0）。详情请参阅根目录 [`LICENSE`](LICENSE)。
+- **商标与品牌保留**：有关「神工坊」「Gods' Workbench」「Gods-Workbench」及品牌标识的商标权保留条款，请参阅根目录 [`NOTICE`](NOTICE)；未经书面授权不得以官方/整合包名义商业分发或提供竞争性商业托管服务。
+- **商业授权联系**：如需商业授权、非 FSL 企业授权或官方品牌合作，请联系 `343996519@qq.com` / `qinxuedong321@gmail.com` 或通过 [GitHub 仓库](https://github.com/qinxuedong/Gods-Workbench) 联系项目所有者。
+- **贡献者许可协议（CLA）**：向本仓库提交 Pull Request 前需同意并签署 [`CLA.md`](CLA.md)。
+- **第三方声明**：关于第三方依赖、组件、字体与数据集的完整许可声明，请参阅 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)。
 
 ---
 
