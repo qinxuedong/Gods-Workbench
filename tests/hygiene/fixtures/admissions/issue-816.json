@@ -1,0 +1,19 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 816,
+  "authorization_basis": "GitHub Issue #816 (QIN-655), design-approved 2026-11-26",
+  "files": [
+    "gw/media/scene_detector.py",
+    "gw/media/keyframe_extractor.py",
+    "gw/asset_registry/index_jobs.py",
+    "tests/contracts/assets/test_mvp1_t8a_collector.py",
+    "tests/contracts/assets/test_qin_652_staged_index_enrichment.py",
+    "tests/contracts/media/test_dir_t8_atomic_derivatives.py",
+    "tests/media/test_c18_scene_grounding.py",
+    "tests/media/test_mvp1_t3_inmemory_keyframes.py",
+    "tests/hygiene/fixtures/admissions/issue-816.json"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [],
+  "notes": "QIN-655：切镜降维与软解线程限制、索引去除丢弃式解码、批量抽帧与失败清理契约。"
+}

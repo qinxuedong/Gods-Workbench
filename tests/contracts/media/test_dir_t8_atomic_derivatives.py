@@ -238,9 +238,11 @@ def test_clip_cas_conflict_leaves_no_orphan_media(
     assert not list(clip_dir.glob("*.part"))
 
 
-def test_keyframe_extractor_writes_part_then_replaces(
+@pytest.mark.parametrize("legacy_filter_script", [False, True])
+def test_keyframe_extractor_batches_and_atomically_publishes_frames(
     media_runtime: dict[str, Path],
     monkeypatch: pytest.MonkeyPatch,
+    legacy_filter_script: bool,
 ) -> None:
     """关键帧派生必须通过 .part + 原子替换，中断时清理临时文件。"""
     from gw.media import keyframe_extractor
@@ -250,12 +252,25 @@ def test_keyframe_extractor_writes_part_then_replaces(
     video.write_bytes(b"fixture-not-a-real-mp4")
     output_dir = media_runtime["data"] / "keyframes"
     monkeypatch.setattr(keyframe_extractor, "_tool", lambda _name: "ffmpeg-test-double")
+    calls = []
 
     def fake_run(args: list[str]) -> subprocess.CompletedProcess:
-        target = Path(args[-1])
-        assert target.name == "scene_001.part.webp", args
+        calls.append(args)
+        assert args.count("-i") == 1
+        if legacy_filter_script and "-/filter:v" in args:
+            return subprocess.CompletedProcess(
+                args, 1, stderr="Unrecognized option '/filter:v'"
+            )
+        option = "-filter_script:v" if "-filter_script:v" in args else "-/filter:v"
+        assert args[args.index(option) + 1].endswith("filter.txt")
+        pattern = Path(args[-1])
+        filter_text = Path(args[args.index(option) + 1]).read_text(
+            encoding="utf-8"
+        )
+        assert filter_text.index("select=") < filter_text.index("scale=")
+        target = pattern.with_name(pattern.name.replace("%03d", "001"))
         target.parent.mkdir(parents=True, exist_ok=True)
-        target.write_bytes(_png(64, 64, (8, 8, 8)))
+        Image.new("RGB", (64, 64), (8, 8, 8)).save(target, format="WEBP")
         return subprocess.CompletedProcess(args, 0)
 
     monkeypatch.setattr(keyframe_extractor, "_run", fake_run)
@@ -269,6 +284,36 @@ def test_keyframe_extractor_writes_part_then_replaces(
     assert (output_dir / "metadata.json").is_file()
     assert not list(output_dir.glob("*.part.*"))
     assert (output_dir / "scene_001.webp").is_file()
+    assert not list(output_dir.glob("frames_*"))
+    assert len(calls) == (2 if legacy_filter_script else 1)
+
+
+def test_keyframe_extractor_rejects_missing_scene_frame_and_cleans_outputs(
+    media_runtime: dict[str, Path],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from gw.media import keyframe_extractor
+
+    video = media_runtime["roots"] / "scene.mp4"
+    video.write_bytes(b"fixture-not-a-real-mp4")
+    output_dir = media_runtime["data"] / "keyframes"
+    monkeypatch.setattr(keyframe_extractor, "_tool", lambda _name: "ffmpeg-test-double")
+    monkeypatch.setattr(
+        keyframe_extractor,
+        "_run",
+        lambda args: subprocess.CompletedProcess(args, 0),
+    )
+
+    with pytest.raises(CleanroomException) as failed:
+        keyframe_extractor.extract_keyframes(
+            video,
+            [{"start_sec": 0.0, "end_sec": 0.01, "tags": []}],
+            output_dir,
+        )
+
+    assert failed.value.code == "KEYFRAME_EXTRACTION_FAILED"
+    assert not list(output_dir.glob("scene_*.webp"))
+    assert not list(output_dir.glob("frames_*"))
 
 
 def test_save_upload_explicit_conflict_rejects_overwrite(

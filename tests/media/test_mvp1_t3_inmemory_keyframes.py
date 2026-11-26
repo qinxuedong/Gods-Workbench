@@ -28,7 +28,7 @@ def _scenes() -> list[dict]:
     ]
 
 
-def test_index_scan_decodes_each_keyframe_in_memory_and_keeps_metadata(
+def test_index_scan_does_not_decode_keyframes_and_keeps_metadata(
     tmp_path: Path, monkeypatch
 ) -> None:
     root = tmp_path / "source"
@@ -43,7 +43,7 @@ def test_index_scan_decodes_each_keyframe_in_memory_and_keeps_metadata(
 
     def decode(_path, at_sec):
         decoded_at.append(at_sec)
-        return b"in-memory-png"
+        raise AssertionError("建库阶段不得抽取或解码关键帧")
 
     monkeypatch.setattr(keyframe_extractor, "decode_keyframe_to_memory", decode)
 
@@ -70,7 +70,7 @@ def test_index_scan_decodes_each_keyframe_in_memory_and_keeps_metadata(
 
     assert len(files) == 1
     item = files[0]
-    assert decoded_at == [1.0, 3.0]
+    assert decoded_at == []
     assert item["duration"] == 4.0
     assert item["metadata"]["video_segments"] == scenes
     assert item["metadata"]["video_metadata"] == {
@@ -82,32 +82,34 @@ def test_index_scan_decodes_each_keyframe_in_memory_and_keeps_metadata(
         "container": "mov",
         "source_url": None,
         "scene_detection_status": "complete",
-        "keyframe_status": "decoded_in_memory",
+        "keyframe_status": "pending",
     }
     assert not any(isinstance(value, bytes) for value in item.values())
     assert set(root.iterdir()) == original_files
 
 
-def test_index_scan_records_keyframe_degradation_without_frame_artifacts(
+def test_scene_detection_failure_keeps_unavailable_status_without_frame_artifacts(
     tmp_path: Path, monkeypatch
 ) -> None:
     video = tmp_path / "source.mp4"
     video.write_bytes(b"video")
-    scenes = _scenes()
-    monkeypatch.setattr(scene_detector, "detect_scenes", lambda _path: scenes)
+    def fail_detection(_path):
+        raise CleanroomException(503, "SCENE_DETECTION_FAILED", "检测失败")
 
-    def fail_decode(_path, _at_sec):
-        raise CleanroomException(503, "KEYFRAME_EXTRACTION_FAILED", "解码失败")
-
-    monkeypatch.setattr(keyframe_extractor, "decode_keyframe_to_memory", fail_decode)
+    monkeypatch.setattr(scene_detector, "detect_scenes", fail_detection)
+    monkeypatch.setattr(
+        keyframe_extractor,
+        "decode_keyframe_to_memory",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("不应解码关键帧")),
+    )
 
     metadata, duration = index_jobs._video_index_data(video)
 
-    assert duration == 4.0
-    assert metadata["video_segments"] == scenes
-    assert metadata["video_metadata"]["scene_detection_status"] == "complete"
+    assert duration is None
+    assert metadata["video_segments"] == []
+    assert metadata["video_metadata"]["scene_detection_status"] == "unavailable"
     assert metadata["video_metadata"]["keyframe_status"] == "unavailable"
-    assert metadata["video_metadata"]["reason_code"] == "KEYFRAME_EXTRACTION_FAILED"
+    assert metadata["video_metadata"]["reason_code"] == "SCENE_DETECTION_FAILED"
     assert set(tmp_path.iterdir()) == {video}
 
 

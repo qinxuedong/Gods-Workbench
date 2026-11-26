@@ -222,7 +222,7 @@ def test_ac2_video_channel_is_serial_and_hash_channel_is_bounded(
                     "video_segments": [{"start_sec": 0.0, "end_sec": 1.0}],
                     "video_metadata": {
                         "scene_detection_status": "complete",
-                        "keyframe_status": "decoded_in_memory",
+                        "keyframe_status": "pending",
                         "duration_sec": 1.0,
                     },
                 },
@@ -542,7 +542,7 @@ def test_review_same_second_same_size_rewrite_refreshes_enrichment(
                 "video_segments": [{"start_sec": 0.0, "end_sec": duration}],
                 "video_metadata": {
                     "scene_detection_status": "complete",
-                    "keyframe_status": "decoded_in_memory",
+                    "keyframe_status": "pending",
                     "duration_sec": duration,
                 },
             },
@@ -613,7 +613,7 @@ def test_review_changed_version_retries_after_enrich_failure(index_runtime, monk
                     "height": 360,
                     "frame_rate": 25.0,
                     "scene_detection_status": "complete",
-                    "keyframe_status": "decoded_in_memory",
+                    "keyframe_status": "pending",
                     "duration_sec": 7.0,
                 },
             },
@@ -749,7 +749,7 @@ def test_review_enrich_concurrency_is_global_across_jobs(index_runtime, monkeypa
                     "video_segments": [{"start_sec": 0.0, "end_sec": 1.0}],
                     "video_metadata": {
                         "scene_detection_status": "complete",
-                        "keyframe_status": "decoded_in_memory",
+                        "keyframe_status": "pending",
                         "duration_sec": 1.0,
                     },
                 },
@@ -846,7 +846,7 @@ def test_video_index_data_records_real_frame_rate(monkeypatch):
     monkeypatch.setattr(scene_detector, "detect_scenes", lambda _path: scenes)
     monkeypatch.setattr(
         "gw.media.keyframe_extractor.decode_keyframe_to_memory",
-        lambda *_args: b"frame",
+        lambda *_args: (_ for _ in ()).throw(AssertionError("索引不得解码关键帧")),
     )
 
     def probed(_path):
@@ -855,6 +855,7 @@ def test_video_index_data_records_real_frame_rate(monkeypatch):
     monkeypatch.setattr(media_probe, "probe", probed)
     metadata, _ = jobs._video_index_data(Path("clip.mp4"))
     assert metadata["video_metadata"]["frame_rate"] == 29.97
+    assert metadata["video_metadata"]["keyframe_status"] == "pending"
     assert jobs.video_detail_fields(metadata) == {
         "width": 640,
         "height": 360,
@@ -883,7 +884,7 @@ def test_ac2_enriched_video_writes_detail_fields(index_runtime, monkeypatch):
                     "height": 240,
                     "frame_rate": 24.0,
                     "scene_detection_status": "complete",
-                    "keyframe_status": "decoded_in_memory",
+                    "keyframe_status": "pending",
                     "duration_sec": 2.0,
                 },
             },

@@ -20,7 +20,9 @@ import io
 import json
 import math
 import os
+import shutil
 import subprocess
+import uuid
 from collections.abc import Iterable, Mapping
 from pathlib import Path
 from typing import Any
@@ -178,42 +180,78 @@ def extract_keyframes(
         _fail(409, "MEDIA_OUTPUT_EXISTS", "媒体输出文件已存在，拒绝覆盖")
 
     created: list[Path] = []
+    stage_dir = destination / f"frames_{uuid.uuid4().hex}"
     try:
-        for scene, target in zip(metadata, thumbnail_paths, strict=False):
-            partial = target.parent / (target.stem + ".part" + target.suffix)
-            result = _run(
-                [
-                    ffmpeg,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-n",
-                    "-i",
-                    str(path),
-                    "-ss",
-                    f"{scene['start_sec']:.3f}",
-                    "-frames:v",
-                    "1",
-                    "-vf",
-                    (
-                        f"scale={_THUMBNAIL_WIDTH}:{_THUMBNAIL_HEIGHT}:"
-                        "force_original_aspect_ratio=decrease,"
-                        f"pad={_THUMBNAIL_WIDTH}:{_THUMBNAIL_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
-                    ),
-                    "-c:v",
-                    "libwebp",
-                    "-quality",
-                    "75",
-                    str(partial),
-                ]
+        stage_dir.mkdir()
+        filter_script = stage_dir / "filter.txt"
+        expressions = []
+        for scene in metadata:
+            start = f"{scene['start_sec']:.3f}"
+            end = f"{scene['end_sec']:.3f}"
+            expressions.append(
+                f"gte(t\\,{start})*lt(t\\,{end})*"
+                f"(isnan(prev_selected_t)+lt(prev_selected_t\\,{start}))"
             )
-            if (
-                result.returncode != 0
-                or not partial.is_file()
-                or partial.stat().st_size <= 0
-            ):
+        filter_chain = (
+            "select='" + "+".join(expressions) + "',"
+            f"scale={_THUMBNAIL_WIDTH}:{_THUMBNAIL_HEIGHT}:"
+            "force_original_aspect_ratio=decrease,"
+            f"pad={_THUMBNAIL_WIDTH}:{_THUMBNAIL_HEIGHT}:(ow-iw)/2:(oh-ih)/2"
+        )
+        with filter_script.open("x", encoding="utf-8", newline="\n") as output:
+            output.write(filter_chain)
+
+        args = [
+            ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-n",
+            "-threads",
+            "2",
+            "-filter_threads",
+            "2",
+            "-i",
+            str(path),
+            "-/filter:v",
+            str(filter_script),
+            "-fps_mode",
+            "passthrough",
+            "-start_number",
+            "1",
+            "-c:v",
+            "libwebp",
+            "-quality",
+            "75",
+            "-f",
+            "image2",
+            str(stage_dir / "scene_%03d.webp"),
+        ]
+        result = _run(args)
+        if result.returncode != 0 and "Unrecognized option '/filter:v'" in (
+            result.stderr or ""
+        ):
+            args[args.index("-/filter:v")] = "-filter_script:v"
+            result = _run(args)
+        staged_paths = [stage_dir / f"scene_{index:03d}.webp" for index in range(1, len(metadata) + 1)]
+        actual_paths = sorted(
+            stage_dir.glob("scene_*.webp"),
+            key=lambda item: int(item.stem.removeprefix("scene_")),
+        )
+        if (
+            result.returncode != 0
+            or len(actual_paths) != len(metadata)
+            or actual_paths != staged_paths
+        ):
+            _fail(503, "KEYFRAME_EXTRACTION_FAILED", "FFmpeg 无法为每个场景抽取对应关键帧")
+        for staged in staged_paths:
+            if not staged.is_file() or staged.stat().st_size <= 0:
                 _fail(503, "KEYFRAME_EXTRACTION_FAILED", "FFmpeg 无法抽取场景关键帧")
-            partial.replace(target)
+            with Image.open(staged) as frame:
+                frame.load()
+
+        for staged, target in zip(staged_paths, thumbnail_paths, strict=True):
+            staged.replace(target)
             created.append(target)
 
         _save_sprite(thumbnail_paths, sprite_path, columns)
@@ -246,6 +284,9 @@ def extract_keyframes(
         for item in created:
             item.unlink(missing_ok=True)
         _fail(503, "MEDIA_OUTPUT_GENERATION_FAILED", "无法生成媒体输出或结构化元数据")
+    finally:
+        if stage_dir.exists() and stage_dir.parent.resolve() == destination.resolve():
+            shutil.rmtree(stage_dir)
 
     return {"metadata": registry_metadata, "sprite": sprite_name}
 

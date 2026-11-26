@@ -333,10 +333,7 @@ def video_detail_fields(metadata: dict | None) -> dict:
 
 
 def _video_index_data(path: Path) -> tuple[dict, float | None]:
-    """为本地视频登记镜头与技术元数据，关键帧逐张解码后立即释放。"""
-    decode_keyframe_to_memory = importlib.import_module(
-        "gw.media.keyframe_extractor"
-    ).decode_keyframe_to_memory
+    """为本地视频登记镜头与技术元数据，缩略图由后续按需提取。"""
     detect_scenes = importlib.import_module("gw.media.scene_detector").detect_scenes
 
     scenes = []
@@ -387,25 +384,6 @@ def _video_index_data(path: Path) -> tuple[dict, float | None]:
     frame_rate = _video_frame_rate(path)
     if frame_rate is not None:
         video_metadata["frame_rate"] = frame_rate
-    try:
-        for scene in scenes:
-            midpoint = scene["start_sec"] + (
-                scene["end_sec"] - scene["start_sec"]
-            ) / 2
-            keyframe = decode_keyframe_to_memory(path, midpoint)
-            del keyframe
-    except CleanroomException as exc:
-        video_metadata["keyframe_status"] = "unavailable"
-        video_metadata["reason_code"] = exc.code
-        return (
-            {
-                "video_segments": scenes,
-                "video_metadata": video_metadata,
-            },
-            duration,
-        )
-
-    video_metadata["keyframe_status"] = "decoded_in_memory"
     return {"video_segments": scenes, "video_metadata": video_metadata}, duration
 
 
