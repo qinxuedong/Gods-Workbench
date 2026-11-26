@@ -966,7 +966,12 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
 
 
 def _sync_asset_shot_rows(
-    engine: Any, asset: Dict[str, Any], *, embedder: Any = None, vector_ready: bool | None = None
+    engine: Any,
+    asset: Dict[str, Any],
+    *,
+    embedder: Any = None,
+    frame_decoder: Any = None,
+    vector_ready: bool | None = None,
 ) -> int:
     """按资产整组刷新镜头行；返回写入行数。
 
@@ -985,9 +990,11 @@ def _sync_asset_shot_rows(
     engine.replace_asset_shots(asset_id, rows)
     if vector_ready is None:
         vector_ready = shot_vector_enabled() and shot_vector_model_status()["ready"]
-    if rows and vector_ready:
+    if rows and vector_ready and frame_decoder is not None:
         try:
-            refresh_asset_shot_vectors(engine, asset, embedder=embedder)
+            refresh_asset_shot_vectors(
+                engine, asset, embedder=embedder, frame_decoder=frame_decoder
+            )
         except Exception as exc:
             _LOGGER.warning(
                 "镜头向量生成降级，基础索引已保留：%s", type(exc).__name__
@@ -1089,6 +1096,7 @@ def refresh_asset_shot_vectors(
     asset: Dict[str, Any],
     *,
     embedder: Any = None,
+    frame_decoder: Any = None,
 ) -> Dict[str, int]:
     """内存抽帧、像素去重并逐镜头原子写入向量；失败不影响基础镜头行。"""
     if not _visible(asset):
@@ -1101,6 +1109,8 @@ def refresh_asset_shot_vectors(
         return {"shots": 0, "frames": 0, "failed": 0}
     if embedder is None and not shot_vector_model_status()["ready"]:
         return {"shots": 0, "frames": 0, "failed": len(segments)}
+    if frame_decoder is None:
+        return {"shots": 0, "frames": 0, "failed": len(segments)}
     source = _asset_local_video_path(asset)
     if source is None:
         return {"shots": 0, "frames": 0, "failed": len(segments)}
@@ -1111,8 +1121,6 @@ def refresh_asset_shot_vectors(
         MODEL_SPECS,
         LocalMultimodalEmbedder,
     )
-    from gw.media.keyframe_extractor import decode_keyframe_to_memory
-
     encoder = embedder or LocalMultimodalEmbedder(
         DEFAULT_MODEL_ID, data_root=storage.data_root()
     )
@@ -1129,7 +1137,7 @@ def refresh_asset_shot_vectors(
             for sample_index, fraction in enumerate(fractions):
                 sample_sec = row["start_sec"] + duration * fraction
                 try:
-                    encoded = decode_keyframe_to_memory(source, sample_sec)
+                    encoded = frame_decoder(source, sample_sec)
                     with Image.open(io.BytesIO(encoded)) as decoded:
                         frame = decoded.convert("RGB")
                     pixel_hash = hashlib.sha256(
@@ -1170,7 +1178,9 @@ def refresh_asset_shot_vectors(
     return result
 
 
-def _upsert_asset_search_documents(assets: Any) -> List[bool]:
+def _upsert_asset_search_documents(
+    assets: Any, *, frame_decoder: Any = None
+) -> List[bool]:
     """把资产文档、镜头行与索引元数据写入本地检索索引。
 
     这是入库（JSON 批量登记、后台索引任务提交）的产品化写入入口（MVP1-T7/F2）：
@@ -1201,7 +1211,9 @@ def _upsert_asset_search_documents(assets: Any) -> List[bool]:
         with SQLiteVecEngine(db_path) as engine:
             results = engine.batch_upsert_documents(list(documents.values()))
             vector_ready = (
-                shot_vector_enabled() and shot_vector_model_status()["ready"]
+                frame_decoder is not None
+                and shot_vector_enabled()
+                and shot_vector_model_status()["ready"]
             )
             shot_embedder = None
             if vector_ready:
@@ -1215,7 +1227,11 @@ def _upsert_asset_search_documents(assets: Any) -> List[bool]:
                 )
             for asset in records:
                 _sync_asset_shot_rows(
-                    engine, asset, embedder=shot_embedder, vector_ready=vector_ready
+                    engine,
+                    asset,
+                    embedder=shot_embedder,
+                    frame_decoder=frame_decoder,
+                    vector_ready=vector_ready,
                 )
             if engine.index_metadata() is None:
                 engine.set_index_metadata(
@@ -4365,7 +4381,7 @@ def index_sync() -> Dict[str, Any]:
             "revision": raw["revision"], "data_status": DATA_STATUS_OK}
 
 
-def rebuild_search_index() -> Dict[str, Any]:
+def rebuild_search_index(*, frame_decoder: Any = None) -> Dict[str, Any]:
     """从 JSON 注册表真源完整重建本地检索索引（MVP1-AC10 重建钩子）。
 
     只读注册表，不改写、不删除任何资产或源文件；索引固定落在三态 data 根
@@ -4405,7 +4421,11 @@ def rebuild_search_index() -> Dict[str, Any]:
                 dimensions=engine.dimensions,
                 quantization="float32" if engine.vector_enabled else None,
             )
-            vector_ready = shot_vector_enabled() and shot_vector_model_status()["ready"]
+            vector_ready = (
+                frame_decoder is not None
+                and shot_vector_enabled()
+                and shot_vector_model_status()["ready"]
+            )
             if vector_ready:
                 from gw.asset_registry.embedder import (
                     DEFAULT_MODEL_ID,
@@ -4418,7 +4438,10 @@ def rebuild_search_index() -> Dict[str, Any]:
                 for asset in assets:
                     try:
                         refresh_asset_shot_vectors(
-                            engine, asset, embedder=shot_embedder
+                            engine,
+                            asset,
+                            embedder=shot_embedder,
+                            frame_decoder=frame_decoder,
                         )
                     except Exception as exc:
                         _LOGGER.warning(

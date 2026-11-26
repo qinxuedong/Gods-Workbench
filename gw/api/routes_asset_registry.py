@@ -414,6 +414,13 @@ def _keyword_recalled_assets(
         return []
 
 
+def _decode_shot_vector_frame(source: Path, sample_sec: float) -> bytes:
+    """按需加载媒体解码器，避免状态检查触发模型或解码初始化。"""
+    from gw.media.keyframe_extractor import decode_keyframe_to_memory
+
+    return decode_keyframe_to_memory(source, sample_sec)
+
+
 def _shot_vector_model_status() -> Dict[str, Any]:
     """只检查已安装依赖与本地缓存，不加载模型、不访问网络。"""
     return repo.shot_vector_model_status()
@@ -698,7 +705,7 @@ def rebuild_asset_search_index(
     """
     _edit_auth(authorization, x_user_role)
     try:
-        result = repo.rebuild_search_index()
+        result = repo.rebuild_search_index(frame_decoder=_decode_shot_vector_frame)
     except CleanroomException:
         raise
     except Exception as exc:

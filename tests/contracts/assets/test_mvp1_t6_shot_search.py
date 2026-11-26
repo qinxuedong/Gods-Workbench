@@ -8,9 +8,11 @@
 
 from __future__ import annotations
 
+from io import BytesIO
 from pathlib import Path
 
 import pytest
+from PIL import Image
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
@@ -398,6 +400,68 @@ def test_missing_local_model_skips_frame_decode_without_blocking_base_index(
         },
     )
     assert result == {"shots": 0, "frames": 0, "failed": 2}
+
+
+def test_refresh_shot_vectors_uses_injected_decoder_and_deduplicates_rgb_frames(
+    monkeypatch,
+):
+    class _VectorEngine:
+        vector_enabled = True
+
+        def __init__(self):
+            self.samples = []
+
+        def switch_embedding_model(self, **_kwargs):
+            pass
+
+        def replace_shot_embeddings(self, **values):
+            self.samples = values["samples"]
+            return True
+
+    class _Embedder:
+        model_id = "OFA-Sys/chinese-clip-vit-base-patch16"
+        model_version = "test-model-v1"
+
+        def __init__(self):
+            self.frames = []
+
+        def encode_image(self, frame):
+            self.frames.append(frame)
+            return [1.0] + [0.0] * 511
+
+    def png(color):
+        buffer = BytesIO()
+        Image.new("RGB", (2, 2), color).save(buffer, format="PNG")
+        return buffer.getvalue()
+
+    encoded_frames = {
+        0.8: png((255, 0, 0)),
+        2.0: png((255, 0, 0)),
+        3.2: png((0, 0, 255)),
+    }
+    decoded_at = []
+    monkeypatch.setattr(repo, "_asset_local_video_path", lambda _asset: Path("video.mp4"))
+    engine = _VectorEngine()
+    embedder = _Embedder()
+
+    result = repo.refresh_asset_shot_vectors(
+        engine,
+        {
+            "asset_id": "ast_visual_vectors",
+            "root_id": "root-test",
+            "metadata": {"video_segments": [{"start_sec": 0.0, "end_sec": 4.0}]},
+        },
+        embedder=embedder,
+        frame_decoder=lambda _source, sample_sec: (
+            decoded_at.append(round(sample_sec, 1)) or encoded_frames[round(sample_sec, 1)]
+        ),
+    )
+
+    assert decoded_at == [0.8, 2.0, 3.2]
+    assert len(embedder.frames) == 2
+    assert [sample["sample_index"] for sample in engine.samples] == [0, 2]
+    assert [sample["sample_sec"] for sample in engine.samples] == [0.8, 3.2]
+    assert result == {"shots": 1, "frames": 2, "failed": 0}
 
 
 def test_shot_search_returns_shot_hit_with_jump_timestamp(client: TestClient):

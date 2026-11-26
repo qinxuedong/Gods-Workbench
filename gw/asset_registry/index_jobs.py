@@ -53,6 +53,14 @@ MAX_ENTRIES = 500000
 # 完整哈希大文件代价过高（试点库 102 个 >512MiB 文件占 48.4% 字节），
 # 原 413 fail-fast 会让整单索引失败，改为首尾 4MiB + 长度的采样哈希。
 _HASH_LIMIT_BYTES = 512 * 1024 * 1024
+
+
+def _decode_shot_vector_frame(source: Path, sample_sec: float) -> bytes:
+    """在索引任务运行时延迟加载媒体解码器，避免领域包循环依赖。"""
+    decoder = importlib.import_module(
+        "gw.media.keyframe_extractor"
+    ).decode_keyframe_to_memory
+    return decoder(source, sample_sec)
 _HASH_SAMPLE_BYTES = 4 * 1024 * 1024
 # 采样哈希域分离前缀：摘要输入与完整 sha256（纯文件字节流）结构不同，
 # 理论碰撞空间互斥；查重组按值分组时两种模式不会交叉误配。
@@ -2593,7 +2601,10 @@ class IndexJobs:
                     rows, _skipped = repo._asset_shot_rows(asset)
                     engine.replace_asset_shots(asset_id, rows)
                     result = repo.refresh_asset_shot_vectors(
-                        engine, asset, embedder=encoder
+                        engine,
+                        asset,
+                        embedder=encoder,
+                        frame_decoder=_decode_shot_vector_frame,
                     )
                     shots += result["shots"]
                     frames += result["frames"]
@@ -3948,7 +3959,10 @@ class IndexJobs:
                     added += 1
                 if added or updated:
                     repo._bump(raw)
-                repo._upsert_asset_search_documents(search_documents.values())
+                repo._upsert_asset_search_documents(
+                    search_documents.values(),
+                    frame_decoder=_decode_shot_vector_frame,
+                )
                 result = {
                     "indexed": added,
                     "updated": updated,
