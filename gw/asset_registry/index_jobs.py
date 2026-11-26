@@ -966,7 +966,7 @@ def root_facets():
         return []
     from gw.settings.service import default_storage_settings_service
 
-    hidden_root_keys = default_storage_settings_service.get_snapshot().hidden_asset_root_keys
+    hidden_root_keys = getattr(default_storage_settings_service.get_snapshot(), "hidden_asset_root_keys", [])
     # QIN-604：root_facets 是 /assets 每次请求的下游读点，改走快照后整段只读一次。
     raw = repo.readonly_registry_snapshot()
 

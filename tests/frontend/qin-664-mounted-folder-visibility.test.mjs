@@ -102,7 +102,7 @@ function rightClick(button) {
 
 function createVisibilityAction({ getSettings, saveSettings, applySettings, setStatus, toast }) {
   const start = organizeSource.indexOf('async function setMountedRootAssetsHidden(rootTarget, hidden){');
-  const end = organizeSource.indexOf('function removeResourceFolderViewState', start);
+  const end = organizeSource.indexOf('function syncRemovedResourceFolderLibraries', start);
   assert.ok(start >= 0 && end > start, '找到并运行真实显隐写入函数');
   const actionSource = organizeSource.slice(start, end);
   const api = {

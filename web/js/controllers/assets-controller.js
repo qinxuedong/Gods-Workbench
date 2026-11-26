@@ -482,10 +482,10 @@ window.WorkbenchAssets = (() => {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
     } catch (_) {}
     const items = [
-      { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: !canOrganize },
-      { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot || !canOrganize },
-      { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: !canOrganize },
-      { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot || !canOrganize, danger: true },
+      { id: 'new', attr: 'data-asset-organize-new', label: '新建子文件夹', icon: 'folder-plus', disabled: isRoot && !canOrganize },
+      { id: 'rename', attr: 'data-asset-organize-rename', label: '重命名', icon: 'pencil', disabled: isRoot },
+      { id: 'open', attr: 'data-asset-organize-open', label: '在系统中打开', icon: 'folder-open', disabled: isRoot && !canOrganize },
+      { id: 'delete', attr: 'data-asset-organize-delete', label: '删除（进回收站）', icon: 'trash-2', disabled: isRoot, danger: true },
       ...(isRoot ? [
         ...(canToggleAssetsVisibility ? [{
           id: 'toggle-assets',
@@ -952,7 +952,9 @@ window.WorkbenchAssets = (() => {
     button.addEventListener('contextmenu', (e) => {
       e.preventDefault();
       e.stopPropagation();
-      if (organizeBridge()?.canOrganize(row.key) || (row.isRoot && organizeBridge()?.canToggleAssetsVisibility?.(row.key))) {
+      if (organizeBridge()?.canOrganize(row.key)) {
+        openShellOrganizeMenu(row, e.clientX, e.clientY);
+      } else if (row.isRoot && organizeBridge()?.canToggleAssetsVisibility?.(row.key)) {
         openShellOrganizeMenu(row, e.clientX, e.clientY);
       }
     });
