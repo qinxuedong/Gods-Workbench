@@ -26,6 +26,9 @@ for (const name of ['general', 'prompt-sources', 'api-settings', 'permissions'])
   assert.doesNotMatch(header[0], /\bborder-b\b/, `${name} 标题下不得有分割线`);
 }
 
+const smartSearchHeading = panelHtml('smart-search').match(/<h2\b(?=[^>]*\bstyle="color:#dfc384")[^>]*>/i);
+assert.ok(smartSearchHeading, '智能检索标题位于深色 champagne 卡片上，应保持可读的浅金色文字');
+
 const settingsIcons = [...settings.matchAll(/<i\b[^>]*\bclass="([^"]*)"[^>]*>/gi)];
 assert.ok(settingsIcons.length > 0);
 assert.doesNotMatch(settingsIcons.map(match => match[1]).join(' '), /\btext-(?:cyan|emerald)-\d+\b/, '设置页装饰图标应使用金色');
