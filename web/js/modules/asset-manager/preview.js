@@ -3159,8 +3159,7 @@ function loadDetailImageEditorImage(url){
     });
 }
 async function openDetailImageEditor(itemId, options={}){
-    const suppliedItem = options?.item || null;
-    const isRequestCurrent = typeof options?.isRequestCurrent === 'function' ? options.isRequestCurrent : null;
+    const suppliedItem = options?.item || null; const isRequestCurrent = typeof options?.isRequestCurrent === 'function' ? options.isRequestCurrent : null;
     const returnToCoverflow = options?.returnToCoverflow || null; const allowContextSwitch = Boolean(options?.allowContextSwitch);
     const requestedItemId = String(suppliedItem?.id || itemId || '').trim();
     if(detailImageEditorOpeningPromise && detailImageEditorOpeningItemId === requestedItemId) return detailImageEditorOpeningPromise; const generation = ++detailImageEditorOpenGeneration;
