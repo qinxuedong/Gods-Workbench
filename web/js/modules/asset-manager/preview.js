@@ -1585,14 +1585,14 @@ function renderDetailModelInspector(item, tags, rows, url){
 function renderDetailViewerInspectorContent(item, type, tags, rows, url, extraContent='', source=detailViewerState.source){
     const editableName = type === 'audio' && detailViewerCanRename(source);
     const inspectorRows = type === 'video' ? detailVideoRemainingRows(rows) : rows;
-    const factRows = editableName ? inspectorRows : [['文件名', String(item.name || '未命名素材')], ...inspectorRows];
+    const factRows = editableName ? inspectorRows : [['文件名', String(item.name || '未命名素材')], ...inspectorRows]; const comfyActions = renderComfyAssetActions(item, type);
     return `
         ${editableName
             ? `<div class="asset-detail-title"><label class="asset-detail-name-editor"><span>文件名称</span><div><input type="text" value="${escapeAttr(item.name || '')}" data-detail-name-input aria-label="文件名称"><button type="button" data-detail-name-save title="保存文件名称"><i data-lucide="check"></i></button></div></label></div>`
             : ''}
         ${type === 'video' ? `${renderDetailVideoStoryboardPanel(item,source)}${renderDetailVideoSegments(item,source)}${renderDetailVideoSummary(item,source)}` : ''}
         ${factRows.length ? `<dl class="asset-detail-facts">${renderDetailViewerMetaRows(factRows, item)}</dl>` : ''}
-        ${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
+        ${comfyActions}${source === 'registry' ? `<section class="asset-detail-registry-meta">${workflowProvenanceLinks(item)}${renderRegistryEditableTags(item, 'viewer')}${renderRegistryRelations(item)}</section>` : (tags.length ? `<section class="asset-detail-tags"><strong>智能分类与标签</strong><div>${tags.map(tag => `<span>${escapeHtml(tag)}</span>`).join('')}</div></section>` : '')}
         ${type === 'text' && detailViewerCanEditText(source, item) ? renderDetailTextVersions() : ''}
         ${extraContent}`;
 }
@@ -4351,9 +4351,197 @@ document.addEventListener('pointermove', updateRegistryDetailPanelResize);
 document.addEventListener('pointerup', endRegistryDetailPanelResize);
 document.addEventListener('pointercancel', endRegistryDetailPanelResize);
 
+const comfyImageGenerationByAssetId = new Map();
+const ASSET_WORKFLOW_IMPORT_STORAGE_KEY = 'gw.workflow.assetImport.pending.v1';
+const ASSET_WORKFLOW_IMPORT_TTL_MS = 5 * 60 * 1000;
+function assetAuthContext(){
+    const candidates = [window];
+    try {
+        const topWindow = window.top;
+        if(topWindow && topWindow !== window && topWindow.location.origin === window.location.origin){
+            candidates.unshift(topWindow);
+        }
+    } catch(_) {}
+    for(const candidate of candidates){
+        try {
+            const gate = candidate.GWAuthGate;
+            const authState = candidate.HardwareDeck?.authState || {};
+            const principal = authState.principal || {};
+            if(typeof gate?.isAuthenticated === 'function' && gate.isAuthenticated()
+                && (principal.subject || principal.user_id || principal.username)){
+                return {gate, authState};
+            }
+        } catch(_) {}
+    }
+    return {gate:window.GWAuthGate, authState:window.HardwareDeck?.authState || {}};
+}
+function assetAuthPrincipalKey(){
+    const auth = assetAuthContext().authState;
+    const principal = auth.principal || {};
+    const subject = principal.subject || principal.user_id || principal.username || '';
+    if(!subject) return '';
+    return JSON.stringify([principal.identity_domain || auth.auth_mode || '', subject]);
+}
+function comfyGeneration(item={}, type='image'){
+    if(type !== 'image') return null;
+    const generation = item?.metadata?.generation;
+    const marker = generation?.comfyui;
+    if(!generation || !marker || typeof marker !== 'object') return null;
+    if(!marker.source && !marker.has_workflow && !marker.has_prompt_graph) return null;
+    return generation;
+}
+function renderComfyAssetActions(item={}, type='image'){
+    const generation = comfyGeneration(item, type);
+    const assetId = String(item?.id || item?.asset_id || '').trim();
+    if(!generation || !assetId) return '';
+    comfyImageGenerationByAssetId.set(assetId, generation);
+    while(comfyImageGenerationByAssetId.size > 20){
+        comfyImageGenerationByAssetId.delete(comfyImageGenerationByAssetId.keys().next().value);
+    }
+    return `<div class="asset-detail-comfy-actions" role="group" aria-label="ComfyUI 生成信息">
+        <button class="hw-btn" type="button" data-comfy-prompt-open="${escapeAttr(assetId)}"><i data-lucide="text-search"></i><span>提示词</span></button>
+        <button class="hw-btn" type="button" data-comfy-workflow-open="${escapeAttr(assetId)}"><i data-lucide="workflow"></i><span>工作流</span></button>
+    </div>`;
+}
+function closeComfyAssetDialog(overlay){
+    if(!overlay) return;
+    const closed = window.FloatingDismissal?.closeSurface?.(overlay);
+    if(!closed) overlay.remove();
+}
+function openComfyPromptDialog(trigger, assetId){
+    const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
+    if(!generation) return;
+    const prompt = String(generation.prompt || '');
+    const negative = String(generation.negative_prompt || '');
+    const hasPrompt = Boolean(prompt || negative);
+    const overlay = document.createElement('div');
+    overlay.className = 'hw-modal-backdrop open';
+    overlay.dataset.comfyAssetId = String(assetId || '');
+    overlay.innerHTML = `<section class="hw-modal-dialog" data-floating-content role="dialog" aria-modal="true" aria-labelledby="comfyPromptDialogTitle" tabindex="-1" style="width:min(680px,calc(100vw - 24px));padding:20px;color:#e2e8f0;">
+        <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;"><h2 id="comfyPromptDialogTitle" class="gw-type-title-sm" style="margin:0;">生成提示词</h2><button class="hw-btn hw-btn-icon" type="button" data-comfy-dialog-close aria-label="关闭"><i data-lucide="x"></i></button></header>
+        ${generation.truncated ? '<p class="gw-type-label-md" role="status">已保存的提示词可能被截断，内容不完整。</p>' : ''}
+        ${prompt ? `<section style="margin:12px 0;"><strong class="gw-type-label-md">正向提示词</strong><pre style="max-height:32vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;padding:12px;background:rgba(0,0,0,.3);">${escapeHtml(prompt)}</pre></section>` : ''}
+        ${negative ? `<section style="margin:12px 0;"><strong class="gw-type-label-md">反向提示词</strong><pre style="max-height:24vh;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0;padding:12px;background:rgba(0,0,0,.3);">${escapeHtml(negative)}</pre></section>` : ''}
+        ${hasPrompt ? '' : '<p class="gw-type-body-md">未提取到可用提示词。</p>'}
+        <footer style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;"><button class="hw-btn" type="button" data-comfy-dialog-close>关闭</button><button class="hw-btn hw-btn-gold" type="button" data-comfy-prompt-copy ${hasPrompt ? '' : 'disabled'}><i data-lucide="copy"></i><span>复制提示词</span></button></footer>
+    </section>`;
+    document.body.appendChild(overlay);
+    markAssetFloatingSurface(overlay, {surface:'comfy-prompt-dialog', kind:'modal', content:'[role="dialog"]', close:() => overlay.remove(), trigger});
+    window.FloatingDismissal?.scan?.(overlay);
+    window.lucide?.createIcons?.({root:overlay});
+}
+function createAssetWorkflowImportNonce(){
+    const cryptoApi = window.crypto;
+    if(cryptoApi?.randomUUID) return cryptoApi.randomUUID();
+    if(!cryptoApi?.getRandomValues) return '';
+    const bytes = new Uint8Array(24);
+    cryptoApi.getRandomValues(bytes);
+    return [...bytes].map(value => value.toString(16).padStart(2, '0')).join('');
+}
+function openComfyWorkflowConfirm(trigger, assetId){
+    const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
+    if(!generation) return;
+    if(generation.comfyui?.has_workflow !== true){
+        setStatus('该图像未包含可恢复的完整工作流');
+        return;
+    }
+    const authContext = assetAuthContext();
+    const principalKey = assetAuthPrincipalKey();
+    if(!authContext.gate?.isAuthenticated() || !principalKey){
+        setStatus('请先登录后再加载工作流');
+        return;
+    }
+    const overlay = document.createElement('div');
+    overlay.className = 'hw-modal-backdrop open';
+    overlay.innerHTML = `<section class="hw-modal-dialog" data-floating-content role="alertdialog" aria-modal="true" aria-labelledby="comfyWorkflowConfirmTitle" tabindex="-1" style="width:min(460px,calc(100vw - 24px));padding:20px;color:#e2e8f0;">
+        <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;"><h2 id="comfyWorkflowConfirmTitle" class="gw-type-title-sm" style="margin:0;">是否加载工作流？</h2><button class="hw-btn hw-btn-icon" type="button" data-comfy-dialog-close aria-label="关闭"><i data-lucide="x"></i></button></header>
+        <p class="gw-type-body-md">确认后会从原始图像读取内嵌工作流，并在工作流工作台新建一份可编辑工作流。</p>
+        <footer style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;"><button class="hw-btn" type="button" data-comfy-dialog-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-comfy-workflow-confirm="${escapeAttr(assetId)}">加载工作流</button></footer>
+    </section>`;
+    document.body.appendChild(overlay);
+    markAssetFloatingSurface(overlay, {surface:'comfy-workflow-confirm', kind:'modal', content:'[role="alertdialog"]', close:() => overlay.remove(), trigger});
+    window.FloatingDismissal?.scan?.(overlay);
+    window.lucide?.createIcons?.({root:overlay});
+}
+function beginComfyWorkflowImport(trigger, assetId, overlay){
+    const principalKey = assetAuthPrincipalKey();
+    if(!assetAuthContext().gate?.isAuthenticated() || !principalKey){
+        setStatus('登录状态已变化，请重新登录后再试');
+        closeComfyAssetDialog(overlay);
+        return;
+    }
+    const nonce = createAssetWorkflowImportNonce();
+    if(!nonce){
+        setStatus('当前环境无法安全创建一次性导入凭据');
+        closeComfyAssetDialog(overlay);
+        return;
+    }
+    const pending = {nonce, asset_id:String(assetId), principal_key:principalKey, expires_at:Date.now() + ASSET_WORKFLOW_IMPORT_TTL_MS};
+    try {
+        window.sessionStorage.setItem(ASSET_WORKFLOW_IMPORT_STORAGE_KEY, JSON.stringify(pending));
+    } catch(_) {
+        setStatus('浏览器会话存储不可用，无法安全跳转');
+        closeComfyAssetDialog(overlay);
+        return;
+    }
+    const url = new URL('/static/pages/workflow.html', window.location.origin);
+    url.searchParams.set('import_asset_id', pending.asset_id);
+    url.searchParams.set('import_nonce', nonce);
+    closeComfyAssetDialog(overlay);
+    try {
+        if(window.top && window.top !== window) window.top.location.href = url.href;
+        else window.location.href = url.href;
+    } catch(_) {
+        try { window.location.href = url.href; }
+        catch(error){
+            try { window.sessionStorage.removeItem(ASSET_WORKFLOW_IMPORT_STORAGE_KEY); } catch(_) {}
+            setStatus(error?.message || '无法打开工作流工作台');
+        }
+    }
+}
+document.addEventListener('click', event => {
+    const closeButton = event.target?.closest?.('[data-comfy-dialog-close]');
+    if(closeButton){
+        event.preventDefault();
+        closeComfyAssetDialog(closeButton.closest('.hw-modal-backdrop'));
+        return;
+    }
+    const promptButton = event.target?.closest?.('[data-comfy-prompt-open]');
+    if(promptButton){
+        event.preventDefault();
+        openComfyPromptDialog(promptButton, promptButton.dataset.comfyPromptOpen);
+        return;
+    }
+    const workflowButton = event.target?.closest?.('[data-comfy-workflow-open]');
+    if(workflowButton){
+        event.preventDefault();
+        openComfyWorkflowConfirm(workflowButton, workflowButton.dataset.comfyWorkflowOpen);
+        return;
+    }
+    const confirmButton = event.target?.closest?.('[data-comfy-workflow-confirm]');
+    if(confirmButton){
+        event.preventDefault();
+        beginComfyWorkflowImport(confirmButton, confirmButton.dataset.comfyWorkflowConfirm, confirmButton.closest('.hw-modal-backdrop'));
+        return;
+    }
+    const copyButton = event.target?.closest?.('[data-comfy-prompt-copy]');
+    if(copyButton){
+        event.preventDefault();
+        const dialog = copyButton.closest('.hw-modal-backdrop');
+        const assetId = dialog?.dataset?.comfyAssetId;
+        const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
+        const text = [generation?.prompt ? `正向提示词：\n${generation.prompt}` : '', generation?.negative_prompt ? `反向提示词：\n${generation.negative_prompt}` : ''].filter(Boolean).join('\n\n');
+        Promise.resolve().then(() => {
+            if(!text || !navigator.clipboard?.writeText) throw new Error('剪贴板不可用');
+            return navigator.clipboard.writeText(text);
+        }).then(() => setStatus('提示词已复制')).catch(() => setStatus('复制失败，请检查浏览器剪贴板权限'));
+        return;
+    }
+});
 // 【QIN-591】域函数面注册：主文件 gwCall('preview', fn) 经由此对象分派。
 GW_DEFERRED['preview'] = {
     addDetailImageEditorText,
+    renderComfyAssetActions,
     applyDetailImageEditorCrop,
     applyLightboxTransform,
     cancelDetailTextEdit,

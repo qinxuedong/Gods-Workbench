@@ -6571,6 +6571,20 @@ function renderRegistryDetail(){
     const mediaType = detailViewerType('registry', item);
     const originalMediaUrl = mediaType === 'image' && item.id ? `/api/asset-registry/assets/${encodeURIComponent(item.id)}/media` : (item.url || '');
     const detailPreviewItem = mediaType === 'image' ? {...item,url:originalMediaUrl} : item;
+    let comfyActions = '';
+    const comfyMarker = item.metadata?.generation?.comfyui;
+    const assetId = String(item.id || item.asset_id || '').trim();
+    if(mediaType === 'image' && assetId && comfyMarker && typeof comfyMarker === 'object'
+        && (comfyMarker.source || comfyMarker.has_workflow || comfyMarker.has_prompt_graph)){
+        comfyActions = `<div class="asset-detail-comfy-actions-slot" data-registry-comfy-actions="${escapeAttr(assetId)}"></div>`;
+        Promise.resolve().then(() => gwCall('preview', 'renderComfyAssetActions', item, mediaType)).then(html => {
+            const host = [...(root?.querySelectorAll?.('[data-registry-comfy-actions]') || [])]
+                .find(node => node.dataset.registryComfyActions === assetId);
+            if(!host || String(selectedRegistryAssetId) !== assetId) return;
+            host.innerHTML = String(html || '');
+            refreshIcons();
+        }).catch(error => console.warn('[AssetManager] ComfyUI 详情入口加载失败:', error));
+    }
     return `<div class="panel-head"><div class="panel-title"><strong>资产详情</strong><span>${escapeHtml(registryAssetTypeLabel(item))} · ${escapeHtml(item.storage_root_name || '统一资产')}</span></div>
         <div class="panel-actions">${item.is_remote ? `<button class="hw-btn hw-btn-icon" type="button" data-registry-delete-remote="${escapeAttr(item.id)}" title="删除 URL 资产"><i data-lucide="trash-2"></i></button>` : ''}${registryDetailPanelToggleButton()}</div></div>
         <div class="registry-review-entry"><button type="button" data-review-open><i data-lucide="messages-square"></i>审阅批注</button><button type="button" data-review-share-selected><i data-lucide="share-2"></i>创建分享</button></div>
@@ -6588,6 +6602,7 @@ function renderRegistryDetail(){
                 </div>`}
                 ${classification.summary ? `<div class="detail-caption"><strong>智能描述</strong><p>${escapeHtml(classification.summary)}</p></div>` : ''}
                 ${workflowProvenanceLinks(item)}
+                ${comfyActions}
                 ${renderRegistryEditableTags(item, 'side')}
                 ${renderRegistryRelations(item)}
                 <div class="registry-detail-block"><strong>存储位置</strong><button class="registry-storage-location" type="button" data-registry-file-reveal="${escapeAttr(item.id)}" ${storagePath && !item.is_remote ? '' : 'disabled'} title="${storagePath && !item.is_remote ? '在文件夹中显示此文件' : '位置不可用'}"><code>${escapeHtml(storagePath || '位置不可用')}</code><i data-lucide="folder-search"></i></button></div>

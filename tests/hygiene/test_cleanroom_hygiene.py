@@ -288,6 +288,8 @@ def test_static_layer_has_no_legacy_integration_markers(repo_root: Path):
         Path("web/pages/workflow.html"),
         Path("web/pages/workflow-workbench.html"),
         Path("web/js/controllers/workflow-controller.js"),
+        Path("web/js/modules/asset-manager.js"),
+        Path("web/js/modules/asset-manager/preview.js"),
     }
     scope_marker_violations = []
     for path in static_dir.rglob("*"):

@@ -1,0 +1,32 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 813,
+  "authorization_basis": "GitHub Issue #813 QIN-654, 2026-11-26",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-654-comfy-detail.test.mjs",
+    "tests/frontend/qin-654-workflow-import.test.mjs",
+    "tests/frontend/workflow-auth-behavior.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-813.json",
+    "tests/hygiene/test_cleanroom_hygiene.py",
+    "web/js/controllers/workflow-controller.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-654-comfy-detail.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #813 QIN-654, 2026-11-26",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-654-workflow-import.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #813 QIN-654, 2026-11-26",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-654 (#813)：资产详情共用 ComfyUI 提示词/工作流操作；确认后一次性读取受鉴权原始 PNG/WebP 图并复用工作流解析。登记本票新增覆盖、认证初始化兼容测试及静态标记精确白名单；不修改基础卫生账本。"
+}

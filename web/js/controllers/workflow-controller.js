@@ -35,6 +35,12 @@ function wfQueryAll(selector) { return workbenchRoot ? workbenchRoot.querySelect
 const CLIPBOARD_STORAGE_KEY = "gods_workbench_clipboard_history_v1";
 const COL_COLLAPSE_STORAGE_KEY = "gods_workbench_col_collapse_v1";
 const WORKFLOW_API = "/api/god_workflow";
+const ASSET_WORKFLOW_IMPORT_STORAGE_KEY = "gw.workflow.assetImport.pending.v1";
+const ASSET_WORKFLOW_IMPORT_CONSUMED_STORAGE_KEY = "gw.workflow.assetImport.consumed.v1";
+const ASSET_WORKFLOW_IMPORT_MAX_AGE_MS = 5 * 60 * 1000;
+const ASSET_WORKFLOW_IMPORT_MAX_BYTES = 4 * 1024 * 1024;
+let assetWorkflowImportInFlight = null;
+let assetWorkflowImportSelectedWorkflowId = "";
 // Target lifecycle routes: /api/god_workflow/documents, /folders and /canvas/*.
 
 function loadColumnCollapsePrefs() {
@@ -470,7 +476,7 @@ async function apiFetch(url, options = {}) {
     const error = new Error('请先登录后使用工作流'); error.status = 401; throw error;
   }
   const targetUrl = targetApiUrl(url, options);
-  const requestOptions = { credentials: 'same-origin', ...options };
+  const { onRequestStart, ...requestOptions } = { credentials: 'same-origin', ...options };
   // 后端统一以 {x, y} 形态保存节点位置：出站时把前端的扁平坐标合并回 position。
   const toBackendNode = (node) => expandNodePosition(node);
   const currentRevision = () => state.currentWorkflow?.revision ?? state.currentWorkflow?.version ?? 1;
@@ -487,7 +493,7 @@ async function apiFetch(url, options = {}) {
     const body = JSON.parse(options.body);
     requestOptions.body = JSON.stringify({ payload: { ...normalizeMatureWorkflow(body.workflow || body), nodes: (body.workflow?.nodes || body.nodes || []).map(toBackendNode) }, expected_version: body.expected_version ?? currentRevision(), source: body.source || 'canvas' });
   }
-  const resp = await fetch(targetUrl, requestOptions);
+  if (onRequestStart) onRequestStart(); const resp = await fetch(targetUrl, requestOptions);
   const data = await resp.json().catch(() => ({}));
   if (!resp.ok) {
     const detail = data?.detail; const msg = detail?.message || detail || data?.message || `请求失败 (${resp.status})`; const error = new Error(msg); error.status = resp.status;
@@ -598,10 +604,13 @@ async function initWorkbench() {
   await refreshWorkflowList();
   if (!window.GWAuthGate?.isAuthenticated() || initializingLifecycle !== lifecycleAbortController) return;
 
-  if (state.workflows.length > 0) {
-    const requested = window.location ? new URL(window.location.href).searchParams.get('id') : null;
-    await selectWorkflow(requested || state.workflows[0].workflow_id);
-  }
+  // QIN-654：认证与工作流列表就绪后再消费导入参数。
+  // 导入成功后保留新建工作流，避免默认选择覆盖结果。
+  // 无导入请求时继续既有深链与默认选择逻辑。
+  await selectInitialWorkflow(
+    initializingLifecycle
+  );
+
   // 空工作台等待用户明确导入，不擅自抓取默认 RH 源。
   await restoreWorkflowTask();
   startComfySyncWatcher();
@@ -1292,42 +1301,33 @@ async function handleParseLink(rawLink) {
   }
 }
 
-async function handleUploadFile(file) {
-  if (!file) return;
-  const principalKey = state.authPrincipalKey;
-  // 先在工作台内部解析；只有内部适配不足时才使用宿主，不预先打开空页。
-  const formData = new FormData();
-  formData.append("file", file);
-  formData.append("folder_id", state.activeFolderId || "parsed_default");
-
+async function handleUploadFile(file, options = {}) {
+  if (!file) return { status: "failed", error: new Error("未提供待解析文件") };
+  const principalKey = options.expectedPrincipalKey || state.authPrincipalKey;
+  const expectedLifecycle = options.expectedLifecycle || null;
+  const isActive = () => principalKey === state.authPrincipalKey && window.GWAuthGate?.isAuthenticated() && (!expectedLifecycle || expectedLifecycle === lifecycleAbortController);
+  if (!isActive()) return { status: "cancelled" };
+  const formData = new FormData(); formData.append("file", file); formData.append("folder_id", state.activeFolderId || "parsed_default");
+  let submitted = false, wf = null;
   try {
     const sourceContext = typeof executionSourceContext === 'function' ? executionSourceContext() : {};
-    if (sourceContext && Object.keys(sourceContext).length) {
-      formData.append("source_context", JSON.stringify(sourceContext));
-    }
-    showToast(`正在解析本地文件 ${file.name}...`);
-    const wf = await apiFetch("/api/god_workflow/parse-upload", {
-      method: "POST",
-      body: formData,
-    });
-    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
-    if (wf.folder_id) {
-      state.collapsedFolders.delete(wf.folder_id);
-      state.activeFolderId = wf.folder_id;
-    }
-    await refreshWorkflowList();
-    if (principalKey !== state.authPrincipalKey || !window.GWAuthGate?.isAuthenticated()) return;
-    setCurrentWorkflow(normalizeMatureWorkflow(wf));
-    if (wf.split_group_count && wf.split_group_count > 1) {
-      showToast(
-        `✨ 检测到本地多工作流合集，已自动拆解为 ${wf.split_group_count} 个独立子工作流并归入专属目录！`
-      );
-    } else {
-      showToast(`本地工作流「${wf.name}」解析完成 (${wf.nodes.length} 节点)！`);
-    }
+    if (sourceContext && Object.keys(sourceContext).length) formData.append("source_context", JSON.stringify(sourceContext));
+    showToast(options.progressLabel || `正在解析本地文件 ${file.name}...`);
+    wf = await apiFetch("/api/god_workflow/parse-upload", { method: "POST", body: formData, ...(expectedLifecycle?.signal ? { signal: expectedLifecycle.signal } : {}), onRequestStart: () => { submitted = true; } });
+    if (!wf?.workflow_id) throw Object.assign(new Error("解析接口未返回工作流编号"), { outcomeUnknown: true });
+    if (!isActive()) return { status: "unknown", workflowId: wf.workflow_id };
+    if (wf.folder_id) { state.collapsedFolders.delete(wf.folder_id); state.activeFolderId = wf.folder_id; }
+    setCurrentWorkflow(normalizeMatureWorkflow(wf)); await refreshWorkflowList();
+    if (!isActive()) return { status: "unknown", workflowId: wf.workflow_id };
+    if (wf.split_group_count && wf.split_group_count > 1) showToast(`✨ 检测到本地多工作流合集，已自动拆解为 ${wf.split_group_count} 个独立子工作流并归入专属目录！`);
+    else showToast(`本地工作流「${wf.name}」解析完成 (${wf.nodes.length} 节点)！`);
     if (wf.needs_definition_resolution) await offerDefinitionResolution(wf);
+    return { status: "success", workflowId: wf.workflow_id };
   } catch (err) {
-    showToast(err.message, true);
+    if (wf?.workflow_id && isActive()) return { status: "success", workflowId: wf.workflow_id, warning: err };
+    const unknown = submitted && (err?.outcomeUnknown || !Number.isInteger(err?.status) || err.status >= 500 || !isActive());
+    if (isActive() && !options.suppressErrors) showToast(err.message, true);
+    return { status: unknown ? "unknown" : "failed", error: err };
   }
 }
 
@@ -4619,6 +4619,7 @@ function disposeWorkbench() {
 function rebindWorkbench() { initWorkbench(); settleWorkflowProjectContext(); }
 function resetWorkflowIdentity() {
   disposeWorkbench();
+  assetWorkflowImportSelectedWorkflowId = "";
   state.workflows = []; state.openWorkflowIds = []; state.folders = [];
   state.currentWorkflow = null; state.selectedNodeId = null; state.activeTaskId = null;
   state.clipboardHistory = []; state.mediaAssets = []; state.mediaAssetsByFilename = {};
@@ -4642,6 +4643,178 @@ function handleUnauthenticatedComfyImport(event) {
   window.HardwareDeck?.openAccountModal?.();
 }
 document.addEventListener('click', handleUnauthenticatedComfyImport, true);
+function workflowAssetImportPrincipalKey() {
+  if (state.authPrincipalKey) return state.authPrincipalKey;
+  const auth = window.HardwareDeck?.authState || {};
+  const principal = auth.principal || {};
+  const subject = principal.subject || principal.user_id || principal.username || "";
+  if (auth.authenticated !== true || !subject) return "";
+  const key = JSON.stringify([principal.identity_domain || auth.auth_mode || "", subject]);
+  state.authPrincipalKey = key;
+  return key;
+}
+
+function clearAssetWorkflowImportQuery() {
+  try {
+    const current = new URL(window.location.href);
+    current.searchParams.delete("import_asset_id");
+    current.searchParams.delete("import_nonce");
+    window.history.replaceState(window.history.state, "", `${current.pathname}${current.search}${current.hash}`);
+    return true;
+  } catch (_) {
+    return false;
+  }
+}
+
+function assetWorkflowImportFailure(message) {
+  showToast(message, true);
+  return { handled: true, status: "failed" };
+}
+
+async function importComfyAssetWorkflow(pending, lifecycle) {
+  const stillCurrent = () => lifecycle === lifecycleAbortController
+    && state.authPrincipalKey === pending.principal_key
+    && window.GWAuthGate?.isAuthenticated();
+  if (!stillCurrent()) return { status: "cancelled" };
+
+  let response;
+  try {
+    response = await fetch(`/api/asset-registry/assets/${encodeURIComponent(pending.asset_id)}/media`, {
+      credentials: "same-origin",
+      signal: lifecycle.signal,
+    });
+  } catch (error) {
+    if (!stillCurrent()) return { status: "cancelled" };
+    return { status: "failed", error };
+  }
+  if (!stillCurrent()) return { status: "cancelled" };
+  if (!response.ok) return { status: "failed", error: new Error(`原始图像读取失败 (${response.status})`) };
+
+  const declaredSize = Number(response.headers?.get?.("content-length") || 0);
+  if (declaredSize > ASSET_WORKFLOW_IMPORT_MAX_BYTES) {
+    return { status: "failed", error: new Error("原始图像超过工作流解析上限（4 MiB）") };
+  }
+  let blob;
+  try {
+    blob = await response.blob();
+  } catch (error) {
+    return { status: stillCurrent() ? "failed" : "cancelled", error };
+  }
+  if (!stillCurrent()) return { status: "cancelled" };
+  if (blob.size > ASSET_WORKFLOW_IMPORT_MAX_BYTES) {
+    return { status: "failed", error: new Error("原始图像超过工作流解析上限（4 MiB）") };
+  }
+
+  let bytes;
+  try { bytes = new Uint8Array(await blob.slice(0, 12).arrayBuffer()); }
+  catch (error) { return { status: "failed", error }; }
+  const isPng = bytes.length >= 8 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e
+    && bytes[3] === 0x47 && bytes[4] === 0x0d && bytes[5] === 0x0a && bytes[6] === 0x1a && bytes[7] === 0x0a;
+  const isWebp = bytes.length >= 12 && bytes[0] === 0x52 && bytes[1] === 0x49 && bytes[2] === 0x46
+    && bytes[3] === 0x46 && bytes[8] === 0x57 && bytes[9] === 0x45 && bytes[10] === 0x42 && bytes[11] === 0x50;
+  if (!isPng && !isWebp) return { status: "failed", error: new Error("原始图像不是可解析的 PNG 或 WebP") };
+  if (!stillCurrent()) return { status: "cancelled" };
+
+  const extension = isPng ? "png" : "webp";
+  let file;
+  try {
+    file = new File([blob], `comfy-asset-${pending.nonce.slice(0, 8)}.${extension}`, {
+      type: isPng ? "image/png" : "image/webp",
+    });
+  } catch (error) {
+    return { status: "failed", error: new Error(error?.message || "当前浏览器不支持原图导入") };
+  }
+  const result = await handleUploadFile(file, {
+    expectedPrincipalKey: pending.principal_key,
+    expectedLifecycle: lifecycle,
+    progressLabel: "正在解析原始图像并加载 ComfyUI 工作流…",
+    suppressErrors: true,
+  });
+  if (result.status === "success") {
+    assetWorkflowImportSelectedWorkflowId = result.workflowId || "";
+    return result;
+  }
+  if (result.status === "unknown") {
+    showToast("工作流创建结果未知，请先检查工作流列表；系统不会自动重试", true);
+  } else if (result.status === "failed") {
+    showToast(result.error?.message || "图像中的工作流解析失败", true);
+  }
+  return result;
+}
+
+async function consumeComfyAssetWorkflowImport(lifecycle) {
+  const url = new URL(window.location.href);
+  const assetId = url.searchParams.get("import_asset_id");
+  const nonce = url.searchParams.get("import_nonce");
+  if (!assetId && !nonce) return { handled: false, status: "none" };
+
+  let pending;
+  let consumed;
+  try {
+    const pendingRaw = window.sessionStorage.getItem(ASSET_WORKFLOW_IMPORT_STORAGE_KEY);
+    const consumedRaw = window.sessionStorage.getItem(ASSET_WORKFLOW_IMPORT_CONSUMED_STORAGE_KEY);
+    pending = pendingRaw ? JSON.parse(pendingRaw) : null;
+    consumed = consumedRaw ? JSON.parse(consumedRaw) : [];
+  } catch (_) {
+    clearAssetWorkflowImportQuery();
+    return assetWorkflowImportFailure("导入会话状态不可读取，已安全停止导入");
+  }
+
+  const validAssetId = typeof assetId === "string" && assetId.length > 0 && assetId.length <= 200 && !/[\u0000-\u001f\u007f]/.test(assetId);
+  const validNonce = typeof nonce === "string" && /^[a-f0-9-]{24,80}$/i.test(nonce);
+  const principalKey = workflowAssetImportPrincipalKey();
+  const validPending = pending && pending.nonce === nonce && pending.asset_id === assetId
+    && pending.principal_key === principalKey && Number.isFinite(pending.expires_at)
+    && pending.expires_at >= Date.now() && pending.expires_at <= Date.now() + ASSET_WORKFLOW_IMPORT_MAX_AGE_MS + 30_000;
+  if (!validAssetId || !validNonce || !validPending || !Array.isArray(consumed) || consumed.includes(nonce)) {
+    clearAssetWorkflowImportQuery();
+    try {
+      if (pending?.nonce === nonce) window.sessionStorage.removeItem(ASSET_WORKFLOW_IMPORT_STORAGE_KEY);
+    } catch (_) {}
+    return assetWorkflowImportFailure("工作流导入请求已失效或与当前登录身份不匹配，请从资产详情重新发起");
+  }
+  if (!window.GWAuthGate?.isAuthenticated() || !principalKey || lifecycle !== lifecycleAbortController) {
+    clearAssetWorkflowImportQuery();
+    return assetWorkflowImportFailure("登录状态已变化，未读取原始图像");
+  }
+  if (assetWorkflowImportInFlight) return { handled: true, status: "in-flight" };
+
+  assetWorkflowImportInFlight = nonce;
+  try {
+    const nextConsumed = [...consumed.filter(value => typeof value === "string"), nonce].slice(-32);
+    window.sessionStorage.setItem(ASSET_WORKFLOW_IMPORT_CONSUMED_STORAGE_KEY, JSON.stringify(nextConsumed));
+    if (!JSON.parse(window.sessionStorage.getItem(ASSET_WORKFLOW_IMPORT_CONSUMED_STORAGE_KEY) || "[]").includes(nonce)) {
+      throw new Error("一次性导入状态无法保存");
+    }
+    window.sessionStorage.removeItem(ASSET_WORKFLOW_IMPORT_STORAGE_KEY);
+    if (!clearAssetWorkflowImportQuery()) throw new Error("无法清理导入参数");
+  } catch (_) {
+    assetWorkflowImportInFlight = null;
+    clearAssetWorkflowImportQuery();
+    return assetWorkflowImportFailure("无法安全记录一次性导入状态，已停止导入");
+  }
+
+  try {
+    const result = await importComfyAssetWorkflow(pending, lifecycle);
+    if (result.status === "success") return { handled: true, ...result };
+    if (result.status === "unknown") return { handled: true, ...result };
+    if (result.status === "cancelled") return { handled: true, status: "cancelled" };
+    return assetWorkflowImportFailure(result.error?.message || "图像中的工作流无法加载");
+  } finally {
+    if (assetWorkflowImportInFlight === nonce) assetWorkflowImportInFlight = null;
+  }
+}
+
+async function selectInitialWorkflow(lifecycle) {
+  const assetImport = await consumeComfyAssetWorkflowImport(lifecycle);
+  if (!window.GWAuthGate?.isAuthenticated() || lifecycle !== lifecycleAbortController) return;
+  if (assetImport.status === "success" || !state.workflows.length) return;
+  const requested = window.location ? new URL(window.location.href).searchParams.get('id') : null;
+  const sticky = assetWorkflowImportSelectedWorkflowId && state.workflows.some(item => item.workflow_id === assetWorkflowImportSelectedWorkflowId)
+    ? assetWorkflowImportSelectedWorkflowId : null;
+  const nextWorkflow = sticky || requested || state.workflows[0].workflow_id;
+  if (state.currentWorkflow?.workflow_id !== nextWorkflow) await selectWorkflow(nextWorkflow);
+}
 window.WorkbenchWorkflow = Object.freeze({
   init: rebindWorkbench,
   rebind: rebindWorkbench,
