@@ -242,7 +242,7 @@ import {
     fitDetailMediaCanvas,
     fitDetailMediaCanvasAnnotationToText,
     handleDetailMediaCanvasContextAction,
-    beginDetailReferenceTitleEdit, cancelDetailReferenceTitleEdit, commitDetailReferenceTitleEdit, initialDetailMediaCanvasDrawings,
+    beginDetailReferenceTitleEdit, cancelDetailReferenceTitleEdit, commitDetailReferenceTitleEdit, toggleDetailMediaSelectMenu, closeDetailMediaSelectMenus, applyDetailMediaSelectValue, initialDetailMediaCanvasDrawings,
     initialDetailMediaCanvasGroups,
     initialDetailMediaCanvasItems,
     initialDetailMediaCanvasLayout,
@@ -1885,7 +1885,7 @@ function renderDetailViewer(){
             if(savedTop > 0) node.scrollTop = savedTop;
         });
     }
-    refreshIcons(); if(mediaCanvasMode) window.GWNativeSelect?.enhanceAll?.(overlay);
+    refreshIcons();
     if(type === 'audio') initializeDetailAudioWaveform(overlay, item, url);
     if(type === 'video') hydrateVideoStoryboardImages(overlay);
     if(type === 'font') initializeDetailFontPreview(overlay, url);
@@ -4040,6 +4040,19 @@ document.addEventListener('click', event => {
         if(event.target.closest?.('[data-detail-media-node-lut-save]')){ saveDetailMediaNodeLutVersion(targetId).catch(() => {}); return; }
         if(event.target.closest?.('[data-detail-media-node-lut-clear]')){ clearDetailMediaNodeLut(targetId); return; }
     }
+    const detailMediaSelectOpt = event.target.closest?.('[data-detail-media-select-option]');
+    if(detailMediaSelectOpt){
+        event.preventDefault(); event.stopPropagation();
+        applyDetailMediaSelectValue(detailMediaSelectOpt.dataset.detailMediaSelectKind || '', detailMediaSelectOpt.dataset.detailMediaSelectOption || '');
+        return;
+    }
+    const detailMediaSelectTrigger = event.target.closest?.('[data-detail-media-select-trigger]');
+    if(detailMediaSelectTrigger){
+        event.preventDefault(); event.stopPropagation();
+        toggleDetailMediaSelectMenu(detailMediaSelectTrigger);
+        return;
+    }
+    if(!event.target.closest?.('[data-detail-media-select-capsule]')) closeDetailMediaSelectMenus();
     // 分割线只管拖，别让它多选一次节点；刚拖完补上的那次 click 也一并跳过。
     if(event.target.closest?.('[data-detail-media-lut-split]') || Date.now() - detailMediaLutSplitDragEndedAt < 400) return;
     // 【QIN-580】点空白处（面板和角标之外的任何地方）自动收起调节浮窗。
@@ -4365,7 +4378,19 @@ document.addEventListener('focusout', event => {
     }
 });
 document.addEventListener('keydown', event => {
-    if(!detailViewerState.open || !detailViewerState.referenceCanvasTitleEditing) return;
+    if(!detailViewerState.open) return;
+    if(event.key === 'Escape'){
+        const openCapsule = [...document.querySelectorAll('[data-detail-media-select-capsule="basis"]'), ...document.querySelectorAll('[data-detail-media-select-capsule="scope"]')].find(el => el.classList.contains('is-open'));
+        if(openCapsule){
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            const trigger = openCapsule.querySelector('[data-detail-media-select-trigger]');
+            closeDetailMediaSelectMenus();
+            trigger?.focus?.({preventScroll:true});
+            return;
+        }
+    }
+    if(!detailViewerState.referenceCanvasTitleEditing) return;
     if(!event.target?.matches?.('[data-detail-reference-title]')) return;
     if(event.key === 'Escape'){
         event.preventDefault();

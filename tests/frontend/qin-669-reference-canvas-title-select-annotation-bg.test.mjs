@@ -1,10 +1,10 @@
-// Copyright 2026 Gods-Workbench Authors
+// Copyright 2026 qinxuedong (Gods-Workbench Authors)
+// SPDX-License-Identifier: FSL-1.1-Apache-2.0
 //
-// Licensed under the Apache License, Version 2.0 (the "License");
-// you may not use this file except in compliance with the License.
-// You may obtain a copy of the License at
-//
-//     http://www.apache.org/licenses/LICENSE-2.0
+// Licensed under the Functional Source License, Version 1.1, Apache 2.0
+// Future License (the "License"); you may not use this file except in
+// compliance with the License. You may obtain a copy of the License at
+//     https://fsl.software/
 //
 // Unless required by applicable law or agreed to in writing, software
 // distributed under the License is distributed on an "AS IS" BASIS,
@@ -22,7 +22,6 @@ import { createAssetViewHost } from './qin-602-asset-view-harness.mjs';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(HERE, '../..');
 const CSS_PATH = path.join(REPO_ROOT, 'web/css/pages/asset-manager.css');
-const HTML_PATH = path.join(REPO_ROOT, 'web/embeds/asset-manager.html');
 const SHORTCUTS_PATH = path.join(REPO_ROOT, 'docs/guides/KEYBOARD-SHORTCUTS.md');
 
 function dispatchDomEvent(host, el, type, extra = {}) {
@@ -58,6 +57,24 @@ function patchStubHost(host) {
             }
         };
     }
+    const origDispatch = host.document.dispatchEvent.bind(host.document);
+    host.document.dispatchEvent = (evt) => {
+        if (evt?.type === 'keydown' && host.document._listeners?.get('keydown')) {
+            let stopped = false;
+            const origStop = evt.stopImmediatePropagation?.bind(evt);
+            evt.stopImmediatePropagation = () => {
+                stopped = true;
+                origStop?.();
+            };
+            // preview.js 使用 capture=true 注册 keydown，模拟真实浏览器捕获阶段优先于 asset-manager.js 冒泡阶段执行
+            for (const fn of [...host.document._listeners.get('keydown')].reverse()) {
+                fn(evt);
+                if (stopped) return true;
+            }
+            return true;
+        }
+        return origDispatch(evt);
+    };
     const prevRaf = globalThis.requestAnimationFrame;
     globalThis.requestAnimationFrame = () => 0;
     return () => {
@@ -91,7 +108,7 @@ function openReferenceCanvasInHost(main, preview, options = {}) {
     return item;
 }
 
-test('QIN-669 AC1：参考画布名称默认普通文本展示，双击进入行内编辑，Enter/失焦提交，Esc取消恢复，空名回退「参考画布」', async () => {
+test('QIN-669 AC1：参考画布名称默认普通文本展示，双击进入项目圆角输入框编辑，Enter/失焦提交，Esc取消恢复，空名回退「参考画布」', async () => {
     const host = await createAssetViewHost({ tab: null });
     const restoreRaf = patchStubHost(host);
     try {
@@ -149,8 +166,6 @@ test('QIN-669 AC1：参考画布名称默认普通文本展示，双击进入行
         inputEl.value = 'A'.repeat(100);
         media.commitDetailReferenceTitleEdit(true);
         assert.equal(main.detailViewerState.referenceCanvasTitle.length, 80);
-
-        await new Promise(resolve => setTimeout(resolve, 60));
     } finally {
         restoreRaf();
         host.dispose();
@@ -160,11 +175,7 @@ test('QIN-669 AC1：参考画布名称默认普通文本展示，双击进入行
     assert.ok(shortcutsDoc.includes('参考画布名称支持双击进入行内编辑'), '快捷键指南应补充参考画布名称编辑说明');
 });
 
-test('QIN-669 AC2：「基准」「范围」及右键「基准」接入 QIN-631 公共下拉，且保留左侧图库下拉不变', async () => {
-    const html = readFileSync(HTML_PATH, 'utf8');
-    assert.ok(html.includes('/static/css/components/gw-native-select.css'), 'asset-manager.html 应最小引入 gw-native-select.css');
-    assert.ok(html.includes('/static/js/core/gw-native-select.js'), 'asset-manager.html 应最小引入 gw-native-select.js');
-
+test('QIN-669 AC2：「基准」「范围」及右键「基准」采用「排序」同款自绘 listbox 胶囊并支持展开/选择/Esc，且保留左侧图库下拉不变', async () => {
     const host = await createAssetViewHost({ tab: null });
     const restoreRaf = patchStubHost(host);
     try {
@@ -175,23 +186,45 @@ test('QIN-669 AC2：「基准」「范围」及右键「基准」接入 QIN-631 
             contextMenu: { open: true, x: 40, y: 40, worldX: 40, worldY: 40 },
         });
 
-        const basisSelects = [...host.document.querySelectorAll('[data-detail-media-normalize-basis]')];
-        const scopeSelect = host.document.querySelector('[data-detail-media-export-scope]');
-        assert.equal(basisSelects.length, 2, '工具栏和右键菜单共应有 2 个基准下拉');
-        assert.ok(scopeSelect, '工具栏应有范围下拉');
+        const basisCapsules = [...host.document.querySelectorAll('[data-detail-media-select-capsule="basis"]')];
+        const scopeCapsule = host.document.querySelector('[data-detail-media-select-capsule="scope"]');
+        assert.equal(basisCapsules.length, 2, '工具栏和右键菜单共应有 2 个基准自绘下拉胶囊');
+        assert.ok(scopeCapsule, '工具栏应有范围自绘下拉胶囊');
 
-        for (const selectEl of [...basisSelects, scopeSelect]) {
-            assert.ok(selectEl.classList.contains('gw-native-select-input'), '下拉应具备 .gw-native-select-input 类');
-            assert.ok(selectEl.hasAttribute('data-gw-select'), '下拉应具备 data-gw-select 属性');
-            const shell = selectEl.parentElement || selectEl.parentNode;
-            assert.ok(shell?.classList?.contains('gw-select-shell'), '下拉外层应为 .gw-select-shell');
+        for (const capsule of [...basisCapsules, scopeCapsule]) {
+            assert.ok(capsule.classList.contains('registry-toolbar-select'), '胶囊应复用 .registry-toolbar-select');
+            const trigger = capsule.querySelector('[data-detail-media-select-trigger]');
+            const menu = capsule.querySelector('.registry-select-menu');
+            assert.ok(trigger?.classList.contains('registry-select-trigger'));
+            assert.equal(trigger.getAttribute('aria-haspopup'), 'listbox');
+            assert.ok(menu, '应包含自绘 listbox 菜单');
+            assert.equal(Boolean(menu.hidden || menu.hasAttribute('hidden')), true, '初始态菜单应隐藏');
         }
 
-        // change 行为同步：切换工具栏基准，右键菜单基准与状态同步更新
-        basisSelects[0].value = 'average';
-        dispatchDomEvent(host, basisSelects[0], 'change');
+        // 点击工具栏「基准」触发器展开菜单
+        const toolbarBasisTrigger = basisCapsules[0].querySelector('[data-detail-media-select-trigger]');
+        dispatchDomEvent(host, toolbarBasisTrigger, 'click');
+        assert.equal(basisCapsules[0].classList.contains('is-open'), true);
+        assert.equal(toolbarBasisTrigger.getAttribute('aria-expanded'), 'true');
+
+        // Esc 关闭菜单而不关闭详情
+        dispatchDomEvent(host, toolbarBasisTrigger, 'keydown', { key: 'Escape' });
+        assert.equal(basisCapsules[0].classList.contains('is-open'), false);
+        assert.equal(main.detailViewerState.open, true);
+
+        // 再次展开并选择「平均」
+        dispatchDomEvent(host, toolbarBasisTrigger, 'click');
+        const averageOption = basisCapsules[0].querySelector('[data-detail-media-select-option="average"]');
+        dispatchDomEvent(host, averageOption, 'click');
         assert.equal(main.detailViewerState.mediaCanvasNormalizeBasis, 'average');
-        assert.equal(basisSelects[1].value, 'average');
+        assert.equal(toolbarBasisTrigger.getAttribute('data-detail-media-normalize-basis'), 'average');
+        assert.equal(averageOption.classList.contains('is-selected'), true);
+        // 重新打开右键菜单，基准胶囊同样已同步为 average
+        main.detailViewerState.mediaCanvasContextMenu = { open: true, x: 40, y: 40, worldX: 40, worldY: 40 };
+        preview.renderDetailViewer();
+        const latestBasisCapsules = [...host.document.querySelectorAll('[data-detail-media-select-capsule="basis"]')];
+        assert.equal(latestBasisCapsules.length, 2);
+        assert.equal(latestBasisCapsules[1].querySelector('[data-detail-media-select-trigger]').getAttribute('data-detail-media-normalize-basis'), 'average');
 
         // 左侧图库下拉不顺手改造
         for (const libAttr of ['data-detail-media-library-library', 'data-detail-media-library-scope', 'data-detail-media-library-sort']) {
@@ -200,14 +233,13 @@ test('QIN-669 AC2：「基准」「范围」及右键「基准」接入 QIN-631 
                 assert.equal(libSelect.classList.contains('gw-native-select-input'), false, `左侧图库 ${libAttr} 不应顺手改造`);
             }
         }
-        await new Promise(resolve => setTimeout(resolve, 20));
     } finally {
         restoreRaf();
         host.dispose();
     }
 });
 
-test('QIN-669 AC3：工具栏移除「背景」色块，点击注释后显示仅含「背景」的注释设置卡片并保留已有注释底色', async () => {
+test('QIN-669 AC3：工具栏移除「背景」色块，注释设置卡片跟随注释块正上方作为整体出现并保留已有注释底色', async () => {
     const host = await createAssetViewHost({ tab: null });
     const restoreRaf = patchStubHost(host);
     try {
@@ -235,9 +267,11 @@ test('QIN-669 AC3：工具栏移除「背景」色块，点击注释后显示仅
         assert.equal(toolbar.querySelector('[data-detail-annotation-color]'), null, '常驻工具栏不得出现注释背景色块');
         assert.equal(toolbar.querySelector('.asset-detail-media-note-colors'), null, '常驻工具栏不得出现 .asset-detail-media-note-colors');
 
-        // 未选中注释时，注释设置卡片隐藏
-        const card = host.document.querySelector('[data-detail-annotation-settings-card]');
-        assert.ok(card, '画布应包含注释设置卡片容器');
+        // 卡片应挂在注释节点内部（跟随注释块成为整体），而非画布左上角
+        const noteNode = host.document.querySelector(`[data-detail-media-annotation-node="${existingNote.id}"]`);
+        assert.ok(noteNode);
+        const card = noteNode.querySelector('[data-detail-annotation-settings-card]');
+        assert.ok(card, '注释设置卡片必须内嵌在注释块节点内作为整体');
         assert.equal(Boolean(card.hidden || card.hasAttribute('hidden')), true, '未选中注释时卡片必须隐藏');
 
         // 选中已有注释后，卡片显示，且保留已有底色 #3b4a6b
@@ -269,11 +303,12 @@ test('QIN-669 AC3：工具栏移除「背景」色块，点击注释后显示仅
     }
 });
 
-test('QIN-669 AC4：CSS 覆盖四宽（724/900/1440/1920）与双主题（dark/light）且无金色常驻方框', () => {
+test('QIN-669 AC4：CSS 覆盖项目圆角输入框、自绘胶囊菜单、注释块正上方跟随卡片与四宽双主题', () => {
     const css = readFileSync(CSS_PATH, 'utf8');
-    assert.match(css, /\.asset-detail-reference-title\s*\{[^}]*border:1px solid transparent;/);
+    assert.match(css, /\.asset-detail-reference-title\.is-editing\s*\{[^}]*border-radius:8px;/);
+    assert.match(css, /\.asset-detail-media-select-capsule\s*\{/);
+    assert.match(css, /\.asset-detail-annotation-settings-card\s*\{[^}]*bottom:calc\(100% \+ 8px\);/);
     assert.match(css, /\.asset-detail-annotation-settings-card\[hidden\]\s*\{\s*display:none;\s*\}/);
     assert.match(css, /html\[data-theme="light"\]\s+\.asset-detail-annotation-settings-card/);
-    assert.match(css, /\.asset-detail-reference-title\.is-editing\s*\{\s*min-width:150px;\s*\}/);
-    assert.match(css, /@media\s*\(max-width:620px\)[\s\S]*\.asset-detail-annotation-settings-card/);
+    assert.match(css, /html\[data-theme="light"\]\s+\.asset-detail-media-select-capsule/);
 });

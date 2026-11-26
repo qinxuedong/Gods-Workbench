@@ -692,6 +692,7 @@ function renderDetailMediaCanvasAnnotation(note){
     const padding = Math.max(2,Number(note.padding || 10));
     const handles = ['nw','n','ne','e','se','s','sw','w'].map(direction => `<span class="asset-detail-media-resize-handle handle-${direction}" data-detail-media-resize="${direction}" aria-hidden="true"></span>`).join('');
     return `<article class="asset-detail-media-annotation ${selected ? 'is-selected' : ''} ${editing ? 'is-editing' : ''} ${grouped ? 'is-group-member' : ''}" data-detail-media-annotation-node="${escapeAttr(note.id)}" data-detail-media-object="${escapeAttr(objectId)}" ${grouped ? `data-detail-media-group-member="${escapeAttr(note.id)}"` : ''} style="left:${Number(note.x || 0)}px;top:${Number(note.y || 0)}px;width:${Number(note.width || 280)}px;height:${Number(note.height || 120)}px;--annotation-bg:${escapeAttr(backgroundColor)};--annotation-text:${escapeAttr(textColor)};--annotation-font-size:${fontSize}px;--annotation-padding:${padding}px" tabindex="0" aria-label="画布注释" aria-selected="${selected}">
+        ${renderDetailMediaAnnotationSettingsCard(note, (selected || editing) && detailMediaCanvasSelectedAnnotation()?.id === note.id)}
         ${editing ? `<textarea class="asset-detail-media-annotation-editor" data-detail-media-annotation="${escapeAttr(note.id)}" maxlength="2000" aria-label="编辑画布注释" placeholder="输入注释">${escapeHtml(note.text || '')}</textarea>` : `<div class="asset-detail-media-annotation-copy">${escapeHtml(note.text || '双击输入注释')}</div>`}
         ${handles}
     </article>`;
@@ -721,16 +722,16 @@ function renderDetailMediaCanvasToolButtons(){
         <button class="hw-btn" type="button" data-detail-media-context-action="align-center-y" title="垂直居中"><i data-lucide="align-center-horizontal"></i></button>
     </div>
     <div class="asset-detail-media-tool-group" role="group" aria-label="规格化">
-        <label class="asset-detail-media-normalize-basis" title="规格化尺寸基准"><span>基准</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${normalizeBasis === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${normalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${normalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></div></label>
+        ${renderDetailMediaSelectCapsule('basis', normalizeBasis, 'toolbar')}
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button>
     </div>
-    <!-- 【QIN-669】注释底色已移至选中/编辑注释后的画布内注释设置卡片 [data-detail-annotation-settings-card]。 -->
+    <!-- 【QIN-669】注释底色已移至注释块正上方跟随卡片 [data-detail-annotation-settings-card]。 -->
     <!-- 【QIN-580】原「文字」控件（注释文字色）位置改为 LUT 入口。 -->
     ${renderDetailMediaLutButton()}
     <div class="asset-detail-media-tool-group asset-detail-media-export-tools" role="group" aria-label="输出">
-        <label class="asset-detail-media-export-scope" title="PNG 输出范围"><span>范围</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-export-scope aria-label="PNG 输出范围"><option value="all" ${detailViewerState.mediaCanvasExportScope !== 'selection' ? 'selected' : ''}>全部画布</option><option value="selection" ${detailViewerState.mediaCanvasExportScope === 'selection' ? 'selected' : ''}>当前选中</option></select></div></label>
+        ${renderDetailMediaSelectCapsule('scope', detailViewerState.mediaCanvasExportScope === 'selection' ? 'selection' : 'all', 'toolbar')}
         <button class="hw-btn" type="button" data-detail-media-context-action="export"><i data-lucide="download"></i><span>导出</span></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="save-image"><i data-lucide="image-down"></i><span>保存图片</span></button>
         <small>${detailViewerState.mediaCanvasExportScope === 'selection' ? (selectedCount ? `输出已选 ${selectedCount} 项` : '请先选择对象') : '输出全部画布'}</small>
@@ -751,7 +752,7 @@ function renderDetailMediaCanvasContextMenu(){
         <section><header><span>排列</span><small>当前摆放顺序</small></header><div><button type="button" data-detail-media-context-action="arrange-grid" title="网格排列"><i data-lucide="grid-2x2"></i></button><button type="button" data-detail-media-context-action="arrange-horizontal" title="水平排列"><i data-lucide="rows-3"></i></button><button type="button" data-detail-media-context-action="arrange-vertical" title="垂直排列"><i data-lucide="columns-3"></i></button></div></section>
         <section><header><span>分组</span><small>整体移动缩放</small></header><div><button type="button" data-detail-media-context-action="group" title="打组 Ctrl+G" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="group"></i></button><button type="button" data-detail-media-context-action="ungroup" title="解组 Ctrl+Shift+G" ${!detailMediaCanvasSelectionOrder().some(id => detailMediaCanvasGroup(id)) ? 'disabled' : ''}><i data-lucide="ungroup"></i></button></div></section>
         <section class="${selectedCount < 2 ? 'is-disabled' : ''}"><header><span>对齐</span><small>最后选择为基准</small></header><div><button type="button" data-detail-media-context-action="align-left" title="左对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-start-vertical"></i></button><button type="button" data-detail-media-context-action="align-center-x" title="水平居中" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-center-vertical"></i></button><button type="button" data-detail-media-context-action="align-right" title="右对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-end-vertical"></i></button><button type="button" data-detail-media-context-action="align-top" title="顶部对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-start-horizontal"></i></button><button type="button" data-detail-media-context-action="align-center-y" title="垂直居中" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-center-horizontal"></i></button></div></section>
-        <section><header><span>规格化</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${(detailViewerState.mediaCanvasNormalizeBasis || 'first') === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${detailViewerState.mediaCanvasNormalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${detailViewerState.mediaCanvasNormalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></div></header><div><button type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button><button type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button><button type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button></div></section>
+        <section><header><span>规格化</span>${renderDetailMediaSelectCapsule('basis', detailViewerState.mediaCanvasNormalizeBasis || 'first', 'context')}</header><div><button type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button><button type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button><button type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button></div></section>
     </div>`;
 }
 function renderDetailMediaCanvas(source, currentItem){
@@ -811,8 +812,7 @@ function renderDetailMediaCanvas(source, currentItem){
                 }).join('')}</div>
             </aside>
             ${renderDetailMediaCanvasContextMenu()}
-            <!-- QIN-669 注释设置卡片（选中或编辑注释时显示，未选中时不显示） -->
-            ${renderDetailMediaAnnotationSettingsCard()}
+            <!-- QIN-669 注释设置卡片已随注释块内联渲染 -->
         </div>
     </div>`;
 }
@@ -2598,7 +2598,104 @@ export {
     beginDetailReferenceTitleEdit,
     commitDetailReferenceTitleEdit,
     cancelDetailReferenceTitleEdit,
+    toggleDetailMediaSelectMenu,
+    closeDetailMediaSelectMenus,
+    applyDetailMediaSelectValue,
 };
+
+const DETAIL_MEDIA_SELECT_META = {
+    basis: {
+        label: '基准',
+        title: '规格化尺寸基准',
+        options: [
+            { value: 'first', label: '第一个' },
+            { value: 'average', label: '平均' },
+            { value: 'last', label: '最后一个' },
+        ],
+    },
+    scope: {
+        label: '范围',
+        title: 'PNG 输出范围',
+        options: [
+            { value: 'all', label: '全部画布' },
+            { value: 'selection', label: '当前选中' },
+        ],
+    },
+};
+
+function renderDetailMediaSelectCapsule(kind, currentValue, placement='toolbar'){
+    const meta = DETAIL_MEDIA_SELECT_META[kind] || DETAIL_MEDIA_SELECT_META.basis;
+    const currentOpt = meta.options.find(opt => opt.value === currentValue) || meta.options[0];
+    const dataHook = kind === 'basis' ? 'data-detail-media-normalize-basis' : 'data-detail-media-export-scope';
+    return `<label class="hw-btn registry-toolbar-select asset-detail-media-select-capsule" data-detail-media-select-capsule="${escapeAttr(kind)}" data-detail-media-select-placement="${escapeAttr(placement)}" title="${escapeAttr(meta.title)}"><span>${escapeHtml(meta.label)}</span><button class="registry-select-trigger" type="button" data-detail-media-select-trigger="${escapeAttr(kind)}" ${dataHook}="${escapeAttr(currentOpt.value)}" aria-haspopup="listbox" aria-expanded="false" aria-label="${escapeAttr(meta.label)}：${escapeAttr(currentOpt.label)}">${escapeHtml(currentOpt.label)}</button><div class="registry-select-menu" role="listbox" aria-label="${escapeAttr(meta.label)}" hidden>${meta.options.map(opt => `<button class="registry-select-option${opt.value === currentOpt.value ? ' is-selected' : ''}" type="button" role="option" data-detail-media-select-kind="${escapeAttr(kind)}" data-detail-media-select-option="${escapeAttr(opt.value)}" aria-selected="${opt.value === currentOpt.value}">${escapeHtml(opt.label)}</button>`).join('')}</div></label>`;
+}
+
+function closeDetailMediaSelectMenus(){
+    [...document.querySelectorAll('[data-detail-media-select-capsule="basis"]'), ...document.querySelectorAll('[data-detail-media-select-capsule="scope"]')].forEach(capsule => {
+        if(!capsule.classList.contains('is-open')) return;
+        capsule.classList.remove('is-open');
+        capsule.querySelector('[data-detail-media-select-trigger]')?.setAttribute('aria-expanded', 'false');
+        const menu = capsule.querySelector('.registry-select-menu');
+        if(menu){
+            menu.hidden = true;
+            menu.style.position = '';
+            menu.style.left = '';
+            menu.style.top = '';
+            menu.style.minWidth = '';
+        }
+    });
+}
+
+function toggleDetailMediaSelectMenu(trigger){
+    const capsule = trigger?.closest?.('[data-detail-media-select-capsule]');
+    if(!capsule) return;
+    const willOpen = !capsule.classList.contains('is-open');
+    closeDetailMediaSelectMenus();
+    if(!willOpen) return;
+    capsule.classList.add('is-open');
+    trigger.setAttribute('aria-expanded', 'true');
+    const menu = capsule.querySelector('.registry-select-menu');
+    if(menu){
+        menu.hidden = false;
+        const rect = capsule.getBoundingClientRect?.();
+        if(rect && (rect.width > 0 || rect.height > 0)){
+            menu.style.position = 'fixed';
+            menu.style.left = `${Math.max(8, Math.round(rect.left))}px`;
+            menu.style.top = `${Math.round(rect.bottom + 6)}px`;
+            menu.style.minWidth = `${Math.round(rect.width)}px`;
+        }
+    }
+}
+
+function applyDetailMediaSelectValue(kind, value){
+    closeDetailMediaSelectMenus();
+    const meta = DETAIL_MEDIA_SELECT_META[kind];
+    if(!meta) return;
+    const option = meta.options.find(opt => opt.value === value) || meta.options[0];
+    if(kind === 'basis'){
+        detailViewerState.mediaCanvasNormalizeBasis = option.value;
+        setStatus(`规格化基准已切换为${option.value === 'average' ? '平均值' : option.value === 'last' ? '最后一个' : '第一个'}`);
+    } else if(kind === 'scope'){
+        detailViewerState.mediaCanvasExportScope = option.value === 'selection' ? 'selection' : 'all';
+        const helper = document.querySelector('.asset-detail-media-export-tools > small');
+        const selectedCount = detailMediaCanvasSelectedIds().size;
+        if(helper) helper.textContent = detailViewerState.mediaCanvasExportScope === 'selection' ? (selectedCount ? `输出已选 ${selectedCount} 项` : '请先选择对象') : '输出全部画布';
+    }
+    const dataHook = kind === 'basis' ? 'data-detail-media-normalize-basis' : 'data-detail-media-export-scope';
+    document.querySelectorAll(`[data-detail-media-select-capsule="${kind}"]`).forEach(capsule => {
+        const trigger = capsule.querySelector('[data-detail-media-select-trigger]');
+        if(trigger){
+            trigger.textContent = option.label;
+            trigger.setAttribute(dataHook, option.value);
+            trigger.setAttribute('aria-label', `${meta.label}：${option.label}`);
+        }
+        capsule.querySelectorAll('[data-detail-media-select-option]').forEach(btn => {
+            const isSel = btn.dataset.detailMediaSelectOption === option.value;
+            btn.classList.toggle('is-selected', isSel);
+            btn.setAttribute('aria-selected', String(isSel));
+        });
+    });
+}
 
 function detailMediaCanvasSelectedAnnotation(){
     const selectedIds = detailMediaCanvasSelectedIds();
@@ -2610,9 +2707,7 @@ function detailMediaCanvasSelectedAnnotation(){
     return null;
 }
 
-function renderDetailMediaAnnotationSettingsCard(){
-    const note = detailMediaCanvasSelectedAnnotation();
-    const visible = Boolean(note);
+function renderDetailMediaAnnotationSettingsCard(note, visible=false){
     const backgroundColor = note?.backgroundColor || '#202622';
     return `<aside class="asset-detail-annotation-settings-card" data-detail-annotation-settings-card aria-label="注释设置" ${visible ? '' : 'hidden'} aria-hidden="${String(!visible)}">
         <header class="asset-detail-annotation-settings-head"><span>注释</span></header>
@@ -2623,18 +2718,21 @@ function renderDetailMediaAnnotationSettingsCard(){
 }
 
 function syncDetailMediaAnnotationSettingsCardDom(){
-    const card = document.querySelector('.asset-detail-viewer [data-detail-annotation-settings-card]');
-    if(!card) return;
-    const note = detailMediaCanvasSelectedAnnotation();
-    const visible = Boolean(note);
-    card.hidden = !visible;
-    if(visible) card.removeAttribute('hidden');
-    else card.setAttribute('hidden', '');
-    card.setAttribute('aria-hidden', String(!visible));
-    if(note){
-        const input = card.querySelector('[data-detail-annotation-color="background"]');
-        if(input) input.value = note.backgroundColor || '#202622';
-    }
+    const activeNote = detailMediaCanvasSelectedAnnotation();
+    document.querySelectorAll('.asset-detail-viewer [data-detail-media-annotation-node]').forEach(node => {
+        const noteId = node.dataset.detailMediaAnnotationNode || '';
+        const card = node.querySelector('[data-detail-annotation-settings-card]');
+        if(!card) return;
+        const visible = Boolean(activeNote && activeNote.id === noteId);
+        card.hidden = !visible;
+        if(visible) card.removeAttribute('hidden');
+        else card.setAttribute('hidden', '');
+        card.setAttribute('aria-hidden', String(!visible));
+        if(visible){
+            const input = card.querySelector('[data-detail-annotation-color="background"]');
+            if(input) input.value = activeNote.backgroundColor || '#202622';
+        }
+    });
 }
 
 function beginDetailReferenceTitleEdit(){
