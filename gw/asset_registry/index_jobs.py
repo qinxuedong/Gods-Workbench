@@ -53,6 +53,14 @@ MAX_ENTRIES = 500000
 # 完整哈希大文件代价过高（试点库 102 个 >512MiB 文件占 48.4% 字节），
 # 原 413 fail-fast 会让整单索引失败，改为首尾 4MiB + 长度的采样哈希。
 _HASH_LIMIT_BYTES = 512 * 1024 * 1024
+
+
+def _decode_shot_vector_frame(source: Path, sample_sec: float) -> bytes:
+    """在索引任务运行时延迟加载媒体解码器，避免领域包循环依赖。"""
+    decoder = importlib.import_module(
+        "gw.media.keyframe_extractor"
+    ).decode_keyframe_to_memory
+    return decoder(source, sample_sec)
 _HASH_SAMPLE_BYTES = 4 * 1024 * 1024
 # 采样哈希域分离前缀：摘要输入与完整 sha256（纯文件字节流）结构不同，
 # 理论碰撞空间互斥；查重组按值分组时两种模式不会交叉误配。
@@ -2212,8 +2220,20 @@ class IndexJobs:
             job_id = f"job_index_{raw['sequence']:08d}"
             job = {
                 "job_id": job_id,
-                "job_type": "asset.index" if kind == "reindex" else "asset.index.sync",
-                "name": "重建素材索引" if kind == "reindex" else "同步索引差集",
+                "job_type": (
+                    "asset.index"
+                    if kind == "reindex"
+                    else "asset.shot_vectors"
+                    if kind == "shot_vectors"
+                    else "asset.index.sync"
+                ),
+                "name": (
+                    "重建素材索引"
+                    if kind == "reindex"
+                    else "生成镜头视觉向量"
+                    if kind == "shot_vectors"
+                    else "同步索引差集"
+                ),
                 "status": "queued",
                 "phase": "queued",
                 "version": 1,
@@ -2537,6 +2557,73 @@ class IndexJobs:
             execution_machine_id=stored.get("execution_machine_id"),
             logical_source_id=stored.get("logical_source_id"),
         )
+
+    def _run_shot_vector_rebuild(self, job_id, attempt, roots):
+        """只补跑指定允许根内可见视频的镜头向量，不扫描或重写资产注册表。"""
+        from gw.asset_registry import repository as repo
+        from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+        root_ids = {
+            str(value)
+            for value in (self._checkpoint(job_id, attempt).get("_request") or {}).get("roots") or []
+        }
+        root_ids.intersection_update(str(root_id) for root_id in roots)
+        snapshot = repo.readonly_registry_snapshot()
+        assets = []
+        for asset_id, asset in (snapshot.get("assets") or {}).items():
+            if not isinstance(asset, dict) or str(asset.get("root_id") or "") not in root_ids:
+                continue
+            visible = repo.visible_asset_from_snapshot(snapshot, str(asset_id))
+            if visible is None:
+                continue
+            metadata = visible.get("metadata")
+            segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+            if isinstance(segments, list) and segments:
+                assets.append(visible)
+
+        db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+        processed = shots = frames = failed = 0
+        with SQLiteVecEngine(db_path) as engine:
+            encoder = None
+            if assets:
+                from gw.asset_registry.embedder import (
+                    DEFAULT_MODEL_ID,
+                    LocalMultimodalEmbedder,
+                )
+
+                encoder = LocalMultimodalEmbedder(
+                    DEFAULT_MODEL_ID, data_root=storage.data_root()
+                )
+            for asset in assets:
+                self._checkpoint(job_id, attempt)
+                asset_id = str(asset.get("asset_id") or asset.get("id") or "")
+                try:
+                    rows, _skipped = repo._asset_shot_rows(asset)
+                    engine.replace_asset_shots(asset_id, rows)
+                    result = repo.refresh_asset_shot_vectors(
+                        engine,
+                        asset,
+                        embedder=encoder,
+                        frame_decoder=_decode_shot_vector_frame,
+                    )
+                    shots += result["shots"]
+                    frames += result["frames"]
+                    failed += result["failed"]
+                except Exception:
+                    failed += 1
+                processed += 1
+                with self.condition:
+                    job = self._checkpoint(job_id, attempt)
+                    job.update(
+                        phase="embedding",
+                        scanned=processed,
+                        progress={"phase": "embedding", "scanned": processed, "total": len(assets)},
+                        result={"assets": processed, "shots": shots, "frames": frames, "failed": failed},
+                    )
+                    job["version"] += 1
+                    self._save(job)
+                    self.condition.notify_all()
+        return {"assets": processed, "shots": shots, "frames": frames, "failed": failed}
 
     # ------------------------------------------------------------------
     # QIN-652：快扫入库后的后台富化（视频探测并发 1 / 文件哈希并发 N）
@@ -2969,6 +3056,21 @@ class IndexJobs:
             # QIN-652：只在 reindex 的 request 副本上打开快扫。_request 与
             # _request_digest 逐字节不变，幂等键与 sync 分支语义保持原样。
             request = dict(job["_request"])
+            if request.get("kind") == "shot_vectors":
+                result = self._run_shot_vector_rebuild(job_id, attempt, roots)
+                with self.condition:
+                    job = self._checkpoint(job_id, attempt)
+                    job.update(
+                        status="succeeded",
+                        phase="completed",
+                        scanned=result["assets"],
+                        result=result,
+                        error_code=None,
+                    )
+                    job["version"] += 1
+                    self._save(job)
+                    self.condition.notify_all()
+                return
             fast_scan = request.get("kind") == "reindex"
             if fast_scan:
                 request["_fast_scan"] = True
@@ -3857,7 +3959,10 @@ class IndexJobs:
                     added += 1
                 if added or updated:
                     repo._bump(raw)
-                repo._upsert_asset_search_documents(search_documents.values())
+                repo._upsert_asset_search_documents(
+                    search_documents.values(),
+                    frame_decoder=_decode_shot_vector_frame,
+                )
                 result = {
                     "indexed": added,
                     "updated": updated,

@@ -1,5 +1,6 @@
 // QIN-579: 资产库左侧栏文件夹整理迁移——子目录树展开、右键菜单、拖拽移动与撤销
 import assert from 'node:assert/strict';
+import {createContext, runInContext} from 'node:vm';
 import { readAssetManagerAggregate } from './asset-manager-aggregate.mjs';
 import {readFileSync} from 'node:fs';
 import test from 'node:test';
@@ -95,6 +96,197 @@ test('QIN-597: shell 根菜单显示根动作并转发到共享资源文件夹�
   const readOnlyButtons = body.children.at(-1).children.filter(button=>Object.hasOwn(button.attributes,'data-asset-organize-remove-root') || Object.hasOwn(button.attributes,'data-asset-organize-purge-root'));
   assert.equal(readOnlyButtons.length, 2);
   assert.ok(readOnlyButtons.every(button=>button.disabled), 'read-only users cannot invoke root actions');
+});
+
+test('QIN-656 AC3: shell 挂载根菜单仅在就绪且有权限时补跑镜头视觉向量', async () => {
+  const dashed = value => String(value).replace(/[A-Z]/g, letter => `-${letter.toLowerCase()}`);
+  const matches = (node, selector) => {
+    if (selector.startsWith('#')) return node.id === selector.slice(1);
+    if (selector.startsWith('.')) return node.classList.contains(selector.slice(1));
+    if (selector.startsWith('[') && selector.endsWith(']')) {
+      const [name, expected] = selector.slice(1, -1).split('=');
+      const attribute = name.trim();
+      if (!node.hasAttribute(attribute)) return false;
+      return expected === undefined || node.getAttribute(attribute) === expected.slice(1, -1);
+    }
+    return false;
+  };
+  class TestElement {
+    constructor(tagName, ownerDocument, nodeType = 1) {
+      this.tagName = String(tagName).toUpperCase();
+      this.ownerDocument = ownerDocument;
+      this.nodeType = nodeType;
+      this.parentNode = null;
+      this.childNodes = [];
+      this.attributes = new Map();
+      this.listeners = new Map();
+      this.style = {};
+      this._textContent = '';
+      this._innerHTML = '';
+      this.classList = {
+        contains: name => String(this.className).split(/\s+/).includes(name),
+        add: (...names) => { this.className = [...new Set([...String(this.className).split(/\s+/).filter(Boolean), ...names])].join(' '); },
+        remove: (...names) => { this.className = String(this.className).split(/\s+/).filter(name => name && !names.includes(name)).join(' '); },
+        toggle: (name, force) => {
+          const has = this.classList.contains(name);
+          const next = force === undefined ? !has : Boolean(force);
+          if (next) this.classList.add(name); else this.classList.remove(name);
+          return next;
+        },
+      };
+      this.dataset = new Proxy({}, {
+        get: (_target, key) => this.getAttribute(`data-${dashed(key)}`) ?? undefined,
+        set: (_target, key, value) => { this.setAttribute(`data-${dashed(key)}`, String(value)); return true; },
+      });
+    }
+    get id() { return this.getAttribute('id') || ''; }
+    set id(value) { this.setAttribute('id', value); }
+    get className() { return this.getAttribute('class') || ''; }
+    set className(value) { this.setAttribute('class', value); }
+    get children() { return this.childNodes.filter(child => child.nodeType === 1); }
+    get isConnected() { let node = this; while (node) { if (node === this.ownerDocument.body) return true; node = node.parentNode; } return false; }
+    get textContent() { return this._textContent || this.children.map(child => child.textContent).join(''); }
+    set textContent(value) { this._textContent = String(value ?? ''); this.childNodes = []; }
+    get innerHTML() { return this._innerHTML; }
+    set innerHTML(value) {
+      this._innerHTML = String(value ?? '');
+      this.childNodes = [];
+      if (this._innerHTML.includes('data-asset-organize-group-new')) {
+        const button = this.ownerDocument.createElement('button');
+        button.setAttribute('data-asset-organize-group-new', '');
+        this.appendChild(button);
+      }
+    }
+    setAttribute(name, value) { this.attributes.set(String(name), String(value)); }
+    getAttribute(name) { return this.attributes.get(String(name)) ?? null; }
+    hasAttribute(name) { return this.attributes.has(String(name)); }
+    removeAttribute(name) { this.attributes.delete(String(name)); }
+    append(...nodes) { nodes.forEach(node => this.appendChild(node)); }
+    appendChild(node) {
+      if (node.nodeType === 11) { [...node.childNodes].forEach(child => this.appendChild(child)); node.childNodes = []; return node; }
+      node.parentNode?.removeChild(node);
+      node.parentNode = this;
+      this.childNodes.push(node);
+      return node;
+    }
+    removeChild(node) { this.childNodes = this.childNodes.filter(child => child !== node); node.parentNode = null; return node; }
+    replaceChildren(...nodes) { this.childNodes.forEach(child => { child.parentNode = null; }); this.childNodes = []; this.append(...nodes); }
+    remove() { this.parentNode?.removeChild(this); }
+    addEventListener(type, handler) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(handler); }
+    removeEventListener(type, handler) { this.listeners.set(type, (this.listeners.get(type) || []).filter(item => item !== handler)); }
+    async dispatch(type, event = {}) {
+      const dispatched = {type, target: this, preventDefault() {}, stopPropagation() {}, ...event};
+      const results = (this.listeners.get(type) || []).map(handler => handler(dispatched));
+      await Promise.all(results.map(result => Promise.resolve(result)));
+      return dispatched;
+    }
+    querySelectorAll(selector) {
+      const found = [];
+      const visit = node => node.children.forEach(child => { if (matches(child, selector)) found.push(child); visit(child); });
+      visit(this);
+      return found;
+    }
+    querySelector(selector) { return this.querySelectorAll(selector)[0] || null; }
+    contains(node) { for (let current = node; current; current = current.parentNode) if (current === this) return true; return false; }
+  }
+  class TestDocument {
+    constructor() {
+      this.body = new TestElement('body', this);
+      this.activeElement = null;
+      this.listeners = new Map();
+    }
+    createElement(tagName) { return new TestElement(tagName, this); }
+    createDocumentFragment() { return new TestElement('#fragment', this, 11); }
+    getElementById(id) { return this.querySelectorAll(`#${id}`)[0] || null; }
+    querySelectorAll(selector) { return this.body.querySelectorAll(selector); }
+    addEventListener(type, handler) { if (!this.listeners.has(type)) this.listeners.set(type, []); this.listeners.get(type).push(handler); }
+    removeEventListener(type, handler) { this.listeners.set(type, (this.listeners.get(type) || []).filter(item => item !== handler)); }
+  }
+
+  const document = new TestDocument();
+  const categories = document.createElement('nav');
+  categories.id = 'assetCategories';
+  const frame = document.createElement('iframe');
+  frame.id = 'assetVaultFrame';
+  frame.contentDocument = null;
+  frame.contentWindow = {GWAssetOrganizeBridge: null};
+  const status = document.createElement('div');
+  status.id = 'assetVaultStatus';
+  document.body.append(categories, frame, status);
+  const storage = new Map();
+  const localStorage = {getItem: key => storage.get(key) ?? null, setItem: (key, value) => storage.set(key, String(value))};
+  const window = {
+    innerWidth: 1200,
+    innerHeight: 800,
+    localStorage,
+    lucide: {createIcons() {}},
+    addEventListener() {},
+    dispatchEvent() {},
+  };
+  const location = {href: 'http://127.0.0.1/static/assets.html', origin: 'http://127.0.0.1', pathname: '/static/assets.html', search: '', hash: ''};
+  const context = createContext({
+    window, document, location, localStorage,
+    history: {replaceState() {}},
+    URL, URLSearchParams,
+    CSS: {escape: value => value},
+    setTimeout: () => 0,
+    clearTimeout() {},
+    console,
+  });
+  window.window = window;
+  runInContext(controller, context);
+
+  const calls = [];
+  let permitted = true;
+  let statusValue = {enabled: true, ready: true};
+  let statusReads = 0;
+  frame.contentWindow.GWAssetOrganizeBridge = {
+    canOrganize: () => true,
+    canManageResourceFolders: () => true,
+    canRunShotVectorJob: key => permitted && key === 'mine:root:root_0123456789abcdef01234567',
+    getShotVectorStatus: async () => { statusReads += 1; return statusValue; },
+    runShotVectorJob: async (...args) => { calls.push(args); return {status: 'succeeded', result: {assets: 1, shots: 2, frames: 3}}; },
+    executeResourceFolderAction: async () => {},
+  };
+  context.window.GWAssetTreeHost.onTreeSnapshot({roots: [{
+    id: 'root_0123456789abcdef01234567', rootId: 'root_0123456789abcdef01234567', name: 'Film',
+    expanded: true, children: [{key: 'mine:folder:folder_123', name: 'Subfolder'}],
+  }], boards: [], selected_key: ''});
+
+  const root = categories.querySelector('[data-asset-tree-entry="mine:root:root_0123456789abcdef01234567"]');
+  assert.ok(root, 'full controller renders the mounted root from the tree snapshot');
+  root.dispatch('contextmenu', {clientX: 20, clientY: 30});
+  const rootMenu = document.getElementById('assetOrganizeMenu');
+  const vectors = rootMenu?.querySelector('[data-asset-organize-shot-vectors]');
+  assert.ok(vectors, 'actual shell context-menu event opens the vector action');
+  assert.equal(vectors.disabled, true, 'action starts disabled while local readiness is checked');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.equal(vectors.disabled, false, 'enabled setting and ready local model enable the action');
+  await vectors.dispatch('click');
+  assert.deepEqual(calls, [['root_0123456789abcdef01234567', 'Film']]);
+  assert.match(document.getElementById('assetOrganizeToast')?.innerHTML || '', /补跑完成/);
+
+  const child = categories.querySelector('[data-asset-tree-entry="mine:folder:folder_123"]');
+  assert.ok(child, 'full controller renders the nested folder');
+  await child.dispatch('contextmenu');
+  assert.equal(document.getElementById('assetOrganizeMenu')?.querySelector('[data-asset-organize-shot-vectors]'), null,
+    'nested folder menu does not offer root-only vector rerun');
+
+  permitted = false;
+  await root.dispatch('contextmenu');
+  const readOnlyVector = document.getElementById('assetOrganizeMenu')?.querySelector('[data-asset-organize-shot-vectors]');
+  assert.ok(readOnlyVector?.disabled, 'roots without bridge permission cannot run the action');
+  assert.equal(statusReads, 1, 'status is not queried when the bridge denies permission');
+
+  permitted = true;
+  statusValue = {enabled: true, ready: false, message: '本地视觉模型或索引尚未就绪'};
+  await root.dispatch('contextmenu');
+  const notReadyVector = document.getElementById('assetOrganizeMenu')?.querySelector('[data-asset-organize-shot-vectors]');
+  await Promise.resolve();
+  await Promise.resolve();
+  assert.ok(notReadyVector?.disabled, 'missing local model or index keeps the action disabled');
+  assert.match(notReadyVector?.title || '', /尚未就绪/);
 });
 
 test('AC3: 拖拽移动——文件夹拖拽落点判定与跨窗口素材卡片拖拽移动', () => {

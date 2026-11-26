@@ -63,6 +63,18 @@ class ShotRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class ShotVectorMatch:
+    """镜头向量命中及其最优样本向量。"""
+
+    asset_id: str
+    shot_index: int
+    start_sec: float
+    end_sec: float
+    distance: float
+    embedding: tuple[float, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class ShotDuplicateGroup:
     """按内容哈希聚合的重复镜头候选组；只报告，不删除。"""
 
@@ -186,6 +198,7 @@ class SQLiteVecEngine:
     _DOCUMENTS = "c18_documents"
     _FTS = "c18_documents_fts"
     _VECTORS = "c18_vectors"
+    _SHOT_VECTORS = "mvp1_shot_vectors"
 
     def __init__(self, db_path: str | Path, *, dimensions: int = 384) -> None:
         if isinstance(dimensions, bool) or not isinstance(dimensions, int) or dimensions < 1:
@@ -263,6 +276,19 @@ class SQLiteVecEngine:
             "CREATE INDEX IF NOT EXISTS mvp1_shots_hash ON mvp1_shots(content_hash)"
         )
         self._db.execute(
+            """CREATE TABLE IF NOT EXISTS mvp1_shot_embedding_rows (
+                embedding_id INTEGER PRIMARY KEY AUTOINCREMENT,
+                shot_row_id INTEGER NOT NULL,
+                sample_index INTEGER NOT NULL,
+                sample_sec REAL NOT NULL,
+                content_hash TEXT NOT NULL,
+                UNIQUE(shot_row_id, sample_index)
+            )"""
+        )
+        self._db.execute(
+            "CREATE INDEX IF NOT EXISTS mvp1_shot_embeddings_shot ON mvp1_shot_embedding_rows(shot_row_id)"
+        )
+        self._db.execute(
             """CREATE TABLE IF NOT EXISTS mvp1_index_metadata (
                 id INTEGER PRIMARY KEY CHECK (id = 1),
                 model_id TEXT,
@@ -291,12 +317,22 @@ class SQLiteVecEngine:
                 f"""CREATE VIRTUAL TABLE IF NOT EXISTS {self._VECTORS}
                     USING vec0(embedding float[{self.dimensions}])"""
             )
+            self._db.execute(
+                f"""CREATE VIRTUAL TABLE IF NOT EXISTS {self._SHOT_VECTORS}
+                    USING vec0(embedding float[{self.dimensions}])"""
+            )
             schema = self._db.execute(
                 "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
                 (self._VECTORS,),
             ).fetchone()
             if not schema or f"float[{self.dimensions}]" not in str(schema[0]):
                 raise RuntimeError("现有 sqlite-vec 索引维度与配置不匹配")
+            shot_schema = self._db.execute(
+                "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+                (self._SHOT_VECTORS,),
+            ).fetchone()
+            if not shot_schema or f"float[{self.dimensions}]" not in str(shot_schema[0]):
+                raise RuntimeError("现有镜头向量索引维度与配置不匹配")
         except Exception as exc:
             self.vector_error = f"sqlite-vec schema unavailable: {type(exc).__name__}"
             logger.warning("sqlite-vec 索引不可用，检索降级为 FTS5：%s", self.vector_error)
@@ -579,10 +615,12 @@ class SQLiteVecEngine:
         content_hash: str,
     ) -> None:
         row = self._db.execute(
-            "SELECT row_id FROM mvp1_shots WHERE asset_id=? AND shot_index=?",
+            "SELECT row_id, content_hash FROM mvp1_shots WHERE asset_id=? AND shot_index=?",
             (asset_id, shot_index),
         ).fetchone()
         if row:
+            if str(row["content_hash"]) != content_hash:
+                self._delete_shot_embeddings_in_transaction(int(row["row_id"]))
             self._db.execute(
                 """UPDATE mvp1_shots
                    SET root_id=?, start_sec=?, end_sec=?, content_hash=?
@@ -606,6 +644,11 @@ class SQLiteVecEngine:
             self._ensure_open()
             self._db.execute("BEGIN IMMEDIATE")
             try:
+                rows = self._db.execute(
+                    "SELECT row_id FROM mvp1_shots WHERE asset_id=?", (asset_id,)
+                ).fetchall()
+                for row in rows:
+                    self._delete_shot_embeddings_in_transaction(int(row["row_id"]))
                 cursor = self._db.execute(
                     "DELETE FROM mvp1_shots WHERE asset_id=?", (asset_id,)
                 )
@@ -615,6 +658,130 @@ class SQLiteVecEngine:
                 self._db.rollback()
                 raise
         return removed
+
+    def replace_asset_shots(
+        self, asset_id: str, shots: Iterable[Mapping[str, Any]]
+    ) -> int:
+        """原子替换资产镜头行；内容未变的镜头保留已有帧向量。"""
+        self._ensure_open()
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise ValueError("asset_id 不能为空")
+        prepared = [self._prepare_shot(shot) for shot in shots]
+        if any(row[0] != asset_id for row in prepared):
+            raise ValueError("镜头行必须属于指定 asset_id")
+        indexes = [row[2] for row in prepared]
+        if len(indexes) != len(set(indexes)):
+            raise ValueError("shot_index 不得重复")
+        keep = set(indexes)
+        with self._lock:
+            self._ensure_open()
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                old_rows = self._db.execute(
+                    "SELECT row_id, shot_index FROM mvp1_shots WHERE asset_id=?",
+                    (asset_id,),
+                ).fetchall()
+                for row in old_rows:
+                    if int(row["shot_index"]) not in keep:
+                        row_id = int(row["row_id"])
+                        self._delete_shot_embeddings_in_transaction(row_id)
+                        self._db.execute("DELETE FROM mvp1_shots WHERE row_id=?", (row_id,))
+                for row in prepared:
+                    self._upsert_shot_in_transaction(*row)
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+        return len(prepared)
+
+    def _delete_shot_embeddings_in_transaction(self, shot_row_id: int) -> None:
+        rows = self._db.execute(
+            "SELECT embedding_id FROM mvp1_shot_embedding_rows WHERE shot_row_id=?",
+            (shot_row_id,),
+        ).fetchall()
+        if self.vector_enabled:
+            for row in rows:
+                self._db.execute(
+                    f"DELETE FROM {self._SHOT_VECTORS} WHERE rowid=?",  # noqa: S608
+                    (int(row["embedding_id"]),),
+                )
+        self._db.execute(
+            "DELETE FROM mvp1_shot_embedding_rows WHERE shot_row_id=?",
+            (shot_row_id,),
+        )
+
+    def replace_shot_embeddings(
+        self,
+        *,
+        asset_id: str,
+        shot_index: int,
+        content_hash: str,
+        samples: Iterable[Mapping[str, Any]],
+    ) -> bool:
+        """按镜头原子替换多帧向量；源哈希不匹配时拒绝写入。"""
+        self._ensure_open()
+        if not self.vector_enabled:
+            return False
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise ValueError("asset_id 不能为空")
+        if isinstance(shot_index, bool) or not isinstance(shot_index, int) or shot_index < 0:
+            raise ValueError("shot_index 必须是非负整数")
+        if not isinstance(content_hash, str) or not content_hash.strip():
+            raise ValueError("content_hash 不能为空")
+        prepared = []
+        seen = set()
+        for sample in samples:
+            if not isinstance(sample, Mapping):
+                raise ValueError("帧向量行必须是映射")
+            sample_index = sample.get("sample_index")
+            sample_sec = sample.get("sample_sec")
+            if isinstance(sample_index, bool) or not isinstance(sample_index, int) or sample_index < 0:
+                raise ValueError("sample_index 必须是非负整数")
+            if sample_index in seen:
+                raise ValueError("sample_index 不得重复")
+            seen.add(sample_index)
+            if isinstance(sample_sec, bool) or not isinstance(sample_sec, (int, float)) or not math.isfinite(float(sample_sec)) or sample_sec < 0:
+                raise ValueError("sample_sec 必须是有限非负数")
+            vector_blob = _serialize_vector(sample.get("embedding"), self.dimensions)
+            prepared.append((sample_index, float(sample_sec), vector_blob))
+        with self._lock:
+            self._ensure_open()
+            self._db.execute("BEGIN IMMEDIATE")
+            try:
+                shot = self._db.execute(
+                    "SELECT row_id, content_hash FROM mvp1_shots WHERE asset_id=? AND shot_index=?",
+                    (asset_id, shot_index),
+                ).fetchone()
+                if shot is None or str(shot["content_hash"]) != content_hash:
+                    self._db.rollback()
+                    return False
+                shot_row_id = int(shot["row_id"])
+                self._delete_shot_embeddings_in_transaction(shot_row_id)
+                for sample_index, sample_sec, vector_blob in prepared:
+                    cursor = self._db.execute(
+                        """INSERT INTO mvp1_shot_embedding_rows
+                           (shot_row_id, sample_index, sample_sec, content_hash)
+                           VALUES(?,?,?,?)""",
+                        (shot_row_id, sample_index, sample_sec, content_hash),
+                    )
+                    self._db.execute(
+                        f"INSERT INTO {self._SHOT_VECTORS}(rowid, embedding) VALUES(?,?)",  # noqa: S608
+                        (int(cursor.lastrowid), vector_blob),
+                    )
+                self._db.commit()
+            except Exception:
+                self._db.rollback()
+                raise
+        return True
+
+    def shot_vector_count(self) -> int:
+        """返回已入库的镜头帧向量数量。"""
+        self._ensure_open()
+        with self._lock:
+            row = self._db.execute(
+                "SELECT COUNT(*) FROM mvp1_shot_embedding_rows"
+            ).fetchone()
+        return int(row[0])
 
     def list_shots(
         self,
@@ -794,10 +961,16 @@ class SQLiteVecEngine:
             try:
                 if self._vec_extension_loaded:
                     self._db.execute(f"DROP TABLE IF EXISTS {self._VECTORS}")
+                    self._db.execute(f"DROP TABLE IF EXISTS {self._SHOT_VECTORS}")
                     self._db.execute(
                         f"""CREATE VIRTUAL TABLE {self._VECTORS}
                             USING vec0(embedding float[{dimensions}])"""
                     )
+                    self._db.execute(
+                        f"""CREATE VIRTUAL TABLE {self._SHOT_VECTORS}
+                            USING vec0(embedding float[{dimensions}])"""
+                    )
+                self._db.execute("DELETE FROM mvp1_shot_embedding_rows")
                 self._db.execute(
                     f"UPDATE {self._DOCUMENTS} SET vector_hash=NULL"  # noqa: S608
                 )
@@ -923,10 +1096,82 @@ class SQLiteVecEngine:
             for row in rows
         ]
 
+    def search_shot_vectors(
+        self, query_vector: Sequence[float], *, limit: int = 100
+    ) -> list[ShotVectorMatch]:
+        """直接召回镜头帧向量，并按每镜头最优帧距离聚合。"""
+        self._ensure_open()
+        limit = self._validate_limit(limit)
+        self._vector_search_state.shot_degraded = False
+        vector_blob = _serialize_vector(query_vector, self.dimensions)
+        if not self.vector_enabled:
+            self._vector_search_state.shot_degraded = True
+            return []
+        with self._lock:
+            self._ensure_open()
+            try:
+                rows = self._db.execute(
+                    f"""WITH nearest AS (
+                            SELECT rowid, distance, embedding
+                            FROM {self._SHOT_VECTORS}
+                            WHERE embedding MATCH ?
+                            ORDER BY distance ASC
+                            LIMIT ?
+                        ), ranked AS (
+                            SELECT s.asset_id, s.shot_index, s.start_sec, s.end_sec,
+                                   nearest.distance AS distance,
+                                   nearest.embedding AS embedding,
+                                   ROW_NUMBER() OVER (
+                                       PARTITION BY s.row_id
+                                       ORDER BY nearest.distance ASC, er.sample_index ASC
+                                   ) AS sample_rank
+                            FROM nearest
+                            JOIN mvp1_shot_embedding_rows er
+                              ON er.embedding_id=nearest.rowid
+                            JOIN mvp1_shots s ON s.row_id=er.shot_row_id
+                            WHERE er.content_hash=s.content_hash
+                        )
+                        SELECT asset_id, shot_index, start_sec, end_sec, distance, embedding
+                        FROM ranked
+                        WHERE sample_rank=1
+                        ORDER BY distance ASC, asset_id ASC, shot_index ASC
+                        LIMIT ?""",  # noqa: S608
+                    (vector_blob, min(limit * 3, MAX_SEARCH_LIMIT), limit),
+                ).fetchall()
+            except (sqlite3.Error, OverflowError, ValueError) as exc:
+                self._vector_search_state.shot_degraded = True
+                logger.warning(
+                    "sqlite-vec 镜头查询失败，本次检索暂用词面轨：%s",
+                    type(exc).__name__,
+                )
+                return []
+        matches = []
+        for row in rows:
+            raw = row["embedding"]
+            if not isinstance(raw, (bytes, bytearray)) or len(raw) != self.dimensions * 4:
+                continue
+            embedding = struct.unpack(f"<{self.dimensions}f", raw)
+            matches.append(
+                ShotVectorMatch(
+                    asset_id=str(row["asset_id"]),
+                    shot_index=int(row["shot_index"]),
+                    start_sec=float(row["start_sec"]),
+                    end_sec=float(row["end_sec"]),
+                    distance=float(row["distance"]),
+                    embedding=tuple(embedding),
+                )
+            )
+        return matches
+
     @property
     def last_vector_search_degraded(self) -> bool:
         """返回当前线程最近一次向量查询是否临时降级。"""
         return bool(getattr(self._vector_search_state, "degraded", False))
+
+    @property
+    def last_shot_vector_search_degraded(self) -> bool:
+        """返回当前线程最近一次镜头向量查询是否降级。"""
+        return bool(getattr(self._vector_search_state, "shot_degraded", False))
 
     @property
     def vector_version(self) -> str | None:

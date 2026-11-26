@@ -196,3 +196,42 @@ def test_index_metadata_roundtrip_and_dimension_guard(engine: SQLiteVecEngine):
             model_id="clip-test", model_version="v1", dimensions=8, quantization="int8"
         )
     assert engine.index_metadata() is not None
+
+
+def test_shot_vectors_keep_distinct_frames_and_return_the_best_sample(
+    engine: SQLiteVecEngine,
+):
+    """多帧独立入库；镜头距离与返回向量都来自最优帧，哈希变化清除旧向量。"""
+    if not engine.vector_enabled:
+        pytest.skip("sqlite-vec 当前不可用")
+
+    shot = _shot("ast_0001", 0, HASH_A)
+    engine.batch_upsert_shots([shot])
+    assert engine.replace_shot_embeddings(
+        asset_id="ast_0001",
+        shot_index=0,
+        content_hash=HASH_A,
+        samples=[
+            {"sample_index": 0, "sample_sec": 0.5, "embedding": [0.0, 1.0, 0.0, 0.0]},
+            {"sample_index": 1, "sample_sec": 1.0, "embedding": [1.0, 0.0, 0.0, 0.0]},
+        ],
+    )
+    assert engine.shot_vector_count() == 2
+
+    matches = engine.search_shot_vectors([1.0, 0.0, 0.0, 0.0], limit=10)
+    assert len(matches) == 1
+    assert matches[0].asset_id == "ast_0001"
+    assert matches[0].distance == pytest.approx(0.0)
+    assert matches[0].embedding == pytest.approx((1.0, 0.0, 0.0, 0.0))
+
+    engine.replace_asset_shots("ast_0001", [dict(shot)])
+    assert engine.shot_vector_count() == 2
+    changed = _shot("ast_0001", 0, HASH_B)
+    engine.replace_asset_shots("ast_0001", [changed])
+    assert engine.shot_vector_count() == 0
+    assert not engine.replace_shot_embeddings(
+        asset_id="ast_0001",
+        shot_index=0,
+        content_hash=HASH_A,
+        samples=[{"sample_index": 0, "sample_sec": 0.5, "embedding": [1, 0, 0, 0]}],
+    )

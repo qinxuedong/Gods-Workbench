@@ -7843,12 +7843,60 @@ async function assetOrganizeUndoLast(){
     }
 }
 /* ----- 右键菜单 ----- */
+async function waitForShotVectorJob(jobId, sourceName){
+    if(!jobId) return null;
+    const deadline = Date.now() + 120000;
+    while(Date.now() < deadline){
+        try {
+            const data = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+            const job = data?.job || {};
+            setWorkspaceTaskContext(job);
+            if(job.status === 'succeeded'){
+                const result = job.result || {};
+                setStatus(`“${sourceName}”视觉向量补跑完成：${Number(result.assets || 0)} 项素材、${Number(result.shots || 0)} 个镜头、${Number(result.frames || 0)} 帧${result.failed ? `，${Number(result.failed)} 项失败` : ''}`);
+                return job;
+            }
+            if(['failed','cancelled','interrupted'].includes(job.status)){
+                setStatus(`“${sourceName}”视觉向量补跑失败：${job.error_code || job.status}`);
+                return job;
+            }
+            setStatus(`“${sourceName}”${job.progress?.phase === 'queued' ? '等待补跑' : '正在补跑视觉向量'}… 已处理 ${Number(job.progress?.scanned || 0)} 项`);
+        } catch(_) {}
+        await new Promise(resolve => setTimeout(resolve, 500));
+    }
+    setStatus(`“${sourceName}”视觉向量补跑仍在后台运行，可稍后刷新查看`);
+    return null;
+}
+function getShotVectorStatus(){
+    return apiJsonResponse(assetManagerHttp.request('/api/asset-registry/shot-vectors/status', {method:'GET', credentials:'same-origin'}));
+}
+function submitShotVectorJob(rootId){
+    const id = String(rootId || '');
+    if(!id) return Promise.reject(new Error('资源根不可用'));
+    const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    return apiJsonResponse(assetManagerHttp.request('/api/asset-registry/shot-vectors/jobs', {
+        method:'POST',
+        credentials:'same-origin',
+        headers:{'Content-Type':'application/json', 'Idempotency-Key':`shot-vectors:${id}:${nonce}`},
+        body:JSON.stringify({root_id:id}),
+    }));
+}
+async function runShotVectorJob(rootId, sourceName){
+    if(!canRunShotVectorJob(`mine:root:${String(rootId || '')}`)) throw new Error('仅可对可管理的持久资源根补跑镜头视觉向量');
+    const data = await submitShotVectorJob(rootId);
+    return waitForShotVectorJob(data?.job_id, sourceName || '资源根');
+}
+function canRunShotVectorJob(key){
+    const target = assetOrganizeTargetFromKey(key);
+    return Boolean(target?.isRoot && canManageAllowedRoots()
+        && assetRackRootDiskPath(target.rootId)
+        && [target.rootId, target.id, ...(target.aliases || [])].some(id => /^root_[a-f0-9]{24}$/i.test(String(id || ''))));
+}
 function renderAssetOrganizeMenu(target){
     const label = assetOrganizeFolderLabel(target);
-    const canManageRoot = target.isRoot && canManageAllowedRoots()
-        && Boolean(assetRackRootDiskPath(target.rootId))
-        && [target.rootId, target.id, ...(target.aliases || [])].some(id => /^root_[a-f0-9]{24}$/i.test(String(id || '')));
-    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
+    const canManageRoot = canRunShotVectorJob(target.key);
+    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-shot-vectors disabled title="正在检查本地视觉模型与索引状态"><i data-lucide="scan-search"></i><span>补跑镜头视觉向量</span></button>
+        <button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
         <button type="button" role="menuitem" class="is-danger" data-asset-organize-purge-root><i data-lucide="trash-2"></i><span>清除索引</span></button>` : '';
     return `<div class="asset-organize-menu" id="assetOrganizeMenu" role="menu" aria-label="文件夹整理">
         <div class="asset-organize-menu-title"><i data-lucide="folder"></i><span title="${escapeAttr(label)}">${escapeHtml(label)}</span></div>
@@ -7879,6 +7927,39 @@ function openAssetOrganizeMenu(event){
     const menu = host.firstElementChild;
     if(!menu) return;
     document.body.appendChild(menu);
+    const shotVectorAction = menu.querySelector('[data-asset-organize-shot-vectors]');
+    if(shotVectorAction){
+        const rootId = String(target.rootId || '');
+        getShotVectorStatus()
+            .then(status => {
+                if(!shotVectorAction.isConnected) return;
+                const enabled = status?.enabled === true;
+                const ready = status?.ready === true;
+                shotVectorAction.disabled = !(enabled && ready);
+                shotVectorAction.title = enabled && ready
+                    ? '在此资源根内异步补跑可见视频镜头的视觉向量'
+                    : (status?.message || (!enabled ? '请先在设置中启用镜头视觉向量' : '本地视觉模型或索引尚未就绪'));
+            })
+            .catch(() => {
+                if(shotVectorAction.isConnected) shotVectorAction.title = '无法读取本地视觉模型状态';
+            });
+        shotVectorAction.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if(shotVectorAction.disabled || !rootId) return;
+            shotVectorAction.disabled = true;
+            setStatus('正在提交镜头视觉向量补跑任务…');
+            try {
+                const data = await submitShotVectorJob(rootId);
+                closeAssetOrganizeMenu();
+                await waitForShotVectorJob(data?.job_id, assetOrganizeFolderLabel(target));
+            } catch(err) {
+                shotVectorAction.disabled = false;
+                setStatus(err?.message || '镜头视觉向量补跑启动失败');
+            }
+        });
+    }
     const margin = 10;
     const bounds = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(margin, Math.min(event.clientX, window.innerWidth - bounds.width - margin))}px`;
@@ -11891,6 +11972,9 @@ window.GWAssetOrganizeBridge = Object.freeze({
     getTarget: key => assetOrganizeTargetFromKey(key),
     canToggleAssetsVisibility: key => Boolean(assetOrganizeVisibilityTargetFromKey(key)),
     setMountedRootAssetsHidden: gwSetMountedRootAssetsHidden,
+    canRunShotVectorJob,
+    getShotVectorStatus,
+    runShotVectorJob,
     canManageResourceFolders: canManageAllowedRoots,
     executeResourceFolderAction: (rootTarget, action) => gwCall('organize', 'executeResourceFolderAction', rootTarget, action, {source:'sidebar'}),
     openInSystem: gwAssetTreeOpenInSystem,
