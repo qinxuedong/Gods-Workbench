@@ -7413,7 +7413,9 @@ function gwAssetTreeSnapshot(){
         const loading = !hasFacet && root.count == null;
         const offline = String(root.availability || '').toLowerCase() === 'offline' || String(facetRoot?.availability || '').toLowerCase() === 'offline';
         const facetHidden = Boolean(facetRoot?.assets_hidden || root.assets_hidden);
-        const {selfHidden, inheritedHidden, assetsHidden} = folderHiddenStatesForKey(root.id, '', false, facetHidden);
+        const {selfHidden, inheritedHidden, assetsHidden} = typeof folderHiddenStatesForKey === 'function'
+            ? folderHiddenStatesForKey(root.id, '', false, facetHidden)
+            : {selfHidden: facetHidden, inheritedHidden: false, assetsHidden: facetHidden};
 
         const resolvedPath = assetRackRootDiskPath(root.id);
         return {
