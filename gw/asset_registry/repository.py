@@ -314,10 +314,10 @@ def readonly_registry_snapshot() -> Dict[str, Any]:
 def visible_asset_from_snapshot(
     raw: Dict[str, Any], asset_id: str, *, hidden_filter=None
 ) -> Optional[Dict[str, Any]]:
-    """从只读快照取单条镜头搜索可见登记；缺失、不可见或来源根已移除返回 ``None``。
+    """从只读快照取镜头搜索可见登记；缺失、不可见、来源根移除或扫描排除返回 ``None``。
 
     供镜头检索下钻及最终输出复核使用：除 ``_visible`` 权限判定外，还沿用
-    资产列表的已移除来源根过滤；跳过来源名、文件 stat、关联摘要等详情装饰。
+    已移除来源根与索引扫描排除规则；跳过来源名、文件 stat、关联摘要等详情装饰。
     """
     assets = raw.get("assets") if isinstance(raw, dict) else None
     record = assets.get(asset_id) if isinstance(assets, dict) else None
@@ -326,6 +326,8 @@ def visible_asset_from_snapshot(
     if not isinstance(record, dict) or not _visible(record) or hidden_filter(record):
         return None
     if _is_removed_asset(record, _removed_root_ids_for_search()):
+        return None
+    if _asset_has_index_excluded_path_component(record):
         return None
     return record
 
@@ -4030,6 +4032,20 @@ def _index_scan_directory_name_is_excluded(name: str) -> bool:
 
 def _index_scan_file_name_is_excluded(name: str) -> bool:
     return str(name or "").startswith(".")
+
+
+def _asset_has_index_excluded_path_component(asset: Dict[str, Any]) -> bool:
+    """按索引扫描器规则隐藏旧登记中的排除目录和点文件。"""
+    for field in ("canonical_relpath", "display_path"):
+        raw_path = str(asset.get(field) or "").replace("\\", "/")
+        if not raw_path:
+            continue
+        parts = [part for part in raw_path.split("/") if part not in {"", "."}]
+        if any(_index_scan_directory_name_is_excluded(part) for part in parts[:-1]):
+            return True
+        if parts and _index_scan_file_name_is_excluded(parts[-1]):
+            return True
+    return False
 
 
 def _index_scan_runtime_data_root() -> Path | None:

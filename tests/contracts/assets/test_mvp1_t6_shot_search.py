@@ -497,20 +497,22 @@ def test_shot_search_returns_shot_hit_with_jump_timestamp(client: TestClient):
 
 
 @pytest.mark.parametrize(
-    ("root_id", "root_availability", "removed_root_ids"),
+    ("root_id", "root_availability", "removed_root_ids", "relative_path"),
     [
-        ("root-removed", "available", {"root-removed"}),
-        ("root-marker", "removed", set()),
+        ("root-removed", "available", {"root-removed"}, "secret.mp4"),
+        ("root-marker", "removed", set(), "secret.mp4"),
+        ("active-root", "available", set(), ".hidden/secret.mp4"),
     ],
 )
-def test_shot_search_filters_vector_only_candidates_from_removed_roots(
+def test_shot_search_filters_vector_only_candidates_from_excluded_sources(
     client: TestClient,
     monkeypatch,
     root_id: str,
     root_availability: str,
     removed_root_ids: set[str],
+    relative_path: str,
 ):
-    """纯向量候选也须遵守已移除来源根过滤，不能泄露镜头时间戳。"""
+    """纯向量候选须过滤已移除来源根与扫描排除路径，不能泄露镜头时间戳。"""
     from gw.asset_registry.embedder import DEFAULT_MODEL_ID
     from gw.core import sqlite_vec_engine
 
@@ -525,6 +527,8 @@ def test_shot_search_filters_vector_only_candidates_from_removed_roots(
                 "root_id": root_id,
                 "storage_root_id": root_id,
                 "root_availability": root_availability,
+                "canonical_relpath": relative_path,
+                "display_path": relative_path,
                 "archived": False,
                 "hidden": False,
                 "metadata": {
