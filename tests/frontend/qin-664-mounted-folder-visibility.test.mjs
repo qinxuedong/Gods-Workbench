@@ -8,6 +8,7 @@ import vm from 'node:vm';
 const ROOT = path.resolve(import.meta.dirname, '../..');
 const controllerSource = fs.readFileSync(path.join(ROOT, 'web/js/controllers/assets-controller.js'), 'utf8');
 const organizeSource = fs.readFileSync(path.join(ROOT, 'web/js/modules/asset-manager/organize.js'), 'utf8');
+const assetManagerSource = fs.readFileSync(path.join(ROOT, 'web/js/modules/asset-manager.js'), 'utf8');
 
 function createSandbox() {
   const storage = new Map();
@@ -267,4 +268,42 @@ test('1500ms 与 5000ms 写入延迟期间不提前切换隐藏状态', async ()
     assert.equal((await pending).status, 'saved');
     assert.deepEqual(settings.hidden_asset_root_keys, ['/mount/root']);
   }
+});
+
+test('显隐写后在分面刷新完成后重绘顶部可见素材统计', async () => {
+  const start = assetManagerSource.indexOf('async function gwSetMountedRootAssetsHidden(rootTarget, hidden){');
+  const end = assetManagerSource.indexOf('window.GWAssetOrganizeBridge', start);
+  assert.ok(start >= 0 && end > start, '找到真实显隐协调函数');
+  const actionSource = assetManagerSource.slice(start, end);
+  const renderedCounts = [];
+  const calls = [];
+  let visibleImageCount = 2;
+  const factory = new Function(
+    'assetOrganizeVisibilityTargetFromKey', 'gwCall', 'invalidateRegistryAssetCache',
+    'abortRegistryAssetRequests', 'refreshRegistryAssets', 'refreshRegistryFacetData',
+    'notifyShellTreeSnapshot', 'setStatus', 'showAssetOrganizeToast', 'render',
+    `let registryRequestSeq = 0;
+     let registryPendingNewItems = new Map();
+     let registryPendingNewIds = new Set();
+     let registryPendingVanishedIds = new Set();
+     let registryReconcilePageIds = new Set();
+     ${actionSource}
+     return gwSetMountedRootAssetsHidden;`,
+  );
+  const action = factory(
+    key => ({ key }),
+    async () => ({ status: 'saved' }),
+    reason => calls.push(`invalidate:${reason}`),
+    () => calls.push('abort'),
+    async () => { calls.push('assets'); },
+    async () => { calls.push('facets'); visibleImageCount = 0; },
+    () => calls.push('tree'),
+    message => calls.push(`status:${message}`),
+    message => calls.push(`toast:${message}`),
+    () => { renderedCounts.push(visibleImageCount); calls.push('render'); },
+  );
+  const result = await action({ key: 'mine:root:root_example' }, true);
+  assert.equal(result.status, 'saved');
+  assert.deepEqual(renderedCounts, [0], '顶部统计从刷新后的可见分面重绘');
+  assert.ok(calls.indexOf('render') > calls.indexOf('facets'), '分面刷新完成后才重绘统计');
 });

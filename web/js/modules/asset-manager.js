@@ -11741,6 +11741,8 @@ async function gwSetMountedRootAssetsHidden(rootTarget, hidden){
         gwCall('organize', 'showAssetOrganizeToast', message);
         return {status:'saved-refresh-failed', error:refreshes.find(item => item.status === 'rejected')?.reason};
     }
+    // 分面统计在列表请求后异步更新；两者完成后重绘，确保顶部统计读取新分面。
+    render();
     setStatus(hidden ? '已隐藏该文件夹素材' : '已显示该文件夹素材');
     return {status:'saved'};
 }
