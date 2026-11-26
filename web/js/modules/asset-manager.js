@@ -7374,7 +7374,9 @@ function serializeAssetRackFolderNode(rootId, node, depth=1, parentHidden=false)
         return Array.isArray(targetNode?.children) && targetNode.children.some(child => nodeHasAssets(child));
     };
     const hasNonEmptyDescendant = nodeHasAssets(node);
-    const {selfHidden, inheritedHidden, assetsHidden} = folderHiddenStatesForKey(rootId, node.path, parentHidden, false);
+    const {selfHidden, inheritedHidden, assetsHidden} = typeof folderHiddenStatesForKey === 'function'
+        ? folderHiddenStatesForKey(rootId, node.path, parentHidden, false)
+        : {selfHidden: false, inheritedHidden: Boolean(parentHidden), assetsHidden: Boolean(parentHidden)};
     return {
         key,
         name: node.name,
