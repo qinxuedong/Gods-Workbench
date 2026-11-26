@@ -305,7 +305,8 @@ test('QIN-669 AC3：工具栏移除「背景」色块，注释设置卡片跟随
 
 test('QIN-669 AC4：CSS 覆盖项目圆角输入框、自绘胶囊菜单、注释块正上方跟随卡片与四宽双主题', () => {
     const css = readFileSync(CSS_PATH, 'utf8');
-    assert.match(css, /\.asset-detail-reference-title\.is-editing\s*\{[^}]*border-radius:8px;/);
+    assert.match(css, /\.asset-detail-reference-title\.is-editing\s*\{[^}]*border:0 !important;/);
+  assert.match(css, /\.asset-detail-reference-title\.is-editing > input\s*\{[^}]*border-radius:8px !important;/);
     assert.match(css, /\.asset-detail-media-select-capsule\s*\{/);
     assert.match(css, /\.asset-detail-annotation-settings-card\s*\{[^}]*bottom:calc\(100% \+ 8px\);/);
     assert.match(css, /\.asset-detail-annotation-settings-card\[hidden\]\s*\{\s*display:none;\s*\}/);
