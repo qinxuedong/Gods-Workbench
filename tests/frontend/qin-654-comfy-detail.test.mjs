@@ -58,6 +58,8 @@ test('QIN-654 AC2：提示词浮窗安全区分正负向、标注截断并复制
     const host = await createAssetViewHost({tab: null});
     try {
         const preview = await loadPreview(host);
+        const topDocument = new host.document.constructor();
+        globalThis.top = {document: topDocument, location: {origin: location.origin}};
         const image = comfyImage({metadata: {generation: {
             prompt: '<img src=x onerror=alert(1)>', negative_prompt: 'blurry', truncated: true,
             comfyui: {source: 'embedded', has_workflow: true},
@@ -65,8 +67,11 @@ test('QIN-654 AC2：提示词浮窗安全区分正负向、标注截断并复制
         preview.actions.renderComfyAssetActions(image, 'image');
         const trigger = {dataset: {comfyPromptOpen: image.id}, closest: selector => selector === '[data-comfy-prompt-open]' ? trigger : null};
         click(host.document, trigger);
-        const dialog = host.document.querySelectorAll('.hw-modal-backdrop').find(node => node.dataset.floatingSurface === 'comfy-prompt-dialog');
+        const dialog = topDocument.querySelectorAll('.hw-modal-backdrop').find(node => node.dataset.floatingSurface === 'comfy-prompt-dialog');
         assert.ok(dialog, '提示词浮窗应显示');
+        assert.equal(dialog.ownerDocument, topDocument, '嵌入页提示词浮窗应挂到顶层页面并按全视口居中');
+        assert.equal(dialog.style.zIndex, '2147483647', '提示词浮窗应覆盖查看器和应用浮层');
+        assert.equal(host.document.querySelectorAll('.hw-modal-backdrop').some(node => node.dataset.floatingSurface === 'comfy-prompt-dialog'), false);
         assert.match(dialog.innerHTML, /正向提示词/);
         assert.match(dialog.innerHTML, /反向提示词/);
         assert.match(dialog.innerHTML, /可能被截断/);
@@ -76,10 +81,34 @@ test('QIN-654 AC2：提示词浮窗安全区分正负向、标注截断并复制
         let copied = '';
         navigator.clipboard.writeText = async value => { copied = value; };
         const copy = dialog.querySelector('[data-comfy-prompt-copy]');
-        click(host.document, copy);
+        click(topDocument, copy);
         await new Promise(resolve => setImmediate(resolve));
-        assert.match(copied, /正向提示词：\n<img src=x onerror=alert\(1\)>/);
-        assert.match(copied, /反向提示词：\nblurry/);
+        assert.equal(copied, '<img src=x onerror=alert(1)>\n\nblurry');
+    } finally {
+        host.dispose();
+    }
+});
+
+test('QIN-654 AC3：嵌入资产页的工作流确认框显示在顶层页面', async () => {
+    const host = await createAssetViewHost({tab: null});
+    try {
+        const topDocument = new host.document.constructor();
+        globalThis.top = {document: topDocument, location: {origin: location.origin}};
+        globalThis.GWAuthGate = {isAuthenticated: () => true};
+        globalThis.HardwareDeck = {authState: {authenticated: true, auth_mode: 'local_account', principal: {subject: 'qin-user'}}};
+        const preview = await loadPreview(host);
+        const image = comfyImage();
+        preview.actions.renderComfyAssetActions(image, 'image');
+        const trigger = {dataset: {comfyWorkflowOpen: image.id}, closest: selector => selector === '[data-comfy-workflow-open]' ? trigger : null};
+        click(host.document, trigger);
+        const dialog = topDocument.querySelectorAll('.hw-modal-backdrop').find(node => node.dataset.floatingSurface === 'comfy-workflow-confirm');
+        assert.ok(dialog, '点击工作流后应在顶层显示确认框');
+        assert.equal(dialog.ownerDocument, topDocument);
+        assert.equal(dialog.style.zIndex, '2147483647');
+        assert.equal(host.document.querySelectorAll('.hw-modal-backdrop').some(node => node.dataset.floatingSurface === 'comfy-workflow-confirm'), false);
+        topDocument.dispatchEvent({type: 'keydown', key: 'Escape', preventDefault() {}});
+        assert.equal(topDocument.querySelectorAll('.hw-modal-backdrop').some(node => node.dataset.floatingSurface === 'comfy-workflow-confirm'), false,
+            '顶层页面的 Escape 应关闭工作流确认框');
     } finally {
         host.dispose();
     }

@@ -4354,6 +4354,72 @@ document.addEventListener('pointercancel', endRegistryDetailPanelResize);
 const comfyImageGenerationByAssetId = new Map();
 const ASSET_WORKFLOW_IMPORT_STORAGE_KEY = 'gw.workflow.assetImport.pending.v1';
 const ASSET_WORKFLOW_IMPORT_TTL_MS = 5 * 60 * 1000;
+const comfyDialogDocuments = new WeakSet();
+const comfyDialogTriggers = new WeakMap();
+function comfyDialogHostWindow(){
+    try {
+        const topWindow = window.top;
+        if(topWindow && topWindow !== window && topWindow.location.origin === window.location.origin && topWindow.document?.body){
+            return topWindow;
+        }
+    } catch(_) {}
+    return window;
+}
+function markComfyAssetDialog(overlay, hostWindow, {surface, content, close, trigger}={}){
+    if(!overlay || !surface) return;
+    const attributes = {
+        'data-floating-surface': surface,
+        'data-floating-kind': 'modal',
+        'data-floating-content': content,
+        'data-floating-dismiss': 'outside',
+        'data-floating-escape': 'close-only',
+    };
+    if(typeof trigger === 'string' && trigger) attributes['data-floating-trigger'] = trigger;
+    Object.entries(attributes).forEach(([name, value]) => overlay.setAttribute(name, String(value)));
+    if(trigger && typeof trigger === 'object') comfyDialogTriggers.set(overlay, trigger);
+    hostWindow.FloatingDismissal?.mark?.(overlay, {surface, kind:'modal', content, close, trigger});
+}
+function bindComfyDialogDocument(targetDocument, hostWindow){
+    if(!targetDocument || comfyDialogDocuments.has(targetDocument)) return;
+    comfyDialogDocuments.add(targetDocument);
+    const clickHandler = handleComfyAssetDialogClick;
+    const keydownHandler = hostWindow?.FloatingDismissal?.scan ? null : event => {
+        const overlay = [...targetDocument.querySelectorAll('.hw-modal-backdrop.open')]
+            .reverse()
+            .find(node => String(node.dataset.floatingSurface || '').startsWith('comfy-'));
+        if(!overlay) return;
+        if(event.key === 'Escape'){
+            event.preventDefault();
+            closeComfyAssetDialog(overlay);
+            return;
+        }
+        if(event.key !== 'Tab') return;
+        const dialog = overlay.querySelector('[role="dialog"], [role="alertdialog"]');
+        const focusable = [...(dialog?.querySelectorAll('a[href],button:not([disabled]),input:not([disabled]),select:not([disabled]),textarea:not([disabled]),[tabindex]:not([tabindex="-1"])') || [])];
+        if(!focusable.length){
+            event.preventDefault();
+            dialog?.focus?.({preventScroll:true});
+            return;
+        }
+        const active = targetDocument.activeElement;
+        const index = focusable.indexOf(active);
+        if(event.shiftKey && (index <= 0 || !dialog.contains(active))){
+            event.preventDefault();
+            focusable[focusable.length - 1].focus({preventScroll:true});
+        } else if(!event.shiftKey && (index < 0 || index === focusable.length - 1)){
+            event.preventDefault();
+            focusable[0].focus({preventScroll:true});
+        }
+    };
+    targetDocument.addEventListener('click', clickHandler);
+    if(keydownHandler) targetDocument.addEventListener('keydown', keydownHandler);
+    const cleanup = () => {
+        targetDocument.removeEventListener('click', clickHandler);
+        if(keydownHandler) targetDocument.removeEventListener('keydown', keydownHandler);
+        comfyDialogDocuments.delete(targetDocument);
+    };
+    window.addEventListener('pagehide', cleanup, {once:true});
+}
 function assetAuthContext(){
     const candidates = [window];
     try {
@@ -4405,8 +4471,14 @@ function renderComfyAssetActions(item={}, type='image'){
 }
 function closeComfyAssetDialog(overlay){
     if(!overlay) return;
-    const closed = window.FloatingDismissal?.closeSurface?.(overlay);
-    if(!closed) overlay.remove();
+    let hostWindow = window;
+    try { hostWindow = overlay.ownerDocument?.defaultView || (overlay.ownerDocument === document ? window : null); }
+    catch(_) { hostWindow = null; }
+    const closed = hostWindow?.FloatingDismissal?.closeSurface?.(overlay);
+    if(!closed){
+        overlay.remove();
+        comfyDialogTriggers.get(overlay)?.focus?.({preventScroll:true});
+    }
 }
 function openComfyPromptDialog(trigger, assetId){
     const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
@@ -4414,8 +4486,11 @@ function openComfyPromptDialog(trigger, assetId){
     const prompt = String(generation.prompt || '');
     const negative = String(generation.negative_prompt || '');
     const hasPrompt = Boolean(prompt || negative);
-    const overlay = document.createElement('div');
+    const hostWindow = comfyDialogHostWindow();
+    const hostDocument = hostWindow.document || document;
+    const overlay = hostDocument.createElement('div');
     overlay.className = 'hw-modal-backdrop open';
+    overlay.style.zIndex = '2147483647';
     overlay.dataset.comfyAssetId = String(assetId || '');
     overlay.innerHTML = `<section class="hw-modal-dialog" data-floating-content role="dialog" aria-modal="true" aria-labelledby="comfyPromptDialogTitle" tabindex="-1" style="width:min(680px,calc(100vw - 24px));padding:20px;color:#e2e8f0;">
         <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;"><h2 id="comfyPromptDialogTitle" class="gw-type-title-sm" style="margin:0;">生成提示词</h2><button class="hw-btn hw-btn-icon" type="button" data-comfy-dialog-close aria-label="关闭"><i data-lucide="x"></i></button></header>
@@ -4425,10 +4500,12 @@ function openComfyPromptDialog(trigger, assetId){
         ${hasPrompt ? '' : '<p class="gw-type-body-md">未提取到可用提示词。</p>'}
         <footer style="display:flex;justify-content:flex-end;gap:8px;margin-top:16px;"><button class="hw-btn" type="button" data-comfy-dialog-close>关闭</button><button class="hw-btn hw-btn-gold" type="button" data-comfy-prompt-copy ${hasPrompt ? '' : 'disabled'}><i data-lucide="copy"></i><span>复制提示词</span></button></footer>
     </section>`;
-    document.body.appendChild(overlay);
-    markAssetFloatingSurface(overlay, {surface:'comfy-prompt-dialog', kind:'modal', content:'[role="dialog"]', close:() => overlay.remove(), trigger});
-    window.FloatingDismissal?.scan?.(overlay);
-    window.lucide?.createIcons?.({root:overlay});
+    hostDocument.body.appendChild(overlay);
+    markComfyAssetDialog(overlay, hostWindow, {surface:'comfy-prompt-dialog', content:'[role="dialog"]', close:() => overlay.remove(), trigger});
+    bindComfyDialogDocument(hostDocument, hostWindow);
+    hostWindow.FloatingDismissal?.scan?.(overlay);
+    hostWindow.lucide?.createIcons?.({root:overlay});
+    overlay.querySelector('[role="dialog"]')?.focus?.({preventScroll:true});
 }
 function createAssetWorkflowImportNonce(){
     const cryptoApi = window.crypto;
@@ -4451,17 +4528,22 @@ function openComfyWorkflowConfirm(trigger, assetId){
         setStatus('请先登录后再加载工作流');
         return;
     }
-    const overlay = document.createElement('div');
+    const hostWindow = comfyDialogHostWindow();
+    const hostDocument = hostWindow.document || document;
+    const overlay = hostDocument.createElement('div');
     overlay.className = 'hw-modal-backdrop open';
+    overlay.style.zIndex = '2147483647';
     overlay.innerHTML = `<section class="hw-modal-dialog" data-floating-content role="alertdialog" aria-modal="true" aria-labelledby="comfyWorkflowConfirmTitle" tabindex="-1" style="width:min(460px,calc(100vw - 24px));padding:20px;color:#e2e8f0;">
         <header style="display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;"><h2 id="comfyWorkflowConfirmTitle" class="gw-type-title-sm" style="margin:0;">是否加载工作流？</h2><button class="hw-btn hw-btn-icon" type="button" data-comfy-dialog-close aria-label="关闭"><i data-lucide="x"></i></button></header>
         <p class="gw-type-body-md">确认后会从原始图像读取内嵌工作流，并在工作流工作台新建一份可编辑工作流。</p>
         <footer style="display:flex;justify-content:flex-end;gap:8px;margin-top:20px;"><button class="hw-btn" type="button" data-comfy-dialog-close>取消</button><button class="hw-btn hw-btn-gold" type="button" data-comfy-workflow-confirm="${escapeAttr(assetId)}">加载工作流</button></footer>
     </section>`;
-    document.body.appendChild(overlay);
-    markAssetFloatingSurface(overlay, {surface:'comfy-workflow-confirm', kind:'modal', content:'[role="alertdialog"]', close:() => overlay.remove(), trigger});
-    window.FloatingDismissal?.scan?.(overlay);
-    window.lucide?.createIcons?.({root:overlay});
+    hostDocument.body.appendChild(overlay);
+    markComfyAssetDialog(overlay, hostWindow, {surface:'comfy-workflow-confirm', content:'[role="alertdialog"]', close:() => overlay.remove(), trigger});
+    bindComfyDialogDocument(hostDocument, hostWindow);
+    hostWindow.FloatingDismissal?.scan?.(overlay);
+    hostWindow.lucide?.createIcons?.({root:overlay});
+    overlay.querySelector('[role="alertdialog"]')?.focus?.({preventScroll:true});
 }
 function beginComfyWorkflowImport(trigger, assetId, overlay){
     const principalKey = assetAuthPrincipalKey();
@@ -4499,7 +4581,13 @@ function beginComfyWorkflowImport(trigger, assetId, overlay){
         }
     }
 }
-document.addEventListener('click', event => {
+function handleComfyAssetDialogClick(event){
+    const backdrop = event.target?.closest?.('.hw-modal-backdrop');
+    if(backdrop && event.target === backdrop && String(backdrop.dataset.floatingSurface || '').startsWith('comfy-')){
+        event.preventDefault();
+        closeComfyAssetDialog(backdrop);
+        return;
+    }
     const closeButton = event.target?.closest?.('[data-comfy-dialog-close]');
     if(closeButton){
         event.preventDefault();
@@ -4530,14 +4618,15 @@ document.addEventListener('click', event => {
         const dialog = copyButton.closest('.hw-modal-backdrop');
         const assetId = dialog?.dataset?.comfyAssetId;
         const generation = comfyImageGenerationByAssetId.get(String(assetId || ''));
-        const text = [generation?.prompt ? `正向提示词：\n${generation.prompt}` : '', generation?.negative_prompt ? `反向提示词：\n${generation.negative_prompt}` : ''].filter(Boolean).join('\n\n');
+        const text = [generation?.prompt, generation?.negative_prompt].filter(Boolean).join('\n\n');
         Promise.resolve().then(() => {
             if(!text || !navigator.clipboard?.writeText) throw new Error('剪贴板不可用');
             return navigator.clipboard.writeText(text);
         }).then(() => setStatus('提示词已复制')).catch(() => setStatus('复制失败，请检查浏览器剪贴板权限'));
         return;
     }
-});
+}
+bindComfyDialogDocument(document, window);
 // 【QIN-591】域函数面注册：主文件 gwCall('preview', fn) 经由此对象分派。
 GW_DEFERRED['preview'] = {
     addDetailImageEditorText,
