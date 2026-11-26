@@ -810,3 +810,17 @@ def test_frontend_controller_naming_convention() -> None:
     assert not violations, (
         f"前端控制器命名违反规范（应为 *-controller.js）：{violations}"
     )
+
+
+def test_public_repo_excludes_desktop_distribution_tree() -> None:
+    """QIN-672：桌面客户端壳与 NSIS 打包流水线已迁出私有仓，公开仓不得回流。"""
+    paths = _working_tree_paths()
+    offenders = [
+        p
+        for p in paths
+        if p == ".github/workflows/release-desktop.yml"
+        or p.startswith("clients/desktop/")
+    ]
+    assert not offenders, (
+        f"公开核心仓禁止重新引入已迁出的桌面发行版文件：{offenders}"
+    )

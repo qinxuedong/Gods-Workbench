@@ -107,7 +107,7 @@ Detailed attribution and origins are documented in [`web/prompt-registry/NOTICE.
 
 ## 4. Rust Desktop Client Dependencies
 
-Direct dependencies for the Tauri client are pinned in [`clients/desktop/Cargo.lock`](clients/desktop/Cargo.lock):
+> Note (QIN-672): The Tauri desktop client (`clients/desktop/`) and its `Cargo.lock` manifest have been moved out of this public core repository to the dedicated desktop distribution repository (`qinxuedong/Gods-Workbench-Desktop`). The dependency attributions below are retained for reference when building or distributing official desktop installers alongside this core:
 
 | Package | Version | License | Copyright / Upstream |
 | :--- | :--- | :--- | :--- |
@@ -173,9 +173,9 @@ You are free to share and adapt the material for any purpose, even commercially,
 
 ---
 
-## 6. Windows 安装版内置运行时（QIN-626）
+## 6. Windows 安装版内置运行时（QIN-626 / 已随桌面端迁出至独立发行仓）
 
-本章仅登记 Windows NSIS 安装包实际随包的 Python 运行时组件；不删改前述任何声明，也不构成法律合规通过结论。
+本章记录由桌面发行版仓库（`qinxuedong/Gods-Workbench-Desktop`）在构建 Windows NSIS 安装包时随包的 Python 运行时组件与生成清单口径；不删改前述任何声明，也不构成法律合规通过结论。
 
 | 组件 | 精确版本 | 许可 | 版权 / 来源 | 随包许可引用 |
 | :--- | :--- | :--- | :--- | :--- |

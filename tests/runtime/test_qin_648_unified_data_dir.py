@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import json
-import re
-import shutil
-import subprocess
-import sys
 from pathlib import Path
 
 import pytest
 
-from clients.desktop.packaging import build_release
 from gw.core.errors import CleanroomException
 from gw.core.runtime_paths import (
     MODE_PROD,
@@ -24,10 +19,6 @@ from gw.settings.data_location import (
     installer_init_data_location,
     status_snapshot,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[2]
-HOOKS_NSH = REPO_ROOT / "clients" / "desktop" / "packaging" / "nsis" / "hooks.nsh"
-UPGRADE_PS1 = REPO_ROOT / "clients" / "desktop" / "packaging" / "nsis" / "upgrade.ps1"
 
 
 def test_qin_648_fresh_prod_paths_and_installer_init(
@@ -137,27 +128,6 @@ def test_qin_648_corrupt_pointer_fails_closed(tmp_path: Path) -> None:
     assert exc_info.value.code == PROD_DATA_LOCATION_INVALID
 
 
-def test_qin_648_build_release_and_nsis_scripts_aligned(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
-    """AC2/AC4：build_release.py、hooks.nsh 与 upgrade.ps1 统一指向 Gods Workbench / user data。"""
-    local_app = tmp_path / "LocalAppData"
-    local_app.mkdir()
-    monkeypatch.setenv("LOCALAPPDATA", str(local_app))
-
-    assert build_release.production_bootstrap_root() == local_app / "Gods Workbench"
-    assert build_release.production_data_root() == local_app / "Gods Workbench" / "user data"
-
-    hooks_text = HOOKS_NSH.read_text(encoding="utf-8")
-    assert '!define GW_BOOTSTRAP_DIR_NAME "Gods Workbench"' in hooks_text
-    assert '!define GW_DATA_DIR_DEFAULT_NAME "Gods Workbench\\user data"' in hooks_text
-    assert '!define GW_LEGACY_BOOTSTRAP_DIR_NAME "GodsWorkbench"' in hooks_text
-
-    upgrade_text = UPGRADE_PS1.read_text(encoding="utf-8")
-    assert '"Gods Workbench"' in upgrade_text
-    assert '"GodsWorkbench"' in upgrade_text
-
-
 def test_qin_648_corrupt_legacy_pointer_with_stale_new_data_fails_closed(
     tmp_path: Path,
 ) -> None:
@@ -213,63 +183,4 @@ def test_qin_648_valid_legacy_pointer_wins_over_stale_new_data_and_status_snapsh
     snap = status_snapshot()
     assert snap["bootstrap_root"] == str(legacy_boot.resolve())
     assert snap["data_location"] == str(custom_target)
-
-
-def test_qin_648_hooks_nsh_probe_powershell_behavior(tmp_path: Path) -> None:
-    """在 Windows 下直接执行 hooks.nsh 探测命令，验证损坏指针退出码 5 与旧指针优先行为。"""
-    if sys.platform != "win32":
-        pytest.skip("仅 Windows 执行 hooks.nsh PowerShell 探测行为验证")
-    ps_exe = shutil.which("powershell.exe") or r"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe"
-    if not Path(ps_exe).is_file():
-        pytest.skip("未找到 powershell.exe")
-
-    nsh_text = HOOKS_NSH.read_text(encoding="utf-8")
-    pattern = re.compile(
-        r'nsExec::ExecToStack\s+`"\$SYSDIR\\WindowsPowerShell\\v1\.0\\powershell\.exe"[^`"]*-Command\s+"([^`]+)"`'
-    )
-    commands = pattern.findall(nsh_text)
-    assert len(commands) == 5
-    probe_raw = commands[3]  # 第 4 条为 GW_RESOLVE_PATHS 中的指针与数据探测命令
-
-    def run_probe(local_app: Path) -> subprocess.CompletedProcess[str]:
-        cmd = probe_raw.replace("$$", "$")
-        cmd = cmd.replace("${GW_BOOTSTRAP_DIR_NAME}", "Gods Workbench")
-        cmd = cmd.replace("${GW_DATA_DIR_DEFAULT_NAME}", r"Gods Workbench\user data")
-        cmd = cmd.replace("${GW_LEGACY_BOOTSTRAP_DIR_NAME}", "GodsWorkbench")
-        cmd = cmd.replace("${GW_LEGACY_DATA_DIR_NAME}", "Gods Workbench data")
-        cmd = cmd.replace("$R6", str(local_app))
-        return subprocess.run(
-            [ps_exe, "-NoProfile", "-NonInteractive", "-Command", cmd],
-            capture_output=True,
-            text=True,
-            timeout=15,
-            check=False,
-        )
-
-    # 1. 全新空目录 -> FRESH|.../Gods Workbench/user data
-    fresh_app = tmp_path / "fresh"
-    fresh_app.mkdir()
-    res_fresh = run_probe(fresh_app)
-    assert res_fresh.returncode == 0
-    assert res_fresh.stdout.strip() == f"FRESH|{fresh_app / 'Gods Workbench' / 'user data'}"
-
-    # 2. 新目录有陈旧 data + 旧指针损坏 -> 必须非零退出（5）不降级
-    corrupt_app = tmp_path / "corrupt"
-    (corrupt_app / "Gods Workbench" / "data").mkdir(parents=True)
-    (corrupt_app / "Gods Workbench" / "data" / "s.json").write_text("{}", encoding="utf-8")
-    (corrupt_app / "GodsWorkbench").mkdir(parents=True)
-    (corrupt_app / "GodsWorkbench" / "runtime-root.json").write_text("{bad", encoding="utf-8")
-    res_corrupt = run_probe(corrupt_app)
-    assert res_corrupt.returncode == 5
-
-    # 3. 新目录有陈旧 data + 旧指针合法 -> 必须返回 EXISTING|<旧指针目标>
-    target = (tmp_path / "LegacyCustom").resolve()
-    target.mkdir()
-    (corrupt_app / "GodsWorkbench" / "runtime-root.json").write_text(
-        json.dumps({"schema_version": 1, "data_location": str(target)}),
-        encoding="utf-8",
-    )
-    res_valid = run_probe(corrupt_app)
-    assert res_valid.returncode == 0
-    assert res_valid.stdout.strip() == f"EXISTING|{target}"
 

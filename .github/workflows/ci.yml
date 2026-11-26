@@ -1,9 +1,8 @@
 name: CI
 
-# QIN-520：本工作流只承担「日常 PR 快速门禁」。
-# 分层原则：日常 PR 校验规范、哈希锁、二进制白名单、前端全量契约与后端核心契约，
-# 目标 3~5 分钟；全量回归、真实浏览器 E2E 与 Windows NSIS 安装包编译
-# 统一由 `.github/workflows/release-desktop.yml`（Tag v* 或手动触发）承接。
+# QIN-520 / QIN-672：本工作流承担公开核心仓「日常 PR 门禁」。
+# 分层原则：校验规范、哈希锁、二进制白名单、前端全量契约与后端核心契约；
+# 桌面客户端壳与 Windows NSIS 安装包构建已迁出至独立桌面发行版仓库。
 # QIN-568：pytest 串行全量是墙钟瓶颈（实测 528~992s 随 runner 档位波动；3698 条
 # 结果 × 平均 ~140ms 串行，无病态慢用例），改按域矩阵 4 分片并行，pytest 分片加
 # --durations=20；前端防漏检查/契约回归/二进制白名单扫描移入独立 frontend 作业
@@ -83,7 +82,6 @@ jobs:
         # QIN-520：日常 PR 不再下载 Playwright 浏览器内核（约 1~2 分钟）。
         # 本层不跑 tests/e2e；少数契约用例使用系统 Chrome（channel="chrome"，
         # 镜像已预装），缺失时按既有策略显式 skip，不伪造浏览器证据。
-        # 浏览器内核安装随全量回归下放到 release-desktop.yml。
         # QIN-568：该步骤随矩阵分片在 4 个作业中各自执行，缓存键一致；缓存未命中
         # 时各分片独立安装同一份哈希锁环境，互不冲突。
         run: |
@@ -157,9 +155,7 @@ jobs:
         # C7 媒体浏览器夹具会在测试内替换 RunningHub 调用与输出传输；
         # 仅为通过配置闸门注入本次提交 SHA，不代表真实供应商验收或凭据。
         # QIN-520：日常 PR 只跑 `tests/contracts`（八域契约，AGENTS.md 6.3）
-        # 与 `tests/hygiene`（洁净室/白名单/命名门禁）；tests/e2e 真实浏览器长跑、
-        # tests/api、tests/runtime、tests/media、tests/canvas、tests/smoke、
-        # tests/deployment 与 tests/benchmarks 的全量回归由 release-desktop.yml 承接。
+        # 与 `tests/hygiene`（洁净室/白名单/命名门禁）。
         # QIN-568：改为矩阵分片并行执行；分片参数见 matrix.include.pytest_args，
         # 四片并集必须等于原全量收集（对账数字留档于本票 PR 正文）。
         # --durations=20 持续输出慢用例清单，防止瓶颈再次不可见。
@@ -266,31 +262,3 @@ jobs:
               sys.exit(1)
           print("二进制白名单扫描通过；允许项仅为根 start.bat 和 3 个 Source Han Sans CN 字体精确路径。")
           PY
-
-  desktop:
-    name: Windows desktop Rust gate
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
-    # QIN-520：日常 PR 只做 Rust 格式与单测（约 2~3 分钟）。
-    # 原先的 `cargo install tauri-cli` + `cargo tauri build --bundles nsis`
-    # 与安装包上传（约 18 分钟）已整体下放到 release-desktop.yml，
-    # 只在大版本发布（Tag v* 或手动触发）时产出 NSIS 安装包。
-    # QIN-568：加 rust-cache 复用 Cargo 构建缓存；pytest 分片提速后本作业
-    # 不再被 ubuntu 侧掩盖，缓存可显著缩短二次构建。
-    runs-on: windows-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Install Rust stable
-        uses: dtolnay/rust-toolchain@stable
-
-      - name: 恢复 Cargo 构建缓存
-        uses: Swatinem/rust-cache@v2
-        with:
-          workspaces: clients/desktop
-
-      - name: Check Rust formatting
-        run: cargo fmt --check --manifest-path clients/desktop/Cargo.toml
-
-      - name: Run desktop unit tests
-        run: cargo test --locked --manifest-path clients/desktop/Cargo.toml

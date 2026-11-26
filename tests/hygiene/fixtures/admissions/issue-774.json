@@ -3,8 +3,6 @@
   "issue": 774,
   "authorization_basis": "GitHub Issue #774 QIN-632, 2026-11-21",
   "files": [
-    "clients/desktop/build.rs",
-    "clients/desktop/src/main.rs",
     "tests/frontend/c16-t3-pwa-installable.test.mjs",
     "tests/frontend/node-files.txt",
     "tests/frontend/qin-632-brand-assets.test.mjs",
@@ -32,5 +30,5 @@
       "admission": "accepted"
     }
   ],
-  "notes": "QIN-632: 品牌素材与统一接入（横字标整理、方形简标与 Windows 壳图标）；只写本票分片，硬计数保持 112。"
+  "notes": "QIN-632: 品牌素材与统一接入；原 clients/desktop/{build.rs,src/main.rs} 已于 QIN-672 迁出至桌面私有仓。"
 }

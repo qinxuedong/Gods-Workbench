@@ -677,9 +677,6 @@ def test_existing_owner_blocks_new_ticket_when_device_key_is_lost(trusted_env):
 @pytest.mark.skipif(os.name != "nt", reason="Windows 目录继承 ACL 剥离仅在 Windows 上验证")
 def test_auth_dir_strips_inherited_non_controlled_principal_on_init(tmp_path):
     """父目录带额外可继承主体时，初始化 auth 目录须自动剥离继承并通过 ACL 校验。"""
-    import json
-    import sys
-
     from gw.core import trusted_local
 
     parent_dir = tmp_path / "inherited_parent"
@@ -696,17 +693,17 @@ def test_auth_dir_strips_inherited_non_controlled_principal_on_init(tmp_path):
     auth_dir = parent_dir / "auth"
     trusted_local.ensure_auth_dir_restricted(auth_dir)
 
-    verifier = Path(__file__).resolve().parents[3] / "clients" / "desktop" / "packaging" / "verify_trusted_acl.py"
-    check = subprocess.run(
-        [sys.executable, str(verifier), "--json", "--auth-dir", str(auth_dir)],
+    acl_check = subprocess.run(
+        ["icacls", str(auth_dir)],
         capture_output=True,
         text=True,
         check=False,
     )
-    assert check.returncode == 0, check.stdout + check.stderr
-    payload = json.loads(check.stdout)
-    assert payload["ok"] is True
-    assert "auth_dir" in payload["checked"]
+    assert acl_check.returncode == 0, acl_check.stderr
+    acl_text = acl_check.stdout
+    assert "BUILTIN\\Users" not in acl_text
+    assert users_sid not in acl_text
+    assert "BUILTIN\\Administrators" in acl_text or "NT AUTHORITY\\SYSTEM" in acl_text
 
 
 def test_trusted_open_succeeds_under_running_backend_lock_and_blocks_replay(trusted_env, monkeypatch):

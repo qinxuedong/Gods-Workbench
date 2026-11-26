@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import os
-import sys
 from pathlib import Path
 
 import pytest
@@ -20,8 +19,6 @@ from gw.core.runtime_paths import (
     resolve_runtime_paths,
 )
 from gw.settings import data_location as service
-
-REPO_ROOT = Path(__file__).resolve().parents[3]
 
 
 def test_fresh_install_writes_single_pointer_and_prod_cold_reads_same_location(tmp_path: Path) -> None:
@@ -138,21 +135,3 @@ def test_status_snapshot_reports_effective_install_dir(monkeypatch: pytest.Monke
     snap = service.status_snapshot()
     assert snap["install_dir"] == str(fake_install)
     assert "data_location" in snap and Path(snap["data_location"]).is_absolute()
-
-
-def test_packaging_and_nsis_hooks_honor_dual_dir_and_elevation_contract() -> None:
-    sys.path.insert(0, str(REPO_ROOT / "clients" / "desktop" / "packaging"))
-    try:
-        import build_release  # noqa: PLC0415
-    finally:
-        sys.path.pop(0)
-
-    hooks_text = (REPO_ROOT / "clients" / "desktop" / "packaging" / "nsis" / "hooks.nsh").read_text(encoding="utf-8")
-    upgrade_text = (REPO_ROOT / "clients" / "desktop" / "packaging" / "nsis" / "upgrade.ps1").read_text(encoding="utf-8")
-    assert "Gods Workbench data" in hooks_text
-    assert "Shell Folders" in hooks_text
-    assert "Page custom GwDataDirPageCreate GwDataDirPageLeave" in hooks_text
-    assert "-UserLocalAppData" in hooks_text
-    assert "Cleanup-FreshInstallPointer" in upgrade_text
-    assert '$psi.EnvironmentVariables["LOCALAPPDATA"] = $effectiveLocalAppData' in upgrade_text
-    assert build_release.HOOKS_NSH.is_file()
