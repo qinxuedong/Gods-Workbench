@@ -48,3 +48,23 @@ QIN-630 为受信本机启动新增以下已实现接口；该路径已登记在
 ### 验证
 
 - 补充接口事实后运行 `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -q`，7 passed。冻结的 `KNOWN_*` 集合、断言与未实现路径集合未改。
+
+## 2026-11-26：QIN-656 / GitHub #818
+
+QIN-656 新增镜头视觉向量设置、状态与异步补跑接口。经 PM 批准，仅将以下三个已实现路径登记到 `tests/contracts/projects/test_phase8_frontend_backend_api_gap.py` 的 `KNOWN_IMPLEMENTED` 与 `KNOWN_BACKEND_PATHS`：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/asset-registry/shot-vectors/jobs` | 为资源根异步补跑镜头视觉向量任务 |
+| POST | `/api/asset-registry/shot-vectors/settings` | 保存镜头视觉向量开关 |
+| GET | `/api/asset-registry/shot-vectors/status` | 读取本地镜头视觉向量依赖与状态 |
+
+除此三项外，不修改或放宽其他端点、断言或基线规则；`KNOWN_UNIMPLEMENTED` 保持不变。
+
+### 验证
+
+- `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -q`：7 passed。
+- `python -m pytest tests/contracts/assets/test_mvp1_t1_shot_index.py tests/contracts/assets/test_mvp1_t6_shot_search.py -q`：35 passed。
+- `node --test tests/frontend/qin-631-native-select-pilot.test.mjs tests/frontend/mvp1-t6-omnibar-asset.test.mjs`：27 passed。
+- `ruff check tests/contracts/projects/test_phase8_frontend_backend_api_gap.py`、`node --check web/js/modules/asset-manager.js` 与 `git diff --check`：通过。
+- GitHub CI 将随 QIN-656 新提交重新运行；本报告不提前宣称全量门禁通过。

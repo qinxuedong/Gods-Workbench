@@ -316,6 +316,10 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/remote-assets/{p}",
         # 2026-10-28 MVP1-T6（issue #336）：镜头级检索端点，Omnibar 素材模式消费。
         "/api/asset-registry/search/shots",
+        # 2026-11-26 QIN-656（issue #818）：镜头视觉向量设置、状态与异步补跑端点。
+        "/api/asset-registry/shot-vectors/jobs",
+        "/api/asset-registry/shot-vectors/settings",
+        "/api/asset-registry/shot-vectors/status",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",
@@ -590,6 +594,10 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/reindex",
         "/api/asset-registry/remote-assets",
         "/api/asset-registry/remote-assets/{p}",
+        # 2026-11-26 QIN-656（issue #818）：镜头视觉向量设置、状态与异步补跑端点。
+        "/api/asset-registry/shot-vectors/jobs",
+        "/api/asset-registry/shot-vectors/settings",
+        "/api/asset-registry/shot-vectors/status",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",
