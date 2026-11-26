@@ -414,6 +414,120 @@ def _keyword_recalled_assets(
         return []
 
 
+def _shot_vector_model_status() -> Dict[str, Any]:
+    """只检查已安装依赖与本地缓存，不加载模型、不访问网络。"""
+    return repo.shot_vector_model_status()
+
+
+_SHOT_VECTOR_EMBEDDER_LOCK = threading.RLock()
+_SHOT_VECTOR_EMBEDDER_KEY = None
+_SHOT_VECTOR_EMBEDDER = None
+
+
+def _encode_shot_query(query: str, *, expected_model_version: Optional[str]):
+    """按运行时数据根复用本地编码器，避免每次检索重复加载整模型。"""
+    global _SHOT_VECTOR_EMBEDDER_KEY, _SHOT_VECTOR_EMBEDDER
+    from gw.asset_registry.embedder import DEFAULT_MODEL_ID, LocalMultimodalEmbedder
+
+    key = (str(storage.data_root()), DEFAULT_MODEL_ID)
+    with _SHOT_VECTOR_EMBEDDER_LOCK:
+        if _SHOT_VECTOR_EMBEDDER_KEY != key or _SHOT_VECTOR_EMBEDDER is None:
+            _SHOT_VECTOR_EMBEDDER_KEY = key
+            _SHOT_VECTOR_EMBEDDER = LocalMultimodalEmbedder(
+                DEFAULT_MODEL_ID, data_root=storage.data_root()
+            )
+        embedding = _SHOT_VECTOR_EMBEDDER.encode_text(query)
+        if (
+            not expected_model_version
+            or _SHOT_VECTOR_EMBEDDER.model_version != expected_model_version
+        ):
+            return None
+        return embedding
+
+
+@router.get("/shot-vectors/status", summary="读取镜头视觉向量状态")
+def get_shot_vector_status(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _read_auth(authorization, x_user_role)
+    enabled = repo.shot_vector_enabled()
+    model = _shot_vector_model_status()
+    db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    vector_store_available = False
+    shot_vector_count = 0
+    if db_path.is_file():
+        from gw.core.sqlite_vec_engine import SQLiteVecEngine
+
+        with SQLiteVecEngine(db_path) as engine:
+            vector_store_available = engine.vector_enabled
+            shot_vector_count = engine.shot_vector_count()
+    ready = bool(model["ready"] and vector_store_available)
+    if not model["ready"]:
+        message = (
+            "缺少本地嵌入依赖：" + ", ".join(model["missing_dependencies"])
+            if model["missing_dependencies"]
+            else "默认 Chinese-CLIP 权重未缓存；不会自动下载"
+        )
+    elif not vector_store_available:
+        message = "本地 SQLite-vec 镜头索引不可用"
+    else:
+        message = "本地模型与镜头向量索引已就绪"
+    return {
+        "enabled": enabled,
+        **model,
+        "vector_store_available": vector_store_available,
+        "shot_vector_count": shot_vector_count,
+        "degraded": not enabled or not ready,
+        "message": message,
+    }
+
+
+@router.post("/shot-vectors/settings", summary="保存镜头视觉向量开关")
+def update_shot_vector_settings(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    enabled = _payload(payload).get("enabled")
+    if not isinstance(enabled, bool):
+        raise CleanroomException(400, "INVALID_REQUEST", "enabled 必须是布尔值")
+    repo.set_shot_vector_enabled(enabled)
+    return get_shot_vector_status(authorization, x_user_role)
+
+
+@router.post(
+    "/shot-vectors/jobs",
+    summary="异步补跑一个资源根的镜头视觉向量",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def submit_shot_vector_job(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    actor = _edit_auth(authorization, x_user_role)
+    root_id = _payload(payload).get("root_id")
+    if not isinstance(root_id, str) or not root_id.strip():
+        raise CleanroomException(400, "INVALID_REQUEST", "root_id 不能为空")
+    status_body = get_shot_vector_status(authorization, x_user_role)
+    if not status_body["enabled"]:
+        raise CleanroomException(
+            409, "SHOT_VECTOR_TRACK_DISABLED", "请先在设置中启用镜头视觉向量"
+        )
+    if not status_body["ready"]:
+        raise CleanroomException(
+            409, "SHOT_VECTOR_TRACK_UNAVAILABLE", status_body["message"]
+        )
+    nonce = idempotency_key or f"shot-vectors:{root_id}:{uuid.uuid4().hex}"
+    accepted = index_jobs.service().submit(
+        "shot_vectors", {"roots": [root_id]}, actor, nonce
+    )
+    return JSONResponse(accepted, status_code=status.HTTP_202_ACCEPTED)
+
+
 @router.get("/search/shots", summary="镜头级素材检索", status_code=status.HTTP_200_OK)
 def search_registry_shots(
     q: Optional[str] = Query(None),
@@ -464,6 +578,8 @@ def search_registry_shots(
         ) is not None
 
     located: Dict[str, Dict[str, Any]] = {}
+    feature_enabled = repo.shot_vector_enabled()
+    model_status = _shot_vector_model_status() if feature_enabled else {"ready": False}
     with SQLiteVecEngine(db_path) as engine:
 
         def _shot_provider(asset_id: str) -> List[Dict[str, Any]]:
@@ -488,27 +604,49 @@ def search_registry_shots(
                 for record_row in records
             ]
 
+        index_metadata = engine.index_metadata()
+        vector_track_ready = bool(
+            feature_enabled
+            and model_status.get("ready")
+            and engine.vector_enabled
+            and index_metadata is not None
+            and index_metadata.model_id
+            and index_metadata.dimensions == engine.dimensions
+        )
+        query_vector = None
+        if vector_track_ready:
+            try:
+                from gw.asset_registry.embedder import DEFAULT_MODEL_ID
+
+                if index_metadata.model_id == DEFAULT_MODEL_ID:
+                    query_vector = _encode_shot_query(
+                        query, expected_model_version=index_metadata.model_version
+                    )
+                    if query_vector is None:
+                        vector_track_ready = False
+                else:
+                    vector_track_ready = False
+            except Exception:
+                vector_track_ready = False
+
         results = HybridAssetSearcher(engine).search_shots(
             query,
+            query_vector=query_vector,
             limit=bounded_limit,
+            candidate_limit=100,
+            asset_limit=min(bounded_limit, 100),
             shot_provider=_shot_provider,
             asset_filter=_asset_is_visible,
             extra_asset_ids=_keyword_recalled_assets(
                 query, bounded_limit, raw=registry_snapshot
             ),
         )
-        # 本次请求未携带查询向量，引擎侧的降级标记恒为 false；此处按索引实况
-        # 补正（MVP1-T7/F2）：没有登记嵌入模型或引擎未启用向量轨时如实报告降级，
-        # 不让「向量轨从未写入」被伪装成双轨正常。
-        index_metadata = engine.index_metadata()
-        vector_track_ready = bool(
-            engine.vector_enabled
-            and index_metadata is not None
-            and index_metadata.model_id
-        )
-
     items = []
     for hit in results.hits:
+        if hit.asset_id not in located:
+            continue
+        if repo.visible_asset_from_snapshot(registry_snapshot, hit.asset_id) is None:
+            continue
         record = located.get(hit.asset_id) or {}
         items.append(
             {

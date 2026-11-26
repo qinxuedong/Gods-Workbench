@@ -37,6 +37,8 @@ from gw.core.sqlite_vec_engine import (
 MAX_SHOT_QUERY_TOKENS = 64
 #: 单镜头词面命中数达到该值即取得满额加权，防止长摘要无限拉分。
 SHOT_LEXICAL_BONUS_CAP = 5
+MAX_SHOT_CANDIDATES = 100
+SHOT_MMR_LAMBDA = 0.75
 
 _CJK_RANGES = "\u3400-\u4dbf\u4e00-\u9fff"
 _TOKEN_SPLIT = re.compile(rf"[^0-9a-zA-Z{_CJK_RANGES}]+")
@@ -153,6 +155,8 @@ class ShotSearchHit:
     tags: tuple[str, ...]
     summary: str
     content_hash: str | None
+    vector_distance: float | None = None
+    embedding: tuple[float, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -337,6 +341,13 @@ class HybridAssetSearcher:
         asset_limit = _bounded_search_limit(
             asset_limit if asset_limit is not None else limit, "asset_limit"
         )
+        candidate_limit = min(
+            MAX_SHOT_CANDIDATES,
+            _bounded_search_limit(
+                candidate_limit if candidate_limit is not None else MAX_SHOT_CANDIDATES,
+                "candidate_limit",
+            ),
+        )
         asset_results = self.search(
             query,
             query_vector=query_vector,
@@ -348,6 +359,15 @@ class HybridAssetSearcher:
             ),
             asset_filter=asset_filter,
         )
+        shot_vector_matches = []
+        if query_vector is not None and hasattr(self.engine, "search_shot_vectors"):
+            shot_vector_matches = self.engine.search_shot_vectors(
+                query_vector, limit=candidate_limit
+            )
+        shot_vector_by_key = {
+            (match.asset_id, match.shot_index): (rank, match)
+            for rank, match in enumerate(shot_vector_matches, start=1)
+        }
         recalled = [(result.asset_id, result) for result in asset_results]
         seen_ids = {asset_id for asset_id, _ in recalled}
         for asset_id in extra_asset_ids:
@@ -360,6 +380,10 @@ class HybridAssetSearcher:
                 continue
             seen_ids.add(asset_id)
             recalled.append((asset_id, None))
+        for match in shot_vector_matches:
+            if match.asset_id not in seen_ids:
+                seen_ids.add(match.asset_id)
+                recalled.append((match.asset_id, None))
         tokens = shot_query_tokens(query)
         hits: list[ShotSearchHit] = []
         for asset_id, asset_result in recalled:
@@ -393,11 +417,18 @@ class HybridAssetSearcher:
                 bonus = 1.0 + min(lexical_hits, SHOT_LEXICAL_BONUS_CAP) / (
                     SHOT_LEXICAL_BONUS_CAP
                 )
+                vector_match = shot_vector_by_key.get(
+                    (asset_id, record["shot_index"])
+                )
+                vector_rank, vector = vector_match if vector_match else (None, None)
+                score = asset_score
+                if vector_rank is not None:
+                    score += 1.0 / (self.rrf_k + vector_rank)
                 hits.append(
                     ShotSearchHit(
                         asset_id=asset_id,
                         granularity="shot",
-                        score=asset_score * bonus,
+                        score=score * bonus,
                         asset_score=asset_score,
                         shot_index=record["shot_index"],
                         start_sec=record["start_sec"],
@@ -406,6 +437,8 @@ class HybridAssetSearcher:
                         tags=record["tags"],
                         summary=record["summary"],
                         content_hash=record["content_hash"],
+                        vector_distance=vector.distance if vector is not None else None,
+                        embedding=vector.embedding if vector is not None else (),
                     )
                 )
         hits.sort(
@@ -418,7 +451,80 @@ class HybridAssetSearcher:
                 -1 if hit.shot_index is None else hit.shot_index,
             )
         )
-        return ShotSearchResults(
-            hits=tuple(hits[:limit]),
-            vector_track_degraded=asset_results.vector_track_degraded,
+        hits = _fold_adjacent_visual_duplicates(hits[:candidate_limit])
+        hits = _mmr_rank_shots(hits, limit)
+        shot_vector_degraded = bool(
+            getattr(self.engine, "last_shot_vector_search_degraded", False)
         )
+        return ShotSearchResults(
+            hits=tuple(hits),
+            vector_track_degraded=(
+                asset_results.vector_track_degraded or shot_vector_degraded
+            ),
+        )
+
+
+def _cosine_similarity(left: Sequence[float], right: Sequence[float]) -> float:
+    if not left or len(left) != len(right):
+        return 0.0
+    dot = sum(a * b for a, b in zip(left, right, strict=True))
+    left_norm = math.sqrt(sum(value * value for value in left))
+    right_norm = math.sqrt(sum(value * value for value in right))
+    if left_norm <= 0 or right_norm <= 0:
+        return 0.0
+    return max(-1.0, min(1.0, dot / (left_norm * right_norm)))
+
+
+def _fold_adjacent_visual_duplicates(
+    hits: Sequence[ShotSearchHit],
+) -> list[ShotSearchHit]:
+    """同资产相邻镜头视觉余弦相似度达到 0.90 时保留融合分更高者。"""
+    kept: list[ShotSearchHit] = []
+    for hit in hits:
+        duplicate_index = next(
+            (
+                index
+                for index, prior in enumerate(kept)
+                if hit.granularity == prior.granularity == "shot"
+                and hit.asset_id == prior.asset_id
+                and hit.shot_index is not None
+                and prior.shot_index is not None
+                and abs(hit.shot_index - prior.shot_index) == 1
+                and _cosine_similarity(hit.embedding, prior.embedding) >= 0.90
+            ),
+            None,
+        )
+        if duplicate_index is None:
+            kept.append(hit)
+    return kept
+
+
+def _mmr_rank_shots(
+    hits: Sequence[ShotSearchHit], limit: int, *, weight: float = SHOT_MMR_LAMBDA
+) -> list[ShotSearchHit]:
+    """以融合相关性为主、与已选镜头的最大余弦相似度为惩罚执行 MMR。"""
+    if not hits:
+        return []
+    maximum = max(hit.score for hit in hits) or 1.0
+    remaining = list(hits)
+    selected: list[ShotSearchHit] = []
+    while remaining and len(selected) < limit:
+        best = max(
+            remaining,
+            key=lambda hit: (
+                weight * (hit.score / maximum)
+                - (1.0 - weight)
+                * max(
+                    (
+                        max(0.0, _cosine_similarity(hit.embedding, prior.embedding))
+                        for prior in selected
+                    ),
+                    default=0.0,
+                ),
+                hit.score,
+                -1 if hit.shot_index is None else -hit.shot_index,
+            ),
+        )
+        selected.append(best)
+        remaining.remove(best)
+    return selected

@@ -32,6 +32,7 @@ import io
 import base64
 import copy
 import hashlib
+import importlib.util
 import json
 import uuid
 import logging
@@ -61,6 +62,7 @@ from gw.workspaces.service import default_workspace_service
 
 NS_REGISTRY = "asset_registry"
 ASSET_SEARCH_INDEX_FILENAME = "asset_registry_search.sqlite3"
+_SHOT_VECTOR_SETTINGS_NAMESPACE = "asset_shot_vector_settings"
 DATA_STATUS_OK = "ok"
 _ENTITY_FILTER_INDEX_CACHE_KEY: Optional[Tuple[str, str]] = None
 _ENTITY_FILTER_INDEX_CACHE_VALUE: Tuple[
@@ -963,7 +965,9 @@ def _asset_shot_rows(asset: Dict[str, Any]) -> Tuple[List[Dict[str, Any]], int]:
     return rows, skipped
 
 
-def _sync_asset_shot_rows(engine: Any, asset: Dict[str, Any]) -> int:
+def _sync_asset_shot_rows(
+    engine: Any, asset: Dict[str, Any], *, embedder: Any = None, vector_ready: bool | None = None
+) -> int:
     """按资产整组刷新镜头行；返回写入行数。
 
     只处理声明了 ``video_segments`` 的资产（图片等零额外写入）；先删后写保证
@@ -978,11 +982,192 @@ def _sync_asset_shot_rows(engine: Any, asset: Dict[str, Any]) -> int:
     if not asset_id:
         return 0
     rows, _skipped = _asset_shot_rows(asset)
-    engine.delete_shots(asset_id)
-    if not rows:
-        return 0
-    engine.batch_upsert_shots(rows)
+    engine.replace_asset_shots(asset_id, rows)
+    if vector_ready is None:
+        vector_ready = shot_vector_enabled() and shot_vector_model_status()["ready"]
+    if rows and vector_ready:
+        try:
+            refresh_asset_shot_vectors(engine, asset, embedder=embedder)
+        except Exception as exc:
+            _LOGGER.warning(
+                "镜头向量生成降级，基础索引已保留：%s", type(exc).__name__
+            )
     return len(rows)
+
+
+def shot_vector_enabled() -> bool:
+    """读取镜头向量开关；缺少设置时默认关闭。"""
+    value = storage.load(_SHOT_VECTOR_SETTINGS_NAMESPACE, {})
+    return isinstance(value, dict) and value.get("enabled") is True
+
+
+def set_shot_vector_enabled(enabled: bool) -> bool:
+    """持久化镜头向量开关，关闭时保留已有向量。"""
+    if not isinstance(enabled, bool):
+        raise ValueError("enabled 必须是布尔值")
+    state = storage.JsonState(_SHOT_VECTOR_SETTINGS_NAMESPACE, lambda: {"enabled": False})
+    state.mutate(lambda value: value.update(enabled=enabled))
+    return enabled
+
+
+def shot_vector_model_status() -> Dict[str, Any]:
+    """只检测可选嵌入依赖和 data 根内的默认模型缓存。"""
+    from gw.asset_registry.embedder import DEFAULT_MODEL_ID
+
+    dependencies = ("torch", "transformers", "huggingface_hub")
+    missing = []
+    for name in dependencies:
+        try:
+            available = importlib.util.find_spec(name) is not None
+        except (ImportError, ValueError):
+            available = False
+        if not available:
+            missing.append(name)
+    model_dir = storage.data_root() / "models" / "embeddings" / (
+        "models--" + DEFAULT_MODEL_ID.replace("/", "--")
+    )
+    cached = False
+    try:
+        for snapshot in (model_dir / "snapshots").iterdir():
+            if not snapshot.is_dir():
+                continue
+            has_config = (snapshot / "config.json").is_file()
+            has_processor = (snapshot / "preprocessor_config.json").is_file()
+            has_weights = any(
+                (snapshot / filename).is_file()
+                for filename in ("model.safetensors", "pytorch_model.bin")
+            )
+            has_sharded_weights = (
+                (snapshot / "model.safetensors.index.json").is_file()
+                and any(snapshot.glob("*.safetensors"))
+            ) or (
+                (snapshot / "pytorch_model.bin.index.json").is_file()
+                and any(snapshot.glob("pytorch_model-*.bin"))
+            )
+            if has_config and has_processor and (has_weights or has_sharded_weights):
+                cached = True
+                break
+    except OSError:
+        cached = False
+    return {
+        "model_id": DEFAULT_MODEL_ID,
+        "dependencies_ready": not missing,
+        "missing_dependencies": missing,
+        "weights_cached": cached,
+        "ready": not missing and cached,
+    }
+
+
+def _asset_local_video_path(asset: Dict[str, Any]) -> Optional[Path]:
+    """只从当前允许根解析资产相对路径，并拒绝符号链接越界。"""
+    root_id = str(asset.get("root_id") or "")
+    relpath = str(asset.get("canonical_relpath") or "")
+    if not root_id or not relpath:
+        return None
+    try:
+        canonical = storage.canonical_relpath(relpath)
+    except CleanroomException:
+        return None
+    for root in storage.allowed_roots():
+        if storage.root_identity_id(root) != root_id:
+            continue
+        resolved_root = storage.resolve_mount_path(str(root))
+        if resolved_root is None:
+            return None
+        try:
+            resolved_root = Path(resolved_root).resolve(strict=True)
+            source = resolved_root.joinpath(*canonical.split("/")).resolve(strict=True)
+            source.relative_to(resolved_root)
+        except (OSError, RuntimeError, ValueError):
+            return None
+        return source if source.is_file() else None
+    return None
+
+
+def refresh_asset_shot_vectors(
+    engine: Any,
+    asset: Dict[str, Any],
+    *,
+    embedder: Any = None,
+) -> Dict[str, int]:
+    """内存抽帧、像素去重并逐镜头原子写入向量；失败不影响基础镜头行。"""
+    if not _visible(asset):
+        return {"shots": 0, "frames": 0, "failed": 0}
+    if not getattr(engine, "vector_enabled", False):
+        return {"shots": 0, "frames": 0, "failed": 1}
+    metadata = asset.get("metadata")
+    segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+    if not isinstance(segments, list):
+        return {"shots": 0, "frames": 0, "failed": 0}
+    if embedder is None and not shot_vector_model_status()["ready"]:
+        return {"shots": 0, "frames": 0, "failed": len(segments)}
+    source = _asset_local_video_path(asset)
+    if source is None:
+        return {"shots": 0, "frames": 0, "failed": len(segments)}
+
+    from PIL import Image
+    from gw.asset_registry.embedder import (
+        DEFAULT_MODEL_ID,
+        MODEL_SPECS,
+        LocalMultimodalEmbedder,
+    )
+    from gw.media.keyframe_extractor import decode_keyframe_to_memory
+
+    encoder = embedder or LocalMultimodalEmbedder(
+        DEFAULT_MODEL_ID, data_root=storage.data_root()
+    )
+    rows, _skipped = _asset_shot_rows(asset)
+    result = {"shots": 0, "frames": 0, "failed": 0}
+    model_switched = False
+    asset_id = str(asset.get("asset_id") or asset.get("id") or "")
+    for row in rows:
+        duration = row["end_sec"] - row["start_sec"]
+        fractions = (0.2, 0.5, 0.8) if duration > 3.0 else (0.5,)
+        seen_pixels: set[str] = set()
+        samples = []
+        try:
+            for sample_index, fraction in enumerate(fractions):
+                sample_sec = row["start_sec"] + duration * fraction
+                try:
+                    encoded = decode_keyframe_to_memory(source, sample_sec)
+                    with Image.open(io.BytesIO(encoded)) as decoded:
+                        frame = decoded.convert("RGB")
+                    pixel_hash = hashlib.sha256(
+                        f"{frame.width}x{frame.height}:".encode("ascii")
+                        + frame.tobytes()
+                    ).hexdigest()
+                    if pixel_hash in seen_pixels:
+                        continue
+                    seen_pixels.add(pixel_hash)
+                    embedding = encoder.encode_image(frame)
+                    if not model_switched:
+                        engine.switch_embedding_model(
+                            model_id=encoder.model_id,
+                            model_version=encoder.model_version,
+                            dimensions=MODEL_SPECS[encoder.model_id],
+                        )
+                        model_switched = True
+                    samples.append(
+                        {
+                            "sample_index": sample_index,
+                            "sample_sec": sample_sec,
+                            "embedding": embedding,
+                        }
+                    )
+                except Exception:
+                    result["failed"] += 1
+                    continue
+            if samples and engine.replace_shot_embeddings(
+                asset_id=asset_id,
+                shot_index=row["shot_index"],
+                content_hash=row["content_hash"],
+                samples=samples,
+            ):
+                result["shots"] += 1
+                result["frames"] += len(samples)
+        except Exception:
+            result["failed"] += 1
+    return result
 
 
 def _upsert_asset_search_documents(assets: Any) -> List[bool]:
@@ -1015,8 +1200,23 @@ def _upsert_asset_search_documents(assets: Any) -> List[bool]:
         db_path.parent.mkdir(parents=True, exist_ok=True)
         with SQLiteVecEngine(db_path) as engine:
             results = engine.batch_upsert_documents(list(documents.values()))
+            vector_ready = (
+                shot_vector_enabled() and shot_vector_model_status()["ready"]
+            )
+            shot_embedder = None
+            if vector_ready:
+                from gw.asset_registry.embedder import (
+                    DEFAULT_MODEL_ID,
+                    LocalMultimodalEmbedder,
+                )
+
+                shot_embedder = LocalMultimodalEmbedder(
+                    DEFAULT_MODEL_ID, data_root=storage.data_root()
+                )
             for asset in records:
-                _sync_asset_shot_rows(engine, asset)
+                _sync_asset_shot_rows(
+                    engine, asset, embedder=shot_embedder, vector_ready=vector_ready
+                )
             if engine.index_metadata() is None:
                 engine.set_index_metadata(
                     model_id=None,
@@ -4205,6 +4405,26 @@ def rebuild_search_index() -> Dict[str, Any]:
                 dimensions=engine.dimensions,
                 quantization="float32" if engine.vector_enabled else None,
             )
+            vector_ready = shot_vector_enabled() and shot_vector_model_status()["ready"]
+            if vector_ready:
+                from gw.asset_registry.embedder import (
+                    DEFAULT_MODEL_ID,
+                    LocalMultimodalEmbedder,
+                )
+
+                shot_embedder = LocalMultimodalEmbedder(
+                    DEFAULT_MODEL_ID, data_root=storage.data_root()
+                )
+                for asset in assets:
+                    try:
+                        refresh_asset_shot_vectors(
+                            engine, asset, embedder=shot_embedder
+                        )
+                    except Exception as exc:
+                        _LOGGER.warning(
+                            "重建镜头向量降级，基础索引已保留：%s",
+                            type(exc).__name__,
+                        )
         os.replace(part_path, db_path)
     except Exception:
         try:

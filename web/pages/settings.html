@@ -311,6 +311,10 @@
           <i data-lucide="folder-cog" class="w-4 h-4 text-amber-300"></i>
           <span>目录设置</span>
         </button>
+        <button type="button" data-section="smart-search" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
+          <i data-lucide="scan-search" class="w-4 h-4 text-[#dfc384]"></i>
+          <span>智能检索与媒体分析</span>
+        </button>
         <button type="button" data-section="prompt-sources" class="w-full flex items-center space-x-2.5 transition cursor-pointer hw-btn" aria-pressed="false">
           <i data-lucide="sparkles" class="w-4 h-4 text-[#dfc384]"></i>
           <span>提示词来源 (本地快照)</span>
@@ -548,6 +552,33 @@
         <iframe title="目录设置" class="directory-settings-frame w-full h-full border-0 bg-transparent" src="/static/asset-manager.html?settings=directories&embedded=1" loading="lazy"></iframe>
       </section>
 
+      <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="smart-search">
+        <div class="gw-settings-panel-head">
+          <h2 class="text-slate-100 flex items-center space-x-2 gw-type-title">
+            <i data-lucide="scan-search" class="w-5 h-5 text-[#dfc384]"></i>
+            <span>智能检索与媒体分析</span>
+          </h2>
+          <p class="gw-type-body-md text-slate-400 mt-1">镜头视觉向量使用本机模型；关闭后停止新编码与向量召回，并保留已生成向量。</p>
+        </div>
+        <div class="bay-inset p-4 rounded-xl space-y-4 max-w-3xl">
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <strong class="gw-type-body-sm text-slate-200 block">镜头视觉向量</strong>
+              <p class="gw-type-body-md text-slate-400">默认关闭。启用后，索引视频会按镜头抽帧并写入本地 SQLite-vec。</p>
+            </div>
+            <button type="button" id="shotVectorToggle" class="toggle hw-slide-toggle" aria-label="镜头视觉向量" aria-pressed="false">
+              <span class="hw-slide-peg" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="border-t border-white/10 pt-3 space-y-1">
+            <strong class="gw-type-body-sm text-slate-200 block">本地模型状态</strong>
+            <p id="shotVectorStatus" class="gw-type-body-md text-slate-400" role="status" aria-live="polite">正在检查本地依赖与模型缓存…</p>
+            <p id="shotVectorCount" class="gw-type-body-sm text-slate-500">已存帧向量：—</p>
+            <p class="gw-type-body-sm text-slate-500">不会自动下载模型。缺少依赖或缓存时，搜索继续使用关键词，并标记向量轨降级。</p>
+          </div>
+        </div>
+      </section>
+
       <!-- 分区 2: 提示词来源 (data-panel="prompt-sources") -->
       <section class="h-full flex flex-col overflow-y-auto pr-1" data-panel="prompt-sources">
         <div class="flex items-center justify-between gw-settings-panel-head">
@@ -757,6 +788,52 @@
       // GET /api/observability/health 的 hardware_telemetry 组件读数）。
       // 此处不再重复写入「未接入」，避免覆盖真实读数或造成假降级。
     });
+  </script>
+  <script>
+    (() => {
+      const statusNode = document.getElementById('shotVectorStatus');
+      const countNode = document.getElementById('shotVectorCount');
+      const toggle = document.getElementById('shotVectorToggle');
+      if (!statusNode || !countNode || !toggle) return;
+      const render = value => {
+        const enabled = value?.enabled === true;
+        toggle.classList.toggle('on', enabled);
+        toggle.setAttribute('aria-pressed', String(enabled));
+        statusNode.textContent = value?.message || '本地模型状态暂不可用';
+        countNode.textContent = `已存帧向量：${Number(value?.shot_vector_count || 0)}`;
+      };
+      const refresh = async () => {
+        try {
+          const response = await fetch('/api/asset-registry/shot-vectors/status', {
+            credentials:'same-origin', headers:{Accept:'application/json'},
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body?.detail?.message || '读取本地模型状态失败');
+          render(body);
+        } catch (error) {
+          statusNode.textContent = error?.message || '读取本地模型状态失败';
+        }
+      };
+      toggle.addEventListener('click', async () => {
+        const enabled = toggle.getAttribute('aria-pressed') !== 'true';
+        toggle.disabled = true;
+        try {
+          const response = await fetch('/api/asset-registry/shot-vectors/settings', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json', Accept:'application/json'},
+            body:JSON.stringify({enabled}),
+          });
+          const body = await response.json();
+          if (!response.ok) throw new Error(body?.detail?.message || '保存设置失败');
+          render(body);
+        } catch (error) {
+          statusNode.textContent = error?.message || '保存设置失败';
+        } finally {
+          toggle.disabled = false;
+        }
+      });
+      refresh();
+    })();
   </script>
 <script src="/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa"></script>
 </body>

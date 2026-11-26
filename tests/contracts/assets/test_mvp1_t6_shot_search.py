@@ -14,6 +14,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from gw.api.app import create_app
+from gw.api import routes_asset_registry
 from gw.asset_registry import repository as repo
 from gw.asset_registry.hybrid_search import (
     HybridAssetSearcher,
@@ -22,7 +23,7 @@ from gw.asset_registry.hybrid_search import (
     shot_query_tokens,
 )
 from gw.core import storage
-from gw.core.sqlite_vec_engine import FTSMatch, SQLiteVecEngine
+from gw.core.sqlite_vec_engine import FTSMatch, ShotVectorMatch, SQLiteVecEngine
 
 AUTH = {"Authorization": "Bearer cleanroom-test", "X-User-Role": "editor"}
 SHOT_API = "/api/asset-registry/search/shots"
@@ -37,17 +38,30 @@ VIDEO_SEGMENTS = [
 class _StubEngine:
     """只实现 FTS 轨的引擎替身，用于验证下钻与排序不依赖真实索引。"""
 
-    def __init__(self, matches: list[FTSMatch]) -> None:
+    def __init__(
+        self,
+        matches: list[FTSMatch],
+        shot_vectors: list[ShotVectorMatch] | None = None,
+    ) -> None:
         self._matches = matches
+        self._shot_vectors = shot_vectors or []
         self.last_vector_search_degraded = False
+        self.last_shot_vector_search_degraded = False
         self.vector_calls = 0
+        self.fts_limits = []
+        self.shot_vector_limits = []
 
     def search_fts(self, query: str, *, limit: int) -> list[FTSMatch]:
+        self.fts_limits.append(limit)
         return list(self._matches)[:limit]
 
-    def search_vectors(self, query_vector, *, limit: int):  # pragma: no cover - 不应被调用
+    def search_vectors(self, query_vector, *, limit: int):
         self.vector_calls += 1
-        raise AssertionError("未提供查询向量时不得走向量轨")
+        return []
+
+    def search_shot_vectors(self, query_vector, *, limit: int):
+        self.shot_vector_limits.append(limit)
+        return list(self._shot_vectors)[:limit]
 
 
 @pytest.fixture()
@@ -177,6 +191,57 @@ def test_search_shots_respects_limit_and_deterministic_order():
     assert [hit.shot_index for hit in results.hits[:2]] == [0, 1]
 
 
+def test_visual_vectors_recall_without_lexical_match_and_cap_candidates():
+    engine = _StubEngine(
+        [],
+        [ShotVectorMatch("ast_visual", 0, 4.0, 8.0, 0.01, (1.0, 0.0))],
+    )
+    results = HybridAssetSearcher(engine).search_shots(
+        "完全无关的查询",
+        query_vector=[1.0, 0.0],
+        limit=1,
+        candidate_limit=500,
+        shot_provider=lambda asset_id: [
+            {"start_sec": 4.0, "end_sec": 8.0, "tags": [], "summary": ""}
+        ],
+    )
+    assert len(results.hits) == 1
+    assert results.hits[0].asset_id == "ast_visual"
+    assert results.hits[0].granularity == "shot"
+    assert results.hits[0].lexical_hits == 0
+    assert results.hits[0].vector_distance == pytest.approx(0.01)
+    assert engine.fts_limits == [100]
+    assert engine.shot_vector_limits == [100]
+
+
+def test_visual_search_folds_adjacent_duplicates_and_mmr_prefers_diversity():
+    vectors = [
+        ShotVectorMatch("asset-a", 0, 0.0, 2.0, 0.01, (1.0, 0.0)),
+        ShotVectorMatch("asset-a", 1, 2.0, 4.0, 0.02, (0.995, 0.1)),
+        ShotVectorMatch("asset-b", 0, 0.0, 2.0, 0.03, (0.9, 0.435)),
+        ShotVectorMatch("asset-c", 0, 0.0, 2.0, 0.04, (0.0, 1.0)),
+    ]
+    segments = {
+        "asset-a": [
+            {"start_sec": 0.0, "end_sec": 2.0},
+            {"start_sec": 2.0, "end_sec": 4.0},
+        ],
+        "asset-b": [{"start_sec": 0.0, "end_sec": 2.0}],
+        "asset-c": [{"start_sec": 0.0, "end_sec": 2.0}],
+    }
+    results = HybridAssetSearcher(_StubEngine([], vectors)).search_shots(
+        "无词面命中",
+        query_vector=[1.0, 0.0],
+        limit=3,
+        shot_provider=lambda asset_id: segments.get(asset_id, []),
+    )
+    assert [(hit.asset_id, hit.shot_index) for hit in results.hits] == [
+        ("asset-a", 0),
+        ("asset-c", 0),
+        ("asset-b", 0),
+    ]
+
+
 # ---------------------------------------------------------------------------
 # HTTP 契约
 # ---------------------------------------------------------------------------
@@ -213,6 +278,126 @@ def test_shot_search_reports_missing_index_as_unavailable(client: TestClient):
     detail = response.json()["detail"]
     assert detail["code"] == "SEARCH_INDEX_NOT_READY"
     assert detail["data_status"] == "not_integrated"
+
+
+def test_shot_vector_toggle_defaults_off_and_retains_stored_vectors(client: TestClient):
+    """开关默认关闭；关闭只停用轨道，已存帧向量仍保留。"""
+    db_path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with SQLiteVecEngine(db_path, dimensions=4) as engine:
+        if not engine.vector_enabled:
+            pytest.skip("sqlite-vec 当前不可用")
+        engine.batch_upsert_shots(
+            [{"asset_id": "ast_keep", "root_id": "root_keep", "shot_index": 0,
+              "start_sec": 0.0, "end_sec": 2.0, "content_hash": "c" * 64}]
+        )
+        assert engine.replace_shot_embeddings(
+            asset_id="ast_keep",
+            shot_index=0,
+            content_hash="c" * 64,
+            samples=[{"sample_index": 0, "sample_sec": 1.0, "embedding": [1, 0, 0, 0]}],
+        )
+
+    status = client.get("/api/asset-registry/shot-vectors/status", headers=AUTH)
+    assert status.status_code == 200
+    assert status.json()["enabled"] is False
+    assert status.json()["shot_vector_count"] == 1
+
+    enabled = client.post(
+        "/api/asset-registry/shot-vectors/settings", headers=AUTH, json={"enabled": True}
+    )
+    disabled = client.post(
+        "/api/asset-registry/shot-vectors/settings", headers=AUTH, json={"enabled": False}
+    )
+    assert enabled.status_code == disabled.status_code == 200
+    assert disabled.json()["enabled"] is False
+    assert disabled.json()["shot_vector_count"] == 1
+
+
+def test_shot_vector_job_is_accepted_as_async_root_scoped_work(
+    client: TestClient, monkeypatch
+):
+    calls = []
+
+    class _Jobs:
+        def submit(self, kind, payload, actor, key):
+            calls.append((kind, payload, key))
+            return {
+                "job_id": "job_index_00000001",
+                "job": {"status": "queued"},
+                "poll_hint": {"url": "/api/asset-registry/workspace-jobs/job_index_00000001"},
+            }
+
+    monkeypatch.setattr(
+        routes_asset_registry,
+        "get_shot_vector_status",
+        lambda authorization=None, x_user_role="editor": {"enabled": True, "ready": True},
+    )
+    monkeypatch.setattr(routes_asset_registry.index_jobs, "service", lambda: _Jobs())
+    response = client.post(
+        "/api/asset-registry/shot-vectors/jobs",
+        headers={**AUTH, "Idempotency-Key": "shot-vectors-root-test"},
+        json={"root_id": "root-visible"},
+    )
+    assert response.status_code == 202
+    assert response.json()["job_id"] == "job_index_00000001"
+    assert calls == [
+        ("shot_vectors", {"roots": ["root-visible"]}, "shot-vectors-root-test")
+    ]
+
+
+def test_shot_vector_job_rejects_disabled_track(client: TestClient, monkeypatch):
+    monkeypatch.setattr(
+        routes_asset_registry,
+        "get_shot_vector_status",
+        lambda authorization=None, x_user_role="editor": {"enabled": False, "ready": True},
+    )
+    response = client.post(
+        "/api/asset-registry/shot-vectors/jobs",
+        headers=AUTH,
+        json={"root_id": "root-visible"},
+    )
+    assert response.status_code == 409
+    assert response.json()["detail"]["code"] == "SHOT_VECTOR_TRACK_DISABLED"
+
+
+def test_model_readiness_fails_closed_without_local_optional_dependencies(monkeypatch):
+    monkeypatch.setattr(repo.importlib.util, "find_spec", lambda _name: None)
+    status = repo.shot_vector_model_status()
+    assert status["ready"] is False
+    assert status["dependencies_ready"] is False
+    assert set(status["missing_dependencies"]) == {
+        "torch",
+        "transformers",
+        "huggingface_hub",
+    }
+
+
+def test_missing_local_model_skips_frame_decode_without_blocking_base_index(
+    monkeypatch,
+):
+    class _VectorEngine:
+        vector_enabled = True
+
+    monkeypatch.setattr(repo, "shot_vector_model_status", lambda: {"ready": False})
+    monkeypatch.setattr(
+        repo,
+        "_asset_local_video_path",
+        lambda _asset: pytest.fail("模型未就绪时不得解码视频帧"),
+    )
+    result = repo.refresh_asset_shot_vectors(
+        _VectorEngine(),
+        {
+            "asset_id": "ast_missing_model",
+            "metadata": {
+                "video_segments": [
+                    {"start_sec": 0, "end_sec": 2},
+                    {"start_sec": 2, "end_sec": 4},
+                ]
+            },
+        },
+    )
+    assert result == {"shots": 0, "frames": 0, "failed": 2}
 
 
 def test_shot_search_returns_shot_hit_with_jump_timestamp(client: TestClient):

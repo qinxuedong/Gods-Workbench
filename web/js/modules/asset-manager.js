@@ -1206,7 +1206,7 @@ async function reindexAssetSource(sourceId){
     assetReindexRequests.set(sourceId, request);
     return request;
 }
-async function waitForAssetIndexJob(jobId, sourceName='素材库'){
+async function waitForAssetIndexJob(jobId, sourceName='素材库', {shotVectors=false}={}){
     if(!jobId) return null;
     const deadline = Date.now() + 120000;
     while(Date.now() < deadline){
@@ -1215,30 +1215,44 @@ async function waitForAssetIndexJob(jobId, sourceName='素材库'){
             const job = data?.job || {};
             setWorkspaceTaskContext(job);
             if(job.status === 'succeeded'){
-                markIndexState('indexed');
-                await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
-                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
-                setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+                if(shotVectors){
+                    const result = job.result || {};
+                    const failures = Number(result.failed || 0);
+                    setStatus(`“${sourceName}”视觉向量补跑完成：${Number(result.assets || 0)} 项素材、${Number(result.shots || 0)} 个镜头、${Number(result.frames || 0)} 帧${failures ? `，${failures} 项失败` : ''}`);
+                } else {
+                    markIndexState('indexed');
+                    await Promise.allSettled([refreshRegistryAssets(false), refreshRegistryFacetData()]);
+                    if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                    setStatus(`素材库“${sourceName}”索引完成，已扫描 ${Number(job.result?.scanned || 0)} 项`);
+                }
                 return job;
             }
             if(['failed','cancelled','interrupted'].includes(job.status)){
-                markIndexState('failed');
+                if(!shotVectors) markIndexState('failed');
                 const message = ({
                     LUT_CUBE_INVALID:'LUT 文件格式无效，请检查文件头和采样数据',
                     LUT_CUBE_TOO_LARGE:'LUT 文件超过 64 MiB 上限',
                 })[job.error_code] || job.error_code || job.status;
-                await Promise.allSettled([loadAssetAllowedRootPaths(), refreshRegistryFacetData()]);
-                if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
-                setStatus(`素材库“${sourceName}”索引失败：${message}`);
+                if(!shotVectors){
+                    await Promise.allSettled([loadAssetAllowedRootPaths(), refreshRegistryFacetData()]);
+                    if(activeTab === 'registry' || assetBoardById(activeTab)?.system === false) render();
+                }
+                setStatus(shotVectors
+                    ? `“${sourceName}”视觉向量补跑失败：${message}`
+                    : `素材库“${sourceName}”索引失败：${message}`);
                 return job;
             }
             const phase = job.progress?.phase || job.status;
-            const phaseLabel = phase === 'queued' ? '等待扫描' : phase === 'indexing' ? '正在写入索引' : '正在扫描';
-            setStatus(`素材库“${sourceName}”${phaseLabel}… 已扫描 ${Number(job.progress?.scanned || 0)} 项`);
+            const phaseLabel = shotVectors
+                ? (phase === 'queued' ? '等待补跑' : '正在补跑视觉向量')
+                : (phase === 'queued' ? '等待扫描' : phase === 'indexing' ? '正在写入索引' : '正在扫描');
+            setStatus(`素材库“${sourceName}”${phaseLabel}… 已处理 ${Number(job.progress?.scanned || 0)} 项`);
         } catch(_) {}
         await new Promise(resolve => setTimeout(resolve, 500));
     }
-    setStatus(`素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
+    setStatus(shotVectors
+        ? `“${sourceName}”视觉向量补跑仍在后台运行，可稍后刷新查看`
+        : `素材库“${sourceName}”索引仍在后台运行，可稍后刷新查看`);
     return null;
 }
 async function copyTextToClipboard(text){
@@ -7848,7 +7862,8 @@ function renderAssetOrganizeMenu(target){
     const canManageRoot = target.isRoot && canManageAllowedRoots()
         && Boolean(assetRackRootDiskPath(target.rootId))
         && [target.rootId, target.id, ...(target.aliases || [])].some(id => /^root_[a-f0-9]{24}$/i.test(String(id || '')));
-    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
+    const rootActions = canManageRoot ? `<button type="button" role="menuitem" data-asset-organize-shot-vectors disabled title="正在检查本地视觉模型与索引状态"><i data-lucide="scan-search"></i><span>补跑镜头视觉向量</span></button>
+        <button type="button" role="menuitem" data-asset-organize-remove-root><i data-lucide="folder-minus"></i><span>移出资源库</span></button>
         <button type="button" role="menuitem" class="is-danger" data-asset-organize-purge-root><i data-lucide="trash-2"></i><span>清除索引</span></button>` : '';
     return `<div class="asset-organize-menu" id="assetOrganizeMenu" role="menu" aria-label="文件夹整理">
         <div class="asset-organize-menu-title"><i data-lucide="folder"></i><span title="${escapeAttr(label)}">${escapeHtml(label)}</span></div>
@@ -7879,6 +7894,45 @@ function openAssetOrganizeMenu(event){
     const menu = host.firstElementChild;
     if(!menu) return;
     document.body.appendChild(menu);
+    const shotVectorAction = menu.querySelector('[data-asset-organize-shot-vectors]');
+    if(shotVectorAction){
+        const rootId = String(target.rootId || '');
+        apiJsonResponse(assetManagerHttp.request('/api/asset-registry/shot-vectors/status', {method:'GET', credentials:'same-origin'}))
+            .then(status => {
+                if(!shotVectorAction.isConnected) return;
+                const enabled = status?.enabled === true;
+                const ready = status?.ready === true;
+                shotVectorAction.disabled = !(enabled && ready);
+                shotVectorAction.title = enabled && ready
+                    ? '在此资源根内异步补跑可见视频镜头的视觉向量'
+                    : (status?.message || (!enabled ? '请先在设置中启用镜头视觉向量' : '本地视觉模型或索引尚未就绪'));
+            })
+            .catch(() => {
+                if(shotVectorAction.isConnected) shotVectorAction.title = '无法读取本地视觉模型状态';
+            });
+        shotVectorAction.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            event.stopImmediatePropagation();
+            if(shotVectorAction.disabled || !rootId) return;
+            shotVectorAction.disabled = true;
+            setStatus('正在提交镜头视觉向量补跑任务…');
+            try {
+                const nonce = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+                const data = await apiJsonResponse(assetManagerHttp.request('/api/asset-registry/shot-vectors/jobs', {
+                    method:'POST',
+                    credentials:'same-origin',
+                    headers:{'Content-Type':'application/json', 'Idempotency-Key':`shot-vectors:${rootId}:${nonce}`},
+                    body:JSON.stringify({root_id:rootId}),
+                }));
+                closeAssetOrganizeMenu();
+                await waitForAssetIndexJob(data?.job_id, assetOrganizeFolderLabel(target), {shotVectors:true});
+            } catch(err) {
+                shotVectorAction.disabled = false;
+                setStatus(err?.message || '镜头视觉向量补跑启动失败');
+            }
+        });
+    }
     const margin = 10;
     const bounds = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(margin, Math.min(event.clientX, window.innerWidth - bounds.width - margin))}px`;
