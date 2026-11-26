@@ -1,0 +1,8 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 840,
+  "authorization_basis": "GitHub Issue #840 (QIN-669)",
+  "files": [
+    "tests/frontend/qin-669-reference-canvas-title-select-annotation-bg.test.mjs"
+  ]
+}

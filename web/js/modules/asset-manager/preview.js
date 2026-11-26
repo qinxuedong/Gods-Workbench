@@ -242,7 +242,7 @@ import {
     fitDetailMediaCanvas,
     fitDetailMediaCanvasAnnotationToText,
     handleDetailMediaCanvasContextAction,
-    initialDetailMediaCanvasDrawings,
+    beginDetailReferenceTitleEdit, cancelDetailReferenceTitleEdit, commitDetailReferenceTitleEdit, initialDetailMediaCanvasDrawings,
     initialDetailMediaCanvasGroups,
     initialDetailMediaCanvasItems,
     initialDetailMediaCanvasLayout,
@@ -1885,7 +1885,7 @@ function renderDetailViewer(){
             if(savedTop > 0) node.scrollTop = savedTop;
         });
     }
-    refreshIcons();
+    refreshIcons(); if(mediaCanvasMode) window.GWNativeSelect?.enhanceAll?.(overlay);
     if(type === 'audio') initializeDetailAudioWaveform(overlay, item, url);
     if(type === 'video') hydrateVideoStoryboardImages(overlay);
     if(type === 'font') initializeDetailFontPreview(overlay, url);
@@ -2576,7 +2576,7 @@ function showDetailPreview(source, id, options={}){
         // 强度取不到值就会退化成 0（等于没套），这里漏一个字段就是「预览看起来没生效」。
         lutStrength:1, lutCompare:'applied', lutListScrollTop:0,
         mediaCanvasLut:{}, mediaCanvasLutPanel:'', mediaLutMenu:{open:false, step:'asset', assetId:''},
-        referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
+        referenceCanvasId:storedReferenceCanvas ? String(item.canvas_id || '') : '', referenceCanvasTitle:String(options.referenceCanvasTitle || (storedReferenceCanvas ? item.canvas_title || '参考画布' : '参考画布')), referenceCanvasTitleEditing:false, referenceCanvasTitleEditOriginal:'', referenceCanvasMode, referenceCanvasStructureId:referenceCanvasMode ? String(options.referenceCanvasStructureId || '') : '', referenceCanvasSaving:false,
         originTab:options.originTab || activeTab, returnFocus:options.returnFocus || document.activeElement
     });
     stopAssetHoverPreview();
@@ -4148,6 +4148,12 @@ document.addEventListener('click', event => {
     }
 });
 document.addEventListener('dblclick', event => {
+    const referenceTitleDisplay = event.target.closest?.('[data-detail-reference-title-display]');
+    if(referenceTitleDisplay){
+        event.preventDefault(); event.stopPropagation();
+        beginDetailReferenceTitleEdit();
+        return;
+    }
     const editorCanvas=event.target.closest?.('[data-image-editor-canvas]');
     if(detailImageEditorState && editorCanvas){
         event.preventDefault(); event.stopPropagation();
@@ -4349,6 +4355,30 @@ document.addEventListener('change', event => {
     if(detailMediaCanvasColorSnapshot) pushDetailMediaCanvasHistory(detailMediaCanvasColorSnapshot);
     setDetailMediaCanvasColorSnapshot(null);
 });
+document.addEventListener('focusout', event => {
+    if(detailViewerState.referenceCanvasTitleEditing && event.target?.matches?.('[data-detail-reference-title]')){
+        requestAnimationFrame(() => {
+            if(!detailViewerState.referenceCanvasTitleEditing) return;
+            if(document.activeElement?.matches?.('[data-detail-reference-title]')) return;
+            commitDetailReferenceTitleEdit(true);
+        });
+    }
+});
+document.addEventListener('keydown', event => {
+    if(!detailViewerState.open || !detailViewerState.referenceCanvasTitleEditing) return;
+    if(!event.target?.matches?.('[data-detail-reference-title]')) return;
+    if(event.key === 'Escape'){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        cancelDetailReferenceTitleEdit();
+        return;
+    }
+    if(event.key === 'Enter'){
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        commitDetailReferenceTitleEdit(true);
+    }
+}, true);
 document.addEventListener('dragstart', beginDetailMediaLibraryDrag);
 ['loadedmetadata','durationchange','timeupdate','play','pause','ended','volumechange','ratechange'].forEach(type => document.addEventListener(type,handleDetailVideoMediaEvent,true));
 document.addEventListener('input', updateDetailImageEditorProperty);

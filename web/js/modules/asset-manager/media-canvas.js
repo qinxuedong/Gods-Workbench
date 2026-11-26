@@ -721,18 +721,16 @@ function renderDetailMediaCanvasToolButtons(){
         <button class="hw-btn" type="button" data-detail-media-context-action="align-center-y" title="垂直居中"><i data-lucide="align-center-horizontal"></i></button>
     </div>
     <div class="asset-detail-media-tool-group" role="group" aria-label="规格化">
-        <label class="asset-detail-media-normalize-basis" title="规格化尺寸基准"><span>基准</span><select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${normalizeBasis === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${normalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${normalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></label>
+        <label class="asset-detail-media-normalize-basis" title="规格化尺寸基准"><span>基准</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${normalizeBasis === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${normalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${normalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></div></label>
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button>
     </div>
-    <div class="asset-detail-media-note-colors" aria-label="注释颜色">
-        <label title="注释背景色"><span>背景</span><input type="color" data-detail-annotation-color="background" value="${escapeAttr(detailMediaCanvasSelectedAnnotationColor('background'))}"></label>
-    </div>
+    <!-- 【QIN-669】注释底色已移至选中/编辑注释后的画布内注释设置卡片 [data-detail-annotation-settings-card]。 -->
     <!-- 【QIN-580】原「文字」控件（注释文字色）位置改为 LUT 入口。 -->
     ${renderDetailMediaLutButton()}
     <div class="asset-detail-media-tool-group asset-detail-media-export-tools" role="group" aria-label="输出">
-        <label class="asset-detail-media-export-scope" title="PNG 输出范围"><span>范围</span><select data-detail-media-export-scope aria-label="PNG 输出范围"><option value="all" ${detailViewerState.mediaCanvasExportScope !== 'selection' ? 'selected' : ''}>全部画布</option><option value="selection" ${detailViewerState.mediaCanvasExportScope === 'selection' ? 'selected' : ''}>当前选中</option></select></label>
+        <label class="asset-detail-media-export-scope" title="PNG 输出范围"><span>范围</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-export-scope aria-label="PNG 输出范围"><option value="all" ${detailViewerState.mediaCanvasExportScope !== 'selection' ? 'selected' : ''}>全部画布</option><option value="selection" ${detailViewerState.mediaCanvasExportScope === 'selection' ? 'selected' : ''}>当前选中</option></select></div></label>
         <button class="hw-btn" type="button" data-detail-media-context-action="export"><i data-lucide="download"></i><span>导出</span></button>
         <button class="hw-btn" type="button" data-detail-media-context-action="save-image"><i data-lucide="image-down"></i><span>保存图片</span></button>
         <small>${detailViewerState.mediaCanvasExportScope === 'selection' ? (selectedCount ? `输出已选 ${selectedCount} 项` : '请先选择对象') : '输出全部画布'}</small>
@@ -753,7 +751,7 @@ function renderDetailMediaCanvasContextMenu(){
         <section><header><span>排列</span><small>当前摆放顺序</small></header><div><button type="button" data-detail-media-context-action="arrange-grid" title="网格排列"><i data-lucide="grid-2x2"></i></button><button type="button" data-detail-media-context-action="arrange-horizontal" title="水平排列"><i data-lucide="rows-3"></i></button><button type="button" data-detail-media-context-action="arrange-vertical" title="垂直排列"><i data-lucide="columns-3"></i></button></div></section>
         <section><header><span>分组</span><small>整体移动缩放</small></header><div><button type="button" data-detail-media-context-action="group" title="打组 Ctrl+G" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="group"></i></button><button type="button" data-detail-media-context-action="ungroup" title="解组 Ctrl+Shift+G" ${!detailMediaCanvasSelectionOrder().some(id => detailMediaCanvasGroup(id)) ? 'disabled' : ''}><i data-lucide="ungroup"></i></button></div></section>
         <section class="${selectedCount < 2 ? 'is-disabled' : ''}"><header><span>对齐</span><small>最后选择为基准</small></header><div><button type="button" data-detail-media-context-action="align-left" title="左对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-start-vertical"></i></button><button type="button" data-detail-media-context-action="align-center-x" title="水平居中" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-center-vertical"></i></button><button type="button" data-detail-media-context-action="align-right" title="右对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-end-vertical"></i></button><button type="button" data-detail-media-context-action="align-top" title="顶部对齐" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-start-horizontal"></i></button><button type="button" data-detail-media-context-action="align-center-y" title="垂直居中" ${selectedCount < 2 ? 'disabled' : ''}><i data-lucide="align-center-horizontal"></i></button></div></section>
-        <section><header><span>规格化</span><select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${(detailViewerState.mediaCanvasNormalizeBasis || 'first') === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${detailViewerState.mediaCanvasNormalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${detailViewerState.mediaCanvasNormalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></header><div><button type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button><button type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button><button type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button></div></section>
+        <section><header><span>规格化</span><div class="gw-select-shell"><select class="gw-native-select-input" data-gw-select data-detail-media-normalize-basis aria-label="规格化尺寸基准"><option value="first" ${(detailViewerState.mediaCanvasNormalizeBasis || 'first') === 'first' ? 'selected' : ''}>第一个</option><option value="average" ${detailViewerState.mediaCanvasNormalizeBasis === 'average' ? 'selected' : ''}>平均</option><option value="last" ${detailViewerState.mediaCanvasNormalizeBasis === 'last' ? 'selected' : ''}>最后一个</option></select></div></header><div><button type="button" data-detail-media-context-action="normalize-width" title="统一宽度"><i data-lucide="move-horizontal"></i></button><button type="button" data-detail-media-context-action="normalize-height" title="统一高度"><i data-lucide="move-vertical"></i></button><button type="button" data-detail-media-context-action="normalize-original" title="恢复原始尺寸"><i data-lucide="maximize"></i></button></div></section>
     </div>`;
 }
 function renderDetailMediaCanvas(source, currentItem){
@@ -813,6 +811,8 @@ function renderDetailMediaCanvas(source, currentItem){
                 }).join('')}</div>
             </aside>
             ${renderDetailMediaCanvasContextMenu()}
+            <!-- QIN-669 注释设置卡片（选中或编辑注释时显示，未选中时不显示） -->
+            ${renderDetailMediaAnnotationSettingsCard()}
         </div>
     </div>`;
 }
@@ -1255,6 +1255,7 @@ function syncDetailMediaCanvasSelectionDom(){
         node.classList.toggle('is-selected-via-group', selectedViaGroup);
         node.setAttribute('aria-selected', String(isSelected || selectedViaGroup));
     });
+    syncDetailMediaAnnotationSettingsCardDom();
 }
 function syncDetailMediaCanvasActiveDom(){
     const items = detailMediaCanvasItems();
@@ -1463,7 +1464,7 @@ function finishDetailMediaCanvasAnnotationEdit(){
 }
 function beginDetailMediaCanvasPan(event){
     const viewport = event.target.closest?.('[data-detail-media-canvas-viewport]');
-    if(!viewport || event.target.closest?.('.asset-detail-media-minimap,.asset-detail-media-context-menu,.asset-detail-video-dock,.asset-detail-media-annotation-editor,[data-detail-media-lut-split]')) return;
+    if(!viewport || event.target.closest?.('[data-detail-annotation-settings-card],.asset-detail-media-minimap,.asset-detail-media-context-menu,.asset-detail-video-dock,.asset-detail-media-annotation-editor,[data-detail-media-lut-split]')) return;
     if(event.button === 1 || (event.button === 0 && detailMediaCanvasSpacePressed)){
         event.preventDefault();
         closeDetailMediaCanvasContextMenu();
@@ -2527,9 +2528,13 @@ function renderDetailMediaCanvasToolbar(source, currentItem){
     const canPersist = items.length > 0 || Boolean(detailViewerState.referenceCanvasId);
     const item = currentItem || detailViewerState.items[detailViewerState.index] || detailViewerItem(source, detailViewerState.id) || activeItem || {};
     const editableImage = detailMediaCanvasSingleSelectedImageItem();
+    const title = detailViewerState.referenceCanvasTitle || '参考画布';
+    const titleControl = detailViewerState.referenceCanvasTitleEditing
+        ? `<label class="asset-detail-reference-title is-editing" data-detail-reference-title-wrap><i data-lucide="map"></i><input type="text" data-detail-reference-title value="${escapeAttr(title)}" maxlength="80" aria-label="参考画布名称"></label>`
+        : `<span class="asset-detail-reference-title" data-detail-reference-title-display title="双击修改参考画布名称" aria-label="参考画布名称：${escapeAttr(title)}，双击修改"><i data-lucide="map"></i><span>${escapeHtml(title)}</span></span>`;
     return `<div class="asset-detail-media-canvas-toolbar">
         <div class="asset-detail-media-toolbar-primary">
-            <label><i data-lucide="map"></i><input type="text" data-detail-reference-title value="${escapeAttr(detailViewerState.referenceCanvasTitle || '参考画布')}" maxlength="80" aria-label="参考画布"></label>
+            ${titleControl}
             <span class="asset-detail-media-canvas-filename" title="${escapeAttr(item.name || '')}"><strong>${escapeHtml(item.name || '未命名素材')}</strong></span>
             <span><b>${items.length}</b> 个素材</span>
             <div>
@@ -2590,4 +2595,76 @@ export {
     toggleDetailMediaCanvasLibrary,
     handleCoverflowChange,
     handleCoverflowAddToReferenceCanvas,
+    beginDetailReferenceTitleEdit,
+    commitDetailReferenceTitleEdit,
+    cancelDetailReferenceTitleEdit,
 };
+
+function detailMediaCanvasSelectedAnnotation(){
+    const selectedIds = detailMediaCanvasSelectedIds();
+    const selectedNote = [...selectedIds].map(detailMediaCanvasAnnotation).find(Boolean);
+    if(selectedNote) return selectedNote;
+    if(detailViewerState.mediaCanvasEditingAnnotationId){
+        return detailMediaCanvasAnnotation(detailViewerState.mediaCanvasEditingAnnotationId) || null;
+    }
+    return null;
+}
+
+function renderDetailMediaAnnotationSettingsCard(){
+    const note = detailMediaCanvasSelectedAnnotation();
+    const visible = Boolean(note);
+    const backgroundColor = note?.backgroundColor || '#202622';
+    return `<aside class="asset-detail-annotation-settings-card" data-detail-annotation-settings-card aria-label="注释设置" ${visible ? '' : 'hidden'} aria-hidden="${String(!visible)}">
+        <header class="asset-detail-annotation-settings-head"><span>注释</span></header>
+        <div class="asset-detail-annotation-settings-body">
+            <label title="注释背景色"><span>背景</span><input type="color" data-detail-annotation-color="background" value="${escapeAttr(backgroundColor)}" aria-label="注释背景色"></label>
+        </div>
+    </aside>`;
+}
+
+function syncDetailMediaAnnotationSettingsCardDom(){
+    const card = document.querySelector('.asset-detail-viewer [data-detail-annotation-settings-card]');
+    if(!card) return;
+    const note = detailMediaCanvasSelectedAnnotation();
+    const visible = Boolean(note);
+    card.hidden = !visible;
+    if(visible) card.removeAttribute('hidden');
+    else card.setAttribute('hidden', '');
+    card.setAttribute('aria-hidden', String(!visible));
+    if(note){
+        const input = card.querySelector('[data-detail-annotation-color="background"]');
+        if(input) input.value = note.backgroundColor || '#202622';
+    }
+}
+
+function beginDetailReferenceTitleEdit(){
+    if(!detailViewerState.open) return;
+    detailViewerState.referenceCanvasTitleEditOriginal = detailViewerState.referenceCanvasTitle || '参考画布';
+    detailViewerState.referenceCanvasTitleEditing = true;
+    renderDetailViewer();
+    requestAnimationFrame(() => {
+        const input = document.querySelector('.asset-detail-viewer [data-detail-reference-title]');
+        if(input){
+            input.focus({preventScroll:true});
+            input.select?.();
+        }
+    });
+}
+
+function commitDetailReferenceTitleEdit(saveFromInput=true){
+    if(!detailViewerState.referenceCanvasTitleEditing) return;
+    const input = document.querySelector('.asset-detail-viewer [data-detail-reference-title]');
+    const raw = saveFromInput && input ? input.value : detailViewerState.referenceCanvasTitle;
+    detailViewerState.referenceCanvasTitle = String(raw || '').trim().slice(0, 80) || '参考画布';
+    detailViewerState.referenceCanvasTitleEditing = false;
+    detailViewerState.referenceCanvasTitleEditOriginal = '';
+    renderDetailViewer();
+}
+
+function cancelDetailReferenceTitleEdit(){
+    if(!detailViewerState.referenceCanvasTitleEditing) return;
+    detailViewerState.referenceCanvasTitle = detailViewerState.referenceCanvasTitleEditOriginal || '参考画布';
+    detailViewerState.referenceCanvasTitleEditing = false;
+    detailViewerState.referenceCanvasTitleEditOriginal = '';
+    renderDetailViewer();
+}
