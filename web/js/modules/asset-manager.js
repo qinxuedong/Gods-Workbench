@@ -573,11 +573,11 @@ const REGISTRY_STRUCTURE_QUERY_CHUNK_SIZE = 500;
 const REGISTRY_CACHE_MAX_SIZE = 20; // 【优化问题1】限制缓存大小，避免内存膨胀
 // 【QIN-518】视口提前量：卡片在进入视口前发起预览解码，消除滚动时的白块与渐现延迟。
 // 【QIN-609】提前量从 200px 收窄到 96px：点击-settle 协议内进入队列的预览请求
-// 收敛到视口必需集（AC3 preview 尾巴），滚动缓冲改由 8 并发队列 + scroll rAF 激活兜底。
+// 收敛到视口必需集（AC3 preview 尾巴），滚动缓冲改由 4 并发队列 + scroll rAF 激活兜底。
 const REGISTRY_PREVIEW_ROOT_MARGIN = '96px 0px';
 const REGISTRY_PREVIEW_SCROLL_AHEAD_COUNT = 20;
 const REGISTRY_PREVIEW_SCROLL_PRELOAD_INTERVAL_MS = 120;
-const REGISTRY_PREVIEW_CONCURRENCY = 8;
+const REGISTRY_PREVIEW_CONCURRENCY = 4;
 const registryPreviewImageCache = new Map();
 const REGISTRY_VIRTUAL_WINDOW_SIZE = 120;
 const REGISTRY_VIRTUAL_OVERSCAN_ROWS = 3;
@@ -585,6 +585,8 @@ const REGISTRY_VIRTUAL_GAP = 10;
 const REGISTRY_PREVIEW_PLACEHOLDER = 'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%221%22 height=%221%22/%3E';
 let registryPreviewQueue = [];
 let registryPreviewActive = 0;
+let registryPreviewInteractionCount = 0;
+let registryPreviewScopeKey = '';
 // 【QIN-609】在途预览登记：切目录 DOM 重建会取消在途请求且 load/error 不再触发，
 // pump 每轮先清扫断连项释放槽位，防止并发上限被泄漏占满导致队列永久卡死。
 const registryPreviewInFlight = new Set();
@@ -3069,7 +3071,7 @@ function renderRegistryRecycleButton(item={}, className=''){
     return `<button class="${escapeAttr(className)} registry-card-recycle" type="button" data-registry-recycle="${escapeAttr(item.id || '')}" title="${escapeAttr(title)}" aria-label="删除 ${escapeAttr(item.name || '素材')}" ${disabled ? 'disabled' : ''}><i data-lucide="trash-2"></i></button>`;
 }
 // 【QIN-609】全部缩略图统一走延迟队列：删除旧 immediate 直加载路径（前 24/30 张
-// 保留真实 src 会在 8 并发队列之外同时发起请求，破坏并发上限与视口优先）。
+// 保留真实 src 会在 4 并发队列之外同时发起请求，破坏并发上限与视口优先）。
 // 首屏由 scheduleRegistryPreviewImages 的 fallback activateVisible 首帧激活，经队列消化。
 function deferRegistryPreviewThumb(markup){
     const raw = String(markup || '');
@@ -3115,9 +3117,35 @@ function renderRegistryList(items=[]){
 function registryVirtualizationEnabled(items=[], board=null){
     return registryLayout === 'grid'
         && registryGroupMode === 'none'
-        && !registryAssetStructures.size
         && items.length > REGISTRY_VIRTUAL_WINDOW_SIZE
         && (activeTab === 'registry' || board?.system === false);
+}
+function beginRegistryPreviewInteraction(){
+    registryPreviewInteractionCount += 1;
+    let released = false;
+    return () => {
+        if(released) return;
+        released = true;
+        registryPreviewInteractionCount = Math.max(0, registryPreviewInteractionCount - 1);
+        if(registryPreviewInteractionCount === 0) pumpRegistryPreviewQueue();
+    };
+}
+function withRegistryPreviewInteraction(operation){
+    const release = beginRegistryPreviewInteraction();
+    let result;
+    try { result = operation(); }
+    catch(error){ release(); throw error; }
+    return Promise.resolve(result).finally(release);
+}
+function prioritizedRegistryPreviewCall(action, ...args){
+    return withRegistryPreviewInteraction(() => gwCall('preview', action, ...args));
+}
+function syncRegistryPreviewScope(queryKey=registryQueryString()){
+    const nextScopeKey = [activeTab, registryLayout, queryKey].join('\u001f');
+    if(registryPreviewScopeKey && registryPreviewScopeKey !== nextScopeKey){
+        cancelRegistryPreviewWorkForScopeChange();
+    }
+    registryPreviewScopeKey = nextScopeKey;
 }
 function registryVirtualStateKey(items=[]){
     return [
@@ -3391,7 +3419,53 @@ function updateRegistryVirtualWindow(force=false, skipMeasurements=false){
     if(sameWindow) return false;
     const registryPreviewCache = captureRegistryPreviewImages();
     grid.style.setProperty('--registry-virtual-height', `${layout.totalHeight.toFixed(2)}px`);
-    grid.innerHTML = registryVirtualGridMarkup(items, layout, range).replace(/^<div class="registry-grid registry-grid-virtualized"[^>]*>/, '').replace(/<\/div>\s*$/, '');
+    if(grid.ownerDocument?.createElement && typeof grid.insertBefore === 'function'){
+        const template = grid.ownerDocument.createElement('template');
+        template.innerHTML = registryVirtualGridMarkup(items, layout, range);
+        const nextGrid = template.content.querySelector('[data-registry-virtual-grid]');
+        if(nextGrid){
+            const currentCards = new Map([...grid.querySelectorAll(':scope > .registry-card[data-registry-card]')]
+                .map(card => [String(card.dataset.registryCard || ''), card]));
+            const nextCards = [...nextGrid.querySelectorAll(':scope > .registry-card[data-registry-card]')];
+            const wantedKeys = new Set(nextCards.map(card => String(card.dataset.registryCard || '')));
+            const nextTopSpacer = nextGrid.querySelector(':scope > [data-registry-virtual-spacer="top"]');
+            const nextBottomSpacer = nextGrid.querySelector(':scope > [data-registry-virtual-spacer="bottom"]');
+            let topSpacer = grid.querySelector(':scope > [data-registry-virtual-spacer="top"]');
+            let bottomSpacer = grid.querySelector(':scope > [data-registry-virtual-spacer="bottom"]');
+            if(!topSpacer && nextTopSpacer){
+                topSpacer = nextTopSpacer;
+                grid.insertBefore(topSpacer, grid.firstChild);
+            }
+            if(!bottomSpacer && nextBottomSpacer){
+                bottomSpacer = nextBottomSpacer;
+                grid.append(bottomSpacer);
+            }
+            if(topSpacer && nextTopSpacer) topSpacer.style.height = nextTopSpacer.style.height;
+            if(bottomSpacer && nextBottomSpacer) bottomSpacer.style.height = nextBottomSpacer.style.height;
+            currentCards.forEach((card, id) => {
+                if(!wantedKeys.has(id)) card.remove();
+            });
+            const desiredCards = nextCards.map(nextCard => {
+                const id = String(nextCard.dataset.registryCard || '');
+                const currentCard = currentCards.get(id);
+                if(!currentCard) return nextCard;
+                ['--registry-virtual-left','--registry-virtual-top','--registry-virtual-width'].forEach(property => {
+                    const value = nextCard.style.getPropertyValue(property);
+                    if(currentCard.style.getPropertyValue(property) !== value) currentCard.style.setProperty(property, value);
+                });
+                return currentCard;
+            });
+            let reference = bottomSpacer;
+            for(let index = desiredCards.length - 1; index >= 0; index -= 1){
+                const card = desiredCards[index];
+                if(card.parentElement !== grid || card.nextElementSibling !== reference) grid.insertBefore(card, reference);
+                reference = card;
+            }
+            if(topSpacer && grid.firstElementChild !== topSpacer) grid.insertBefore(topSpacer, grid.firstChild);
+            if(bottomSpacer && bottomSpacer.parentElement !== grid) grid.append(bottomSpacer);
+        }
+    }
+    // 键控差分替代旧的 grid.innerHTML = 整窗重建路径，保留仍在窗口内的卡片实例。
     restoreRegistryPreviewImages(registryPreviewCache);
     grid.querySelectorAll('img[data-registry-preview-loaded="true"]').forEach(applyRegistryVirtualPreviewAspect);
     registryVirtualState = {
@@ -3665,7 +3739,7 @@ function isRegistryAbortError(error){
 // 与 refreshRegistryBootstrapTracked 同口径：返回**原始 request**，业务调用方的
 // await / .then / .catch 仍能拿到列表 500 等真实失败，终态登记不吞错误。
 function refreshRegistryAssets(renderNow=true, options={}){
-    return trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow, options));
+    return withRegistryPreviewInteraction(() => trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow, options)));
 }
 // 【QIN-603】一次点击只出「一次加载态 + 一次终态」：
 // - 目录索引按根作用域签名门控（AC2：筛选不变不重拉 /api/asset-registry/folders）；
@@ -3676,8 +3750,10 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
     const reuseCache = Boolean(options?.reuseCache);
     const invalidateCache = options?.invalidateCache === undefined ? !reuseCache : Boolean(options.invalidateCache);
     // 记下「进来时是不是已经在为同一个查询画加载态」：可能是重复激活 / 连点同一目录。
-    const loadingSameScope = registryLoading && registryLoadingScopeKey === registryQueryString();
+    const queryKey = registryQueryString();
+    const loadingSameScope = registryLoading && registryLoadingScopeKey === queryKey;
     const requestId = ++registryRequestSeq;
+    syncRegistryPreviewScope(queryKey);
     abortRegistryAssetRequests();
     const signal = beginRegistryAssetRequest();
     registryLoading = true;
@@ -3699,7 +3775,6 @@ async function refreshRegistryAssetsRequest(renderNow=true, options={}){
     registryPendingNewIds = new Set();
     registryPendingVanishedIds = new Set();
     registryPendingNewItems.clear();
-    const queryKey = registryQueryString();
     registryLoadingScopeKey = queryKey;
     // 同一个查询已经在画加载态了就不再重画一帧：可见内容完全一样，重画只是多一帧
     // （慢响应场景下这一帧会被算成「一次点击两次重绘」）。
@@ -4178,9 +4253,9 @@ async function openRegistryAssetFromGlobalSearch(assetId, startTime = null){
     registryQuery = '';
     registryDetailPanelCollapsed = false;
     await refreshRegistryAssets(false);
-    await gwCall('preview', 'openRegistryAsset', id);
+    await prioritizedRegistryPreviewCall('openRegistryAsset', id);
     if(startTime != null && Number.isFinite(Number(startTime))){
-        gwCall('preview', 'showDetailPreview', 'registry', id, { startTime: Number(startTime) });
+        prioritizedRegistryPreviewCall('showDetailPreview', 'registry', id, { startTime: Number(startTime) });
     }
 }
 function registryNavFolderActive(){
@@ -5129,12 +5204,21 @@ function scheduleRegistryVirtualRemeasure(){
         if(changed) updateRegistryVirtualWindow(true);
     });
 }
+function cancelRegistryPreviewWorkForScopeChange(){
+    registryPreviewQueueRevision += 1;
+    registryPreviewQueue.forEach(image => {
+        if(image?.dataset) image.dataset.registryPreviewQueued = 'false';
+    });
+    registryPreviewQueue = [];
+    [...registryPreviewInFlight].forEach(entry => entry.cancel?.());
+}
 function pumpRegistryPreviewQueue(){
     // 【QIN-609】清扫在途登记里的断连项：切目录 DOM 重建取消请求后 load/error 不再触发，
     // 不清扫会让泄漏的槽位占满并发上限、队列永久卡死（改前即存在的缺陷，本票修复）。
     for(const entry of registryPreviewInFlight){
         if(!entry.image.isConnected) entry.finish(undefined);
     }
+    if(registryPreviewInteractionCount > 0) return;
     while(registryPreviewActive < REGISTRY_PREVIEW_CONCURRENCY && registryPreviewQueue.length){
         const image = registryPreviewQueue.shift();
         if(!image?.isConnected) continue;
@@ -5145,25 +5229,43 @@ function pumpRegistryPreviewQueue(){
         image.dataset.registryPreviewLoaded = 'true';
         if(!source) continue;
         registryPreviewActive += 1;
-        const entry = {image, settled: false};
+        const entry = {image, source, settled:false, cancelled:false, onLoad:null, onError:null};
         entry.finish = (success) => {
             if(entry.settled) return;
             entry.settled = true;
             registryPreviewInFlight.delete(entry);
             registryPreviewActive = Math.max(0, registryPreviewActive - 1);
+            image.removeEventListener?.('load', entry.onLoad);
+            image.removeEventListener?.('error', entry.onError);
             // 【QIN-609】失败不误标成功：error 置 failed 标记（不重试、不进虚拟化缓存）；
             // 断连节点跳过 aspect/remeasure 副作用（槽位照常释放）。
             if(image.isConnected){
-                if(success === false) image.dataset.registryPreviewFailed = 'true';
-                else image.removeAttribute('data-registry-preview-failed');
-                if(image.closest?.('[data-registry-virtual-grid]')) applyRegistryVirtualPreviewAspect(image);
-                scheduleRegistryVirtualRemeasure();
+                if(entry.cancelled){
+                    image.removeAttribute('src');
+                    image.dataset.registryPreviewSrc = source;
+                    image.dataset.registryPreviewQueued = 'false';
+                    image.dataset.registryPreviewLoaded = 'false';
+                    image.removeAttribute('aria-busy');
+                    image.removeAttribute('data-registry-preview-failed');
+                } else {
+                    if(success === false) image.dataset.registryPreviewFailed = 'true';
+                    else image.removeAttribute('data-registry-preview-failed');
+                    if(image.closest?.('[data-registry-virtual-grid]')) applyRegistryVirtualPreviewAspect(image);
+                    scheduleRegistryVirtualRemeasure();
+                }
             }
             pumpRegistryPreviewQueue();
         };
+        entry.cancel = () => {
+            if(entry.settled) return;
+            entry.cancelled = true;
+            entry.finish(undefined);
+        };
         registryPreviewInFlight.add(entry);
-        image.addEventListener('load', () => entry.finish(true), {once:true});
-        image.addEventListener('error', () => entry.finish(false), {once:true});
+        entry.onLoad = () => entry.finish(true);
+        entry.onError = () => entry.finish(false);
+        image.addEventListener('load', entry.onLoad, {once:true});
+        image.addEventListener('error', entry.onError, {once:true});
         image.src = source;
         if(image.complete) queueMicrotask(() => entry.finish(true));
     }
@@ -5484,6 +5586,7 @@ function render(){
         gwCall('settings', 'renderGlobalDirectorySettings');
         return;
     }
+    syncRegistryPreviewScope();
     // 【QIN-603 R3】列表刷新在途且同一查询的加载态已经画过时，/status、项目计数、
     // 结构查询、外壳快照等异步入口再整页重绘只会画出一模一样的第二帧加载态。
     // 折叠它以保证一次点击 ≤2 帧；终态 render 时 registryLoading 已置 false，
@@ -8432,7 +8535,7 @@ async function handleClick(event){
             }
             return;
         }
-        if(structure?.current_asset_id) await gwCall('preview', 'openRegistryAsset', structure.current_asset_id);
+        if(structure?.current_asset_id) await prioritizedRegistryPreviewCall('openRegistryAsset', structure.current_asset_id);
         return;
     }
     if(target.closest?.('[data-registry-detail-toggle]')){ gwCall('preview', 'toggleRegistryDetailPanel'); return; }
@@ -8443,7 +8546,7 @@ async function handleClick(event){
     }
     const registryLinkedBoard = target.closest?.('[data-registry-linked-board]');
     if(registryLinkedBoard){
-        await gwCall('preview', 'openRegistryAssetInBoard', registryLinkedBoard.dataset.registryLinkedBoard || '', registryLinkedBoard.dataset.assetId || selectedRegistryAssetId);
+        await prioritizedRegistryPreviewCall('openRegistryAssetInBoard', registryLinkedBoard.dataset.registryLinkedBoard || '', registryLinkedBoard.dataset.assetId || selectedRegistryAssetId);
         return;
     }
     if(target.closest?.('[data-registry-recycle-bin-open]')){ await gwCall('recycle', 'openRegistryRecycleBin'); return; }
@@ -8866,7 +8969,7 @@ async function handleClick(event){
     const registryTagDelete = target.closest?.('[data-registry-tag-delete]');
     if(registryTagDelete){ await gwCall('tags', 'deleteRegistryAssetTag', registryTagDelete.dataset.assetId || '', registryTagDelete.dataset.registryTagDelete || ''); return; }
     const registryRelatedOpen = target.closest?.('[data-registry-related-open]');
-    if(registryRelatedOpen){ await gwCall('preview', 'openRegistryRelatedAsset', registryRelatedOpen.dataset.registryRelatedOpen || ''); return; }
+    if(registryRelatedOpen){ await prioritizedRegistryPreviewCall('openRegistryRelatedAsset', registryRelatedOpen.dataset.registryRelatedOpen || ''); return; }
     const registryRelationDelete = target.closest?.('[data-registry-relation-delete]');
     if(registryRelationDelete){ await gwCall('preview', 'removeRegistryAssetRelation', registryRelationDelete.dataset.assetId || '', registryRelationDelete.dataset.registryRelationDelete || ''); return; }
     const registryDeleteRemote = target.closest?.('[data-registry-delete-remote]');
@@ -9094,7 +9197,7 @@ async function handleClick(event){
     }
 
     const registryPreview = target.closest?.('[data-registry-preview]');
-    if(registryPreview){ gwCall('preview', 'showDetailPreview', 'registry',registryPreview.dataset.registryPreview||'');return; }
+    if(registryPreview){ prioritizedRegistryPreviewCall('showDetailPreview', 'registry',registryPreview.dataset.registryPreview||'');return; }
     if(target.closest?.('[data-project-create]')){ await createRegistryProject();return; }
     const projectBtn = target.closest?.('[data-project]');
     if(projectBtn){ selectedProjectEntityId='';await gwCall('organize', 'loadProjectBoard', projectBtn.dataset.project||'');return; }
@@ -11658,7 +11761,7 @@ window.addEventListener('message', event => {
     if(event.data?.type === 'gw-touchbar-action'){
         if(event.origin !== location.origin || event.source !== window.parent || event.data.version !== 1) return;
         if(event.data.action_id === 'asset.open-detail' && selectedRegistryAssetId){
-            gwCall('preview', 'openRegistryAsset', selectedRegistryAssetId).catch(err => setStatus(err.message || '打开素材失败'));
+            prioritizedRegistryPreviewCall('openRegistryAsset', selectedRegistryAssetId).catch(err => setStatus(err.message || '打开素材失败'));
             return;
         }
         if(event.data.action_id === 'asset.add-to-canvas' && selectedRegistryAssetId){

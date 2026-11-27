@@ -23,8 +23,8 @@ test('QIN-609 AC1：全部缩略图统一走并发队列，immediate 直加载�
     assert.doesNotMatch(defer, /if\(immediate\)/);
     // 三处调用点（列表 / 结构 / 网格）不再传 immediate 第二参数。
     assert.doesNotMatch(source, /deferRegistryPreviewThumb\([^)]*,\s*Number\(index\)/);
-    // 并发上限保持 8（票面建议 6–8）。
-    assert.match(source, /const REGISTRY_PREVIEW_CONCURRENCY = 8;/);
+    // QIN-673：同源 HTTP/1.1 6 连接池至少为交互请求保留两条通道。
+    assert.match(source, /const REGISTRY_PREVIEW_CONCURRENCY = 4;/);
 });
 
 test('QIN-609 AC1/AC3：IO 视口提前量收窄到 96px，settle 协议内请求收敛到视口必需集', () => {
@@ -47,8 +47,9 @@ test('QIN-609 运行时：视口内激活插队首，先于先入队的 wheel �
         'document',
         `const registryPreviewQueue = [];
         let registryPreviewActive = 0;
+        let registryPreviewInteractionCount = 0;
         const registryPreviewInFlight = new Set();
-        const REGISTRY_PREVIEW_CONCURRENCY = 8;
+        const REGISTRY_PREVIEW_CONCURRENCY = 4;
         const applyRegistryVirtualPreviewAspect = () => {};
         const scheduleRegistryVirtualRemeasure = () => {};
         ${functionBody('pumpRegistryPreviewQueue')}
@@ -69,8 +70,8 @@ test('QIN-609 运行时：视口内激活插队首，先于先入队的 wheel �
         removeAttribute(){},
         closest(){ return null; },
     });
-    // 并发上限 8：先用 8 个占位项占满槽位（load 挂起不触发），再对比两类激活的出队顺序。
-    const slots = Array.from({length: 8}, (_, i) => makeImg(`slot-${i}`));
+    // 并发上限 4：先用 4 个占位项占满槽位（load 挂起不触发），再对比两类激活的出队顺序。
+    const slots = Array.from({length: 4}, (_, i) => makeImg(`slot-${i}`));
     slots.forEach(img => assert.ok(activate(img, false), '占位项出队'));
     // wheel 预载项（队尾 push）
     const pre1 = makeImg('pre1');
@@ -93,8 +94,9 @@ test('QIN-609 运行时：断连项由 pump 清扫释放槽位，切目录后队
         'document',
         `const registryPreviewQueue = [];
         let registryPreviewActive = 0;
+        let registryPreviewInteractionCount = 0;
         const registryPreviewInFlight = new Set();
-        const REGISTRY_PREVIEW_CONCURRENCY = 8;
+        const REGISTRY_PREVIEW_CONCURRENCY = 4;
         const applyRegistryVirtualPreviewAspect = () => {};
         const scheduleRegistryVirtualRemeasure = () => {};
         ${functionBody('pumpRegistryPreviewQueue')}
@@ -114,11 +116,11 @@ test('QIN-609 运行时：断连项由 pump 清扫释放槽位，切目录后队
         removeAttribute(){},
         closest(){ return null; },
     });
-    // 填满 8 个槽位
-    const zombies = Array.from({length: 8}, (_, i) => makeImg(`zombie-${i}`));
+    // 填满 4 个槽位
+    const zombies = Array.from({length: 4}, (_, i) => makeImg(`zombie-${i}`));
     zombies.forEach(img => { assert.ok(activate(img, true)); });
     zombies.forEach(img => { img.isConnected = false; });  // 模拟切目录 DOM 重建
-    // 新目录的新卡激活：pump 清扫 8 个断连项后立刻消化新项
+    // 新目录的新卡激活：pump 清扫 4 个断连项后立刻消化新项
     const fresh = makeImg('fresh');
     assert.equal(activate(fresh, true), true, '新卡激活');
     assert.equal(fresh._src, '/thumb/fresh.png', '断连槽位被清扫释放，新卡立即赋 src');
@@ -150,8 +152,8 @@ test('QIN-609 AC2：视口内激活插队首，视口外 wheel 预载保持队�
 test('QIN-609 DoD 异步失败：失败不误标成功、不阻塞后续队列', () => {
     const pump = functionBody('pumpRegistryPreviewQueue');
     // load/error 分别释放槽位并区分成败标记；失败置 failed（不重试，避免风暴）。
-    assert.match(pump, /addEventListener\('load', \(\) => entry\.finish\(true\)/);
-    assert.match(pump, /addEventListener\('error', \(\) => entry\.finish\(false\)/);
+    assert.match(pump, /entry\.onLoad = \(\) => entry\.finish\(true\)/);
+    assert.match(pump, /entry\.onError = \(\) => entry\.finish\(false\)/);
     assert.match(pump, /if\(success === false\) image\.dataset\.registryPreviewFailed = 'true';/);
     // 槽位释放先于副作用守卫：失败/断连都要继续消化队列。
     assert.match(pump, /registryPreviewActive = Math\.max\(0, registryPreviewActive - 1\);/);
