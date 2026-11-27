@@ -586,6 +586,28 @@ def _duplicate_file_suggestions(
     - ``sampled``、未知/缺失 ``hash_mode``、缓存失效或仅同 ``size_bytes`` 最多标为 ``suspected``；
     - 若两个文件都已算出完整 SHA 且不相等，绝不因相同 ``sampled`` 或相同 ``size_bytes`` 共组。
     """
+    if not related_pairs:
+        seen_sizes = set()
+        possible_duplicate = False
+        for asset in assets:
+            metadata = asset.get("metadata")
+            if (
+                asset.get("full_sha256_cache") is not None
+                or asset.get("sha256")
+                or (isinstance(metadata, dict) and metadata.get("collect_sha256"))
+            ):
+                possible_duplicate = True
+                break
+            size = asset.get("size_bytes")
+            if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+                continue
+            if size in seen_sizes:
+                possible_duplicate = True
+                break
+            seen_sizes.add(size)
+        if not possible_duplicate:
+            return []
+
     removed_ids = repo._removed_root_ids()
     records: List[Dict[str, Any]] = []
     for asset in assets:
