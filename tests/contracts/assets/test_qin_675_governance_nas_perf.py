@@ -87,7 +87,8 @@ def test_qin675_sequential_names_cold_budget(monkeypatch, prefix):
     start = time.perf_counter()
     result = governance.build_suggestions(visibility_key="qin675-sequential")
     elapsed = (time.perf_counter() - start) * 1000
-    assert result["suggestions"]["similar_names"]
+    groups = result["suggestions"]["similar_names"]
+    assert len(groups) == 1 and len(groups[0]["members"]) == 5000
     assert elapsed < 300, f"5K 顺序名称冷算超限：{elapsed:.1f}ms"
 
 

@@ -191,6 +191,29 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
     """以 q 元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
     candidates = []
     normalized_values = [(value, normalize_filename(value)) for value in names if value]
+    normalized_values = [(value, name) for value, name in normalized_values if name]
+    # 当每项均能连到此前分量时，已证明全部属于一组，无需构建倒排索引。
+    if len(normalized_values) > 1:
+        for index in range(1, len(normalized_values)):
+            current = normalized_values[index][1]
+            for offset in (1, 10, 100, 1000):
+                if index < offset:
+                    continue
+                previous = normalized_values[index - offset][1]
+                matcher = SequenceMatcher(None, previous, current, autojunk=False)
+                if previous == current or (
+                    matcher.quick_ratio() >= similarity_threshold
+                    and matcher.ratio() >= similarity_threshold
+                ):
+                    break
+            else:
+                break
+        else:
+            paths = tuple(sorted(
+                (value for value, _ in normalized_values),
+                key=lambda value: (unicodedata.normalize("NFKC", value).casefold(), value),
+            ))
+            return (SimilarNameGroup(min(name for _, name in normalized_values), paths),)
     gram_width = 2 if any(len(normalized) <= 16 for _, normalized in normalized_values) else 4
     gram_frequency: Counter[str] = Counter()
     repeated_grams = set()
@@ -271,7 +294,9 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         }
         if required_by_length:
             # 相邻的顺序编号素材通常属于同一组，先连接后可整组排除。
-            if index and len(candidates[index - 1][1]) in required_by_length:
+            if index and len(candidates[index - 1][1]) in required_by_length and (
+                length <= 16 or candidates[index - 1][1][:12] == normalized[:12]
+            ):
                 previous = candidates[index - 1][1]
                 adjacent = SequenceMatcher(None, previous, normalized, autojunk=False)
                 if previous == normalized or (
