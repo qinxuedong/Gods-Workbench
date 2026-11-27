@@ -70,11 +70,21 @@ test('AC1: 虚拟化阈值 120 条语义未被改动（100 普通网格、200 �
     assert.equal(enabled(items(100)), false, '首屏 100 条仍走普通网格快速追加');
     assert.equal(enabled(items(120)), false, '等于阈值仍不启用虚拟窗口');
     assert.equal(enabled(items(200)), true, '第二页累计 200 条启用虚拟窗口');
+    const enabledWithStructure = new Function(
+        'registryLayout',
+        'registryGroupMode',
+        'registryAssetStructures',
+        'REGISTRY_VIRTUAL_WINDOW_SIZE',
+        'activeTab',
+        'assetBoardById',
+        `${functionSource('registryVirtualizationEnabled')}\nreturn registryVirtualizationEnabled;`
+    )('grid', 'none', new Map([['structure:version-1', {}]]), 120, 'registry', () => null);
+    assert.equal(enabledWithStructure(items(200)), true, '结构投影卡不能关闭超过阈值的虚拟窗口');
 });
 
 test('AC2: 预览预取带入视口提前量', () => {
     // 【QIN-609】提前量 200px→96px：点击-settle 协议内的预览请求收敛到视口必需集，
-    // 滚动缓冲由 8 并发队列 + scroll rAF 激活兜底（票面预授权的旧断言按新行为更新）。
+    // 滚动缓冲由 4 并发队列 + scroll rAF 激活兜底。
     assert.match(MANAGER, /const REGISTRY_PREVIEW_ROOT_MARGIN = '96px 0px';/);
     assert.doesNotMatch(MANAGER, /REGISTRY_PREVIEW_ROOT_MARGIN = '0px 0px'/);
     assert.match(MANAGER, /\{root:scrollRoot, rootMargin:REGISTRY_PREVIEW_ROOT_MARGIN\}/);
