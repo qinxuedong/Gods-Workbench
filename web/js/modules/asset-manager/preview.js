@@ -1704,16 +1704,16 @@ async function deleteDetailImageVersion(versionId){
     if(detailViewerState.open) renderDetailViewer(); else render();
     setStatus(`已删除图片版本 V${Number(version.version_number||0)}`);
 }
-async function setDetailImageVersionHidden(versionId,hidden){
-    const assetId=detailViewerState.imageVersionsAssetId || detailImageVersionAssetId();
-    const version=(detailViewerState.imageVersions || []).find(value=>String(value.id)===String(versionId));
-    if(!assetId || !version || version.is_original) return;
-    await apiJsonResponse(assetManagerApi.updateRegistryImageVersion(assetId, version.id, {hidden:Boolean(hidden)}));
-    await loadDetailImageVersions(detailActiveImageItem(),true);
-    await refreshRegistryAssetAfterImageVersion(assetId);
-    renderDetailViewer();
-    setStatus(`图片版本 V${Number(version.version_number||0)} 已${hidden?'隐藏':'显示'}`);
-}
+
+
+
+
+
+
+
+
+
+
 /** 返回画布右侧当前版本卡使用的短标签。 */
 function detailImageVersionLabel(version){
     if(!version) return '';
@@ -1744,13 +1744,13 @@ function detailImageVersionActions(version){
     const id=String(version.id);
     const label=detailImageVersionLabel(version);
     const original=Boolean(version.is_original);
-    const hidden=Boolean(version.is_hidden);
+
     return {
-        visibility:{
-            id,hidden,icon:hidden?'eye-off':'eye',disabled:original,
-            title:original?'原始素材不能隐藏':hidden?'显示此版本':'隐藏此版本',
-            ariaLabel:`${hidden?'显示':'隐藏'}${label}`,
-        },
+
+
+
+
+
         edit:{id,title:`编辑${label}`,ariaLabel:`编辑${label}`},
         delete:{
             id,disabled:original,
@@ -1760,7 +1760,7 @@ function detailImageVersionActions(version){
     };
 }
 
-/** 隐藏版本仍可从灰色按钮切换到卡片中管理和恢复。 */
+/** 隐藏版本仍可从灰色按钮切换到卡片中查看。 */
 function isDetailImageVersionSwitchable(version){
     return Boolean(version);
 }
@@ -3939,8 +3939,8 @@ document.addEventListener('click', event => {
     if(canvasImageVersionSwitch){ selectDetailImageVersionFromSwitcher(canvasImageVersionSwitch.dataset.detailCanvasImageVersionSelect || ''); return; }
     const imageVersionEdit=event.target.closest?.('[data-detail-image-version-edit]');
     if(imageVersionEdit){ editDetailImageVersion(imageVersionEdit.dataset.detailImageVersionEdit || '').catch(err=>setStatus(err.message||'图片版本编辑失败')); return; }
-    const imageVersionVisibility=event.target.closest?.('[data-detail-image-version-visibility]');
-    if(imageVersionVisibility){ setDetailImageVersionHidden(imageVersionVisibility.dataset.detailImageVersionVisibility || '',imageVersionVisibility.dataset.hidden!=='1').catch(err=>{ setStatus(err.message||'图片版本显示状态更新失败'); showAssetFailure('图片版本显示状态更新失败',err); }); return; }
+
+
     const imageVersionDelete=event.target.closest?.('[data-detail-image-version-delete]');
     if(imageVersionDelete){ deleteDetailImageVersion(imageVersionDelete.dataset.detailImageVersionDelete || '').catch(err=>{ setStatus(err.message||'图片版本删除失败'); showAssetFailure('图片版本删除失败',err); }); return; }
     if(detailViewerState.mediaCanvasContextMenu && !event.target.closest?.('[data-detail-media-context-menu]')) closeDetailMediaCanvasContextMenu();

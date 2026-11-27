@@ -220,7 +220,7 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         assert.equal(history.lastElementChild,switcher,'切换条位于版本历史列表下方');
         assert.deepEqual([...switcher.querySelectorAll('button')].map(button=>button.textContent),['原始','版本3','版本2','版本1']);
         assert.equal(switcher.querySelector('[data-detail-canvas-image-version-select="original"]').getAttribute('aria-pressed'),'true');
-        assert.ok(history.querySelector('[data-detail-image-version-visibility="original"]'),'当前版本卡保留隐藏操作');
+        assert.equal(history.querySelector('[data-detail-image-version-visibility]'),null,'当前版本卡不提供显隐操作');
         assert.ok(history.querySelector('[data-detail-image-version-edit="original"]'),'当前版本卡保留编辑操作');
         assert.ok(history.querySelector('[data-detail-image-version-delete="original"]'),'当前版本卡保留删除操作');
         assert.equal(history.querySelector('[data-detail-image-version-select]'),null,'版本卡本身不另设切换入口');
@@ -230,25 +230,22 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         const hiddenButton=currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-hidden"]');
         assert.ok(hiddenButton,'隐藏版本仍保留切换按钮');
         assert.equal(hiddenButton.dataset.hidden,'1','隐藏版本按钮标记灰态');
-        assert.equal(hiddenButton.hasAttribute('disabled'),false,'灰态按钮仍可点击以恢复版本');
+        assert.equal(hiddenButton.hasAttribute('disabled'),false,'灰态按钮仍可点击查看版本');
         click(host,hiddenButton);
         await wait(0);
         const hiddenImage=images.instances.findLast(value=>value.src.includes('/image-versions/version-hidden/media'));
-        assert.ok(hiddenImage,'可切换到隐藏版本以访问卡片眼睛');
+        assert.ok(hiddenImage,'可切换到历史隐藏版本');
         hiddenImage.onload();
         await wait(15);
         assert.equal(state.imageVersionSelectedId,'version-hidden','隐藏版本媒体加载后可进入管理卡');
         const hiddenCard=host.document.querySelector('.asset-detail-media-version-card');
-        assert.equal(hiddenCard?.querySelector('[data-detail-image-version-visibility]')?.dataset.hidden,'1','隐藏版本卡片显示恢复眼睛');
-        click(host,hiddenCard.querySelector('[data-detail-image-version-visibility]'));
-        await wait(35);
-        assert.equal(state.imageVersions.find(value=>value.id==='version-hidden')?.is_hidden,false,'点击眼睛恢复隐藏版本');
-        assert.equal(currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-hidden"]')?.dataset.hidden,'0','恢复后按钮取消灰态');
+        assert.equal(hiddenCard?.querySelector('[data-detail-image-version-visibility]'),null,'历史隐藏版本不显示眼睛操作');
+        assert.equal(state.imageVersions.find(value=>value.id==='version-hidden')?.is_hidden,true,'切换不会修改历史隐藏状态');
         click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="original"]'));
         await wait(0);
         images.instances.findLast(value=>value.src.endsWith('/media'))?.onload?.();
         await wait(15);
-        assert.equal(state.imageVersionSelectedId,'original','恢复测试后回到原始提交版本');
+        assert.equal(state.imageVersionSelectedId,'original','查看后回到原始提交版本');
 
         state.imageVersions=[state.imageVersions[0],{...VERSIONS[0],is_hidden:true}];
         await host.main.gwCall('preview','renderDetailViewer');
@@ -304,7 +301,7 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         assert.equal(currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]').getAttribute('aria-pressed'),'true');
         const selectedCard=host.document.querySelector('.asset-detail-media-version-card');
         assert.equal(selectedCard?.dataset.detailCurrentImageVersion,'version-2','切换成功后唯一版本卡更新为当前版本');
-        assert.ok(selectedCard?.querySelector('[data-detail-image-version-visibility="version-2"]'),'隐藏操作绑定当前版本');
+        assert.equal(selectedCard?.querySelector('[data-detail-image-version-visibility]'),null,'版本卡不提供显隐操作');
         assert.ok(selectedCard?.querySelector('[data-detail-image-version-edit="version-2"]'),'编辑操作绑定当前版本');
         assert.ok(selectedCard?.querySelector('[data-detail-image-version-delete="version-2"]'),'删除操作绑定当前版本');
 
