@@ -1005,7 +1005,9 @@ def get_governance_suggestions(
 ):
     """治理建议清单：命名/相似名/查重/向量近重/受控打标，只读不落任何字段。"""
     context = _governance_auth(authorization, x_user_role)
-    result = governance.build_suggestions()
+    result = governance.build_suggestions(
+        visibility_key=f"{asset_owner_key(context)}:{context.role}"
+    )
     result["operator_role"] = context.role
     return result
 

@@ -1,0 +1,19 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 860,
+  "authorization_basis": "GitHub Issue #860 (QIN-675), PM design approval comment #7209106827",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/dedup_confirm.py",
+    "gw/asset_registry/governance.py",
+    "tests/contracts/assets/test_qin_619_dedup_full_sha.py",
+    "tests/contracts/assets/test_qin_675_governance_nas_perf.py",
+    "tests/frontend/mvp1-t5-governance-list.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-675-governance-ondemand.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-860.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/governance.js"
+  ],
+  "notes": "QIN-675：治理建议读取与取消、5K 性能优化，以及 QIN-619 显式核验缓存失效回归。"
+}

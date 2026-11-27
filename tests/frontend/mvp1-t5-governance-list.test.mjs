@@ -30,7 +30,10 @@ test('AC1: 治理建议入口位于顶栏并打开可访问抽屉，左栏不再
     assert.match(source, /function openGovernanceDrawer\(trigger\)/);
     assert.match(source, /role="dialog" aria-modal="true" aria-labelledby="governanceDrawerTitle"/);
     assert.match(source, /function renderRegistryToolbar\([\s\S]*?data-governance-open/);
-    assert.match(source, /gwCall\('governance', 'loadGovernanceSuggestions'\);\s*loadAll\(\)\.then/);
+    assert.match(source, /function openGovernanceDrawer\(trigger\)[\s\S]*?loadGovernanceSuggestions\(\)/);
+    assert.match(source, /await loadGovernanceSuggestions\(true\)/);
+    assert.doesNotMatch(source, /scheduleDeferredBootRequests\(\)[\s\S]*?gwCall\('governance', 'loadGovernanceSuggestions'\)/);
+    assert.doesNotMatch(source, /DOMContentLoaded[\s\S]*?gwCall\('governance', 'loadGovernanceSuggestions'\)/);
 });
 
 test('suggestion view only calls the two implemented governance endpoints', () => {

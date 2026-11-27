@@ -31,22 +31,29 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import os
+from collections import Counter, OrderedDict
+from concurrent.futures import Future
+from copy import deepcopy
+from difflib import SequenceMatcher
 from pathlib import Path
 import sqlite3
 import struct
+import threading
 import unicodedata
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from gw.asset_registry import dedup_confirm, repository as repo
 from gw.asset_registry.governance_rules import (
     NamingRules,
+    SimilarNameGroup,
     find_duplicate_groups,
-    group_similar_names,
+    normalize_filename,
     validate_name,
 )
 from gw.asset_registry.service import DATA_STATUS_NOT_INTEGRATED
 from gw.core import storage
-from gw.core.asset_visibility import asset_visible
+from gw.core.asset_visibility import asset_visible, current_asset_owner, current_auth_context
 from gw.core.errors import CleanroomException
 
 NS_GOVERNANCE = "asset_governance"
@@ -64,6 +71,10 @@ DEFAULT_NAMING_RULES = NamingRules(
 NEAR_DUPLICATE_SIMILARITY = 0.98
 MAX_VECTOR_PAIR_CANDIDATES = 200
 MAX_SUGGESTION_ENTRIES = 200
+_GOVERNANCE_CACHE_LIMIT = 8
+_GOVERNANCE_CACHE: OrderedDict[Tuple[int, str, str], Dict[str, Any]] = OrderedDict()
+_GOVERNANCE_INFLIGHT: Dict[Tuple[int, str, str], Future] = {}
+_GOVERNANCE_CACHE_LOCK = threading.Lock()
 
 # 受控词表同义映射：把自由标签归一到 ASC 工业代号（仅建议，不自动改写）。
 # 中文标准术语取自摄制元数据规范第 2.1/2.3/2.4/2.7 节。
@@ -150,16 +161,6 @@ def _asset_tag_names(raw: Dict[str, Any], asset: Dict[str, Any]) -> List[str]:
     return names
 
 
-def _find_by_display_path(
-    assets: Sequence[Dict[str, Any]], path: str
-) -> Optional[Dict[str, Any]]:
-    for asset in assets:
-        current = str(asset.get("display_path") or asset.get("name") or "").strip()
-        if current == path:
-            return asset
-    return None
-
-
 def _asset_file_records(
     assets: Sequence[Dict[str, Any]],
 ) -> List[Tuple[str, int, str]]:
@@ -184,6 +185,142 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
         if path:
             paths.append(path)
     return paths
+
+
+def _group_similar_display_paths(names: Sequence[str], similarity_threshold: float = 0.9) -> Tuple[SimilarNameGroup, ...]:
+    """以三元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
+    candidates = []
+    for value in names:
+        if not value:
+            continue
+        normalized = normalize_filename(value)
+        if normalized:
+            grams = Counter(
+                normalized[offset:offset + 4]
+                for offset in range(max(0, len(normalized) - 3))
+            )
+            candidates.append((value, normalized, grams, Counter(normalized)))
+    candidates.sort(key=lambda item: (unicodedata.normalize("NFKC", item[1]).casefold(), item[0]))
+    if len(candidates) < 2:
+        return ()
+
+    parents = list(range(len(candidates)))
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            parents[max(left_root, right_root)] = min(left_root, right_root)
+
+    postings: Dict[str, List[Tuple[int, int]]] = {}
+    for index, (_, _, grams, _) in enumerate(candidates):
+        for gram, count in grams.items():
+            postings.setdefault(gram, []).append((index, count))
+    frequent_grams = {
+        gram for gram, rows in postings.items() if len(rows) > 32
+    }
+
+    prior_by_length: Dict[int, List[int]] = {}
+    for index, (_, normalized, grams, chars) in enumerate(candidates):
+        length = len(normalized)
+        lower = max(1, math.ceil(length * similarity_threshold / (2 - similarity_threshold)))
+        upper = math.floor(length * (2 - similarity_threshold) / similarity_threshold)
+        possible_lengths = [n for n in prior_by_length if lower <= n <= upper]
+        # q=4：一个匹配块至少贡献 len(block)-3 个四元组；块数最多为两串未匹配
+        # 字符数之和 + 1，据此得到不漏报的必要重叠下界。
+        required_by_length = {
+            other_length: max(
+                0,
+                math.ceil(
+                    (3.5 * similarity_threshold - 3) * (length + other_length) - 3 - 1e-9
+                ),
+            )
+            for other_length in possible_lengths
+        }
+        if not required_by_length:
+            prior_by_length.setdefault(length, []).append(index)
+            continue
+
+        minimum_required = min(required_by_length.values())
+        common_grams = grams.keys() & frequent_grams
+        common_upper_bound = sum(grams[gram] for gram in common_grams)
+        omit_common = common_upper_bound < minimum_required
+        # 高频四元组的最大贡献不足阈值时，安全跳过其宽倒排表；剩余重叠先筛一次。
+        overlaps: Dict[int, int] = {}
+        for gram, count in grams.items():
+            if omit_common and gram in common_grams:
+                continue
+            for other, other_count in postings[gram]:
+                if other >= index:
+                    continue
+                if len(candidates[other][1]) not in required_by_length:
+                    continue
+                overlaps[other] = overlaps.get(other, 0) + min(count, other_count)
+
+        tested: Optional[set[int]] = set() if 0 in required_by_length.values() else None
+        for other, shared in overlaps.items():
+            other_length = len(candidates[other][1])
+            required = required_by_length[other_length]
+            if omit_common:
+                required -= common_upper_bound
+            if shared < required:
+                continue
+            other_chars = candidates[other][3]
+            required_chars = math.ceil(
+                similarity_threshold * (length + other_length) / 2 - 1e-9
+            )
+            shared_chars = sum(
+                min(chars[char], other_chars[char])
+                for char in chars.keys() & other_chars.keys()
+            )
+            if shared_chars < required_chars:
+                continue
+            other_grams = candidates[other][2]
+            shared = sum(
+                min(grams[gram], other_grams[gram])
+                for gram in grams.keys() & other_grams.keys()
+            )
+            if shared < required_by_length[other_length]:
+                continue
+            left_name = candidates[other][1]
+            if left_name == normalized or SequenceMatcher(
+                None, left_name, normalized, autojunk=False
+            ).ratio() >= similarity_threshold:
+                union(other, index)
+            if tested is not None:
+                tested.add(other)
+
+        # 极短名称没有足够三元组，按长度过滤直接比较。
+        for other_length, required in required_by_length.items():
+            if required == 0:
+                for other in prior_by_length[other_length]:
+                    if tested is not None and other in tested:
+                        continue
+                    left_name = candidates[other][1]
+                    if left_name == normalized or SequenceMatcher(
+                        None, left_name, normalized, autojunk=False
+                    ).ratio() >= similarity_threshold:
+                        union(other, index)
+
+        prior_by_length.setdefault(length, []).append(index)
+
+    grouped: Dict[int, List[Tuple[str, str]]] = {}
+    for index, (value, normalized, _, _) in enumerate(candidates):
+        grouped.setdefault(find(index), []).append((value, normalized))
+    result = []
+    for members in grouped.values():
+        if len(members) < 2:
+            continue
+        normalized_name = min(item[1] for item in members)
+        paths = tuple(sorted((item[0] for item in members), key=lambda value: (unicodedata.normalize("NFKC", value).casefold(), value)))
+        result.append(SimilarNameGroup(normalized_name, paths))
+    return tuple(sorted(result, key=lambda group: (group.normalized_name, group.members)))
 
 
 def _basename(path: str) -> str:
@@ -270,31 +407,50 @@ def _tagging_suggestions(
 
 
 def _vector_near_duplicates(engine: Any) -> List[Dict[str, Any]]:
-    """对索引内单位向量做近重配对；只读访问，不修改引擎状态。
-
-    引擎未暴露向量导出公共接口，这里在引擎已加载扩展的连接上做只读
-    SELECT（同包受限使用）；向量在写入前已归一化，点积即相似度。
-    """
+    """通过 sqlite-vec 最近邻候选找近重，避免 Python 端枚举所有向量对。"""
     try:
         rows = engine._db.execute(
-            "SELECT d.asset_id AS asset_id, v.embedding AS embedding "
+            "SELECT v.rowid AS vector_rowid, d.asset_id AS asset_id, v.embedding AS embedding "
             "FROM c18_vectors AS v JOIN c18_documents AS d ON d.row_id = v.rowid "
-            "WHERE d.vector_hash IS NOT NULL"
+            "WHERE d.vector_hash IS NOT NULL ORDER BY v.rowid"
         ).fetchall()
     except sqlite3.Error:
         return []
-    vectors: List[Tuple[str, Tuple[float, ...]]] = []
+    vectors: List[Tuple[int, str, Tuple[float, ...], bytes]] = []
     for row in rows:
         blob = row["embedding"]
         if not isinstance(blob, (bytes, bytearray)) or len(blob) % 4 != 0:
             continue
         values = struct.unpack(f"<{len(blob) // 4}f", bytes(blob))
-        vectors.append((str(row["asset_id"]), values))
+        vectors.append((int(row["vector_rowid"]), str(row["asset_id"]), values, bytes(blob)))
+
+    row_to_index = {rowid: index for index, (rowid, _, _, _) in enumerate(vectors)}
     pairs: List[Dict[str, Any]] = []
-    for left in range(len(vectors)):
-        left_id, left_vector = vectors[left]
-        for right in range(left + 1, len(vectors)):
-            right_id, right_vector = vectors[right]
+    # 只需保留输出上限内的靠前候选。若当前还未收满 200 对，先前索引最多已有
+    # 199 个符合对；加上自身后，最近 401 条足以覆盖当前可输出的 200 个后续邻居。
+    neighbor_limit = min(len(vectors), MAX_VECTOR_PAIR_CANDIDATES * 2 + 1)
+    for left, (_, left_id, left_vector, query_blob) in enumerate(vectors):
+        try:
+            nearest = engine._db.execute(
+                "SELECT rowid, distance FROM c18_vectors "
+                "WHERE embedding MATCH ? ORDER BY distance ASC LIMIT ?",
+                (query_blob, neighbor_limit),
+            ).fetchall()
+        except (sqlite3.Error, OverflowError, ValueError):
+            # 索引扩展在单次查询故障时保留旧的确定性计算行为。
+            nearest = []
+            candidates = range(left + 1, len(vectors))
+        else:
+            candidates = sorted(
+                {
+                    row_to_index[int(row["rowid"])]
+                    for row in nearest
+                    if int(row["rowid"]) in row_to_index
+                    and row_to_index[int(row["rowid"])] > left
+                }
+            )
+        for right in candidates:
+            _, right_id, right_vector, _ = vectors[right]
             if len(left_vector) != len(right_vector):
                 continue
             similarity = math.fsum(
@@ -389,22 +545,35 @@ def _duplicate_file_suggestions(
             if isinstance(raw_size, bool) or not isinstance(raw_size, int) or raw_size < 0
             else int(raw_size)
         )
-        local_path: Optional[Path] = None
-        local_stat = None
-        try:
-            local_path = dedup_confirm.resolve_asset_media_path(raw, asset_id, asset)
-            if local_path is not None and local_path.is_file():
-                local_stat = local_path.lstat()
-        except CleanroomException:
-            local_path = None
-        except OSError:
-            local_stat = None
-
-        full_sha = dedup_confirm.trusted_full_sha256(
-            asset, path=local_path, stat_result=local_stat
-        )
-        # 如果资产绑定本地文件但文件不存在或大小已变，不承认过期内存 size/缓存
-        effective_size = int(local_stat.st_size) if local_stat is not None else size
+        cache = asset.get("full_sha256_cache")
+        full_sha = None
+        if dedup_confirm.cache_matches_asset_and_stat(cache, asset):
+            recorded_mtime = asset.get("mtime_ns")
+            cached_mtime = cache.get("mtime_ns") if isinstance(cache, dict) else None
+            if (
+                isinstance(recorded_mtime, int)
+                and not isinstance(recorded_mtime, bool)
+                and isinstance(cached_mtime, int)
+                and recorded_mtime != cached_mtime
+            ):
+                full_sha = None
+            else:
+                full_sha = dedup_confirm.normalize_sha256_hex(cache.get("sha256"))
+        if not full_sha:
+            metadata = asset.get("metadata")
+            collect_sha = (
+                dedup_confirm.normalize_sha256_hex(metadata.get("collect_sha256"))
+                if isinstance(metadata, dict)
+                else ""
+            )
+            is_collect_inbox = (
+                str(asset.get("display_path") or "").startswith("registry_uploads/collect_inbox/")
+                or str(asset.get("stored_name") or "").startswith("registry_uploads/collect_inbox/")
+            )
+            if collect_sha and is_collect_inbox:
+                full_sha = collect_sha
+        # GET 仅认快照内的完整哈希证据；普通文件变化由显式后台核验收敛。
+        effective_size = size
         legacy_sha = dedup_confirm.normalize_sha256_hex(asset.get("sha256"))
         hash_mode = str(asset.get("hash_mode") or "").strip().lower()
         records.append(
@@ -585,9 +754,8 @@ def _duplicate_file_suggestions(
     return suggestions
 
 
-def build_suggestions() -> Dict[str, Any]:
-    """生成完整建议清单；只读，不修改注册表或源文件。"""
-    raw = repo.state().read()
+def _build_suggestions_from_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """从注册表只读快照生成完整建议清单。"""
     assets = _registry_assets(raw)
     related_pairs = _duplicate_related_pairs(raw)
 
@@ -618,6 +786,11 @@ def build_suggestions() -> Dict[str, Any]:
         if len(naming) >= MAX_SUGGESTION_ENTRIES:
             break
 
+    asset_by_display_path: Dict[str, Dict[str, Any]] = {}
+    for asset in assets:
+        asset_by_display_path.setdefault(
+            str(asset.get("display_path") or asset.get("name") or "").strip(), asset
+        )
     similar_names = [
         {
             "suggestion_id": _suggestion_id(
@@ -627,13 +800,13 @@ def build_suggestions() -> Dict[str, Any]:
             "normalized_name": group.normalized_name,
             "members": list(group.members),
             "asset_ids": [
-                str(_find_by_display_path(assets, path).get("asset_id") or "")
-                if _find_by_display_path(assets, path) is not None
+                str(asset_by_display_path[path].get("asset_id") or "")
+                if path in asset_by_display_path
                 else ""
                 for path in group.members
             ],
         }
-        for group in group_similar_names(paths)
+        for group in _group_similar_display_paths(paths)
     ]
 
     duplicate_files = _duplicate_file_suggestions(raw, assets, related_pairs)
@@ -705,6 +878,66 @@ def build_suggestions() -> Dict[str, Any]:
         "data_status": repo.DATA_STATUS_OK if not data_gaps else DATA_STATUS_NOT_INTEGRATED,
         "data_gaps": data_gaps,
     }
+
+
+def _visibility_cache_key(explicit_key: Optional[str]) -> str:
+    if explicit_key is not None:
+        return str(explicit_key)
+    auth = current_auth_context.get()
+    role = str(getattr(auth, "role", "") or "")
+    owner = str(current_asset_owner.get() or "")
+    return f"{owner}:{role}"
+
+
+def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]:
+    """生成建议；按注册表版本与可见主体缓存，并合并同键并发冷算。"""
+    raw = repo.readonly_registry_snapshot()
+    runtime_identity = "\0".join(
+        os.environ.get(name, "")
+        for name in (
+            storage.RUNTIME_MODE_ENV,
+            storage.DATA_DIR_ENV,
+            storage.LOCAL_AUTH_DB_ENV,
+            storage.VIDEO_DATA_DIR_ENV,
+            "LOCALAPPDATA",
+        )
+    )
+    runtime_scope = hashlib.sha256(runtime_identity.encode("utf-8")).hexdigest()[:24]
+    key = (
+        int(raw.get("revision", 1)),
+        _visibility_cache_key(visibility_key),
+        runtime_scope,
+    )
+    with _GOVERNANCE_CACHE_LOCK:
+        cached = _GOVERNANCE_CACHE.get(key)
+        if cached is not None:
+            _GOVERNANCE_CACHE.move_to_end(key)
+            return deepcopy(cached)
+        pending = _GOVERNANCE_INFLIGHT.get(key)
+        if pending is None:
+            pending = Future()
+            _GOVERNANCE_INFLIGHT[key] = pending
+            is_owner = True
+        else:
+            is_owner = False
+    if not is_owner:
+        return deepcopy(pending.result())
+
+    try:
+        result = _build_suggestions_from_snapshot(raw)
+    except BaseException as exc:
+        with _GOVERNANCE_CACHE_LOCK:
+            _GOVERNANCE_INFLIGHT.pop(key, None)
+            pending.set_exception(exc)
+        raise
+    with _GOVERNANCE_CACHE_LOCK:
+        _GOVERNANCE_CACHE[key] = result
+        _GOVERNANCE_CACHE.move_to_end(key)
+        while len(_GOVERNANCE_CACHE) > _GOVERNANCE_CACHE_LIMIT:
+            _GOVERNANCE_CACHE.popitem(last=False)
+        _GOVERNANCE_INFLIGHT.pop(key, None)
+        pending.set_result(result)
+    return deepcopy(result)
 
 
 def find_suggestion(suggestion_id: str) -> Dict[str, Any]:
