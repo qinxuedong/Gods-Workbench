@@ -12496,8 +12496,8 @@ function withDeferredJobTimeout(task, label){
         timer = setTimeout(() => reject(new Error(
             `延后域任务超时（${DEFERRED_DOMAIN_JOB_TIMEOUT_MS}ms），已跳过以不阻塞后续：${label}`
         )), DEFERRED_DOMAIN_JOB_TIMEOUT_MS);
-        // Node 测试中的孤立超时不应单独阻止测试进程退出；浏览器计时语义不变。
-        timer.unref?.();
+        // Node 中后台域遗留任务不应拖住测试退出；治理超时需要保活以释放 FIFO 队列。
+        if (label !== 'governance/loadGovernanceSuggestions') timer.unref?.();
     });
     return Promise.race([task, timeout]).finally(() => clearTimeout(timer));
 }
