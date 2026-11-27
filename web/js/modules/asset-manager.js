@@ -11160,8 +11160,10 @@ document.addEventListener('keydown', event => {
             }
             if((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'a'){
                 event.preventDefault();
+                detailViewerState.cancelImageVersionSwitch?.({refresh:false});
                 gwCall('media-canvas', 'setDetailMediaCanvasSelection', detailMediaCanvasObjectIds());
                 gwCall('media-canvas', 'syncDetailMediaCanvasSelectionDom');
+                gwCall('media-canvas', 'refreshDetailMediaCanvasSidebarDetail');
                 setStatus(`已全选画布内 ${detailMediaCanvasObjectIds().length} 个对象`);
                 return;
             }

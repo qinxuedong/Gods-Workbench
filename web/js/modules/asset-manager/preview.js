@@ -1709,7 +1709,6 @@ async function setDetailImageVersionHidden(versionId,hidden){
     const version=(detailViewerState.imageVersions || []).find(value=>String(value.id)===String(versionId));
     if(!assetId || !version || version.is_original) return;
     await apiJsonResponse(assetManagerApi.updateRegistryImageVersion(assetId, version.id, {hidden:Boolean(hidden)}));
-    if(hidden && String(detailViewerState.imageVersionSelectedId)===String(version.id)) selectDetailImageVersion('original',{render:false,announce:false});
     await loadDetailImageVersions(detailActiveImageItem(),true);
     await refreshRegistryAssetAfterImageVersion(assetId);
     renderDetailViewer();
@@ -1761,9 +1760,9 @@ function detailImageVersionActions(version){
     };
 }
 
-/** 同一规则过滤隐藏版本，并保护切换入口。 */
+/** 隐藏版本仍可从灰色按钮切换到卡片中管理和恢复。 */
 function isDetailImageVersionSwitchable(version){
-    return Boolean(version && !version.is_hidden);
+    return Boolean(version);
 }
 
 /** 以单一快照驱动切换条的待加载和失败提示。 */
@@ -1779,7 +1778,7 @@ function detailImageVersionSwitchStatus(state){
     };
 }
 
-/** 仅允许已打开画布中的单图切换到可见、属于当前素材的版本。 */
+/** 仅允许已打开画布中的单图切换到属于当前素材的版本。 */
 function canStartDetailImageVersionSwitch(state,item,assetId,version){
     return Boolean(
         state?.open
@@ -4868,6 +4867,7 @@ export {
     detailImageEditorTextBounds,
     detailImageEditorWorldPixels,
     detailImageVersionActions,
+    detailImageVersionPreviewUrl,
     detailImageVersionLabel,
     detailImageVersionSwitchStatus,
     detailItemStorageLocation,

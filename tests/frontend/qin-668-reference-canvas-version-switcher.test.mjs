@@ -30,11 +30,27 @@ function jsonResponse(body={}){
 }
 
 function createHost(){
+    const hiddenIds=new Set(VERSIONS.filter(version=>version.is_hidden).map(version=>String(version.id)));
     return createAssetViewHost({
         tab:'registry',
-        fetchImpl:async url=>String(url).includes('/image-versions?')
-            ? jsonResponse({versions:VERSIONS})
-            : jsonResponse({asset:{}}),
+        fetchImpl:async (url,options={})=>{
+            const target=String(url);
+            const method=String(options.method||'GET').toUpperCase();
+            const versionPath=target.match(/\/image-versions\/([^/?]+)$/);
+            if(versionPath && options.body){
+                const body=JSON.parse(options.body);
+                if(Object.hasOwn(body,'hidden')){
+                    if(body.hidden) hiddenIds.add(versionPath[1]);
+                    else hiddenIds.delete(versionPath[1]);
+                }
+                return jsonResponse({version:{id:versionPath[1],is_hidden:hiddenIds.has(versionPath[1])}});
+            }
+            if(target.includes('/image-versions?')){
+                const versions=VERSIONS.map(version=>({...version,is_hidden:hiddenIds.has(String(version.id))}));
+                return jsonResponse({versions});
+            }
+            return jsonResponse({asset:{}});
+        },
     });
 }
 async function openReference(host, items){
@@ -63,6 +79,12 @@ async function setSelection(host, ids){
 
 function click(host, element){
     host.document.dispatchEvent({type:'click',target:element,preventDefault(){},stopPropagation(){}});
+}
+function keydown(host,key,options={}){
+    host.document.dispatchEvent({type:'keydown',target:options.target||host.document.body,key,code:options.code||'',ctrlKey:Boolean(options.ctrlKey),metaKey:Boolean(options.metaKey),shiftKey:Boolean(options.shiftKey),altKey:Boolean(options.altKey),isComposing:false,preventDefault(){},stopPropagation(){}});
+}
+function pointer(host,type,target,pointerId,clientX,clientY){
+    host.document.dispatchEvent({type,target,pointerId,button:0,clientX,clientY,ctrlKey:false,metaKey:false,shiftKey:false,preventDefault(){},stopPropagation(){}});
 }
 
 function currentSwitcher(host){
@@ -95,6 +117,80 @@ function installReplaceWith(doc){
     };
 }
 
+test('QIN-668：从真实版本结构卡按 · 打开参考画布入口',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const assets=[image('qin-668-structure-current'),image('qin-668-structure-other')];
+        const structureId='qin-668-version-structure';
+        host.main.setRegistryAssets(assets);
+        host.main.registryAssetStructures.set(structureId,{
+            id:structureId,
+            structure_type:'version',
+            current_asset_id:assets[0].id,
+            members:assets.map(asset=>({asset_id:asset.id,asset})),
+        });
+        const card=host.document.createElement('section');
+        card.dataset.registryStructureCard=structureId;
+        card.dataset.registryStructureType='version';
+        host.root.appendChild(card);
+        keydown(host,'·',{target:card});
+        await wait(45);
+        const state=host.main.detailViewerState;
+        assert.equal(state.open,true,'结构卡 · 键盘入口打开画布');
+        assert.equal(state.referenceCanvasMode,true,'入口进入参考画布模式');
+        assert.equal(state.mediaCanvasItems.length,2,'参考画布接收真实结构的两张图片');
+        assert.equal(state.mediaCanvasActiveId,assets[0].id,'结构当前素材成为画布当前素材');
+        const body=host.document.querySelector('.asset-detail-viewer-body');
+        assert.equal(body?.querySelector('.asset-detail-image-versions'),null,'· 入口无左侧版本栏');
+        assert.equal(body?.querySelector('.asset-detail-structure-versions'),null,'· 入口无左侧结构卡');
+        assert.equal(host.document.querySelectorAll('.asset-detail-media-version-card').length,1,'· 入口右侧只有一个当前版本卡');
+        assert.ok(currentSwitcher(host),'· 入口显示右侧版本切换按钮');
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：从已保存参考画布资产卡打开真实画布入口',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const canvasId='qin-668-saved-reference';
+        const items=[
+            {...image('qin-668-saved-current'),canvas_id:canvasId,canvas_kind:'reference'},
+            {...image('qin-668-saved-other'),canvas_id:canvasId,canvas_kind:'reference'},
+        ];
+        host.main.canvasAssetsData.items=items;
+        host.main.canvasAssetsData.canvases=[{id:canvasId,kind:'reference'}];
+        const card=host.document.createElement('article');
+        card.dataset.canvasAssetCard=items[0].id;
+        host.root.appendChild(card);
+        host.root.dispatchEvent({type:'dblclick',target:card,detail:2,preventDefault(){},stopPropagation(){}});
+        await wait(45);
+        const state=host.main.detailViewerState;
+        assert.equal(state.open,true,'双击已保存的画布素材卡打开查看器');
+        assert.equal(state.source,'canvas-asset');
+        assert.equal(state.referenceCanvasMode,true,'保存的 reference canvas 仍识别为参考画布');
+        assert.equal(state.mediaCanvasItems.length,2,'保存画布入口加载其实际关联图片');
+        const body=host.document.querySelector('.asset-detail-viewer-body');
+        assert.equal(body?.querySelector('.asset-detail-image-versions'),null,'已保存画布入口无左侧版本栏');
+        assert.equal(host.document.querySelectorAll('.asset-detail-media-version-card').length,1,'已保存画布入口右侧只有一个当前版本卡');
+        assert.ok(currentSwitcher(host),'已保存画布入口显示右侧版本切换按钮');
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
 test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按钮与异步选择',async()=>{
     const restoreTimers=trackTimers();
     const images=installImageLoader();
@@ -117,10 +213,12 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         assert.equal(body.querySelector('[data-detail-image-versions-toggle]'),null,'不再出现左侧折叠窄条');
         assert.equal(body.querySelector('.asset-detail-structure-versions'),null,'合并版本结构卡随左栏移除');
         assert.ok(history,'右侧版本区域保留');
+        assert.equal(history.querySelector('.registry-detail-heading'),null,'移除版本历史标题');
         assert.equal(history.querySelectorAll('.registry-detail-image-version').length,1,'右侧只渲染当前版本卡，不显示多版本卡片列表');
+        assert.equal(history.querySelector('.asset-detail-media-version-count')?.textContent,'4','计数包含原始、显示和隐藏版本');
         assert.equal(history.querySelector('.asset-detail-media-version-card')?.dataset.detailCurrentImageVersion,'original','唯一卡片对应已提交的原始版本');
         assert.equal(history.lastElementChild,switcher,'切换条位于版本历史列表下方');
-        assert.deepEqual([...switcher.querySelectorAll('button')].map(button=>button.textContent),['原始','版本2','版本1']);
+        assert.deepEqual([...switcher.querySelectorAll('button')].map(button=>button.textContent),['原始','版本3','版本2','版本1']);
         assert.equal(switcher.querySelector('[data-detail-canvas-image-version-select="original"]').getAttribute('aria-pressed'),'true');
         assert.ok(history.querySelector('[data-detail-image-version-visibility="original"]'),'当前版本卡保留隐藏操作');
         assert.ok(history.querySelector('[data-detail-image-version-edit="original"]'),'当前版本卡保留编辑操作');
@@ -129,10 +227,33 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         assert.equal(switcher.querySelector('[data-detail-image-version-edit],[data-detail-image-version-delete],[data-detail-image-version-visibility]'),null,'切换条不重复版本管理动作');
         assert.equal(state.imageVersionSelectedId,'original');
 
+        const hiddenButton=currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-hidden"]');
+        assert.ok(hiddenButton,'隐藏版本仍保留切换按钮');
+        assert.equal(hiddenButton.dataset.hidden,'1','隐藏版本按钮标记灰态');
+        assert.equal(hiddenButton.hasAttribute('disabled'),false,'灰态按钮仍可点击以恢复版本');
+        click(host,hiddenButton);
+        await wait(0);
+        const hiddenImage=images.instances.findLast(value=>value.src.includes('/image-versions/version-hidden/media'));
+        assert.ok(hiddenImage,'可切换到隐藏版本以访问卡片眼睛');
+        hiddenImage.onload();
+        await wait(15);
+        assert.equal(state.imageVersionSelectedId,'version-hidden','隐藏版本媒体加载后可进入管理卡');
+        const hiddenCard=host.document.querySelector('.asset-detail-media-version-card');
+        assert.equal(hiddenCard?.querySelector('[data-detail-image-version-visibility]')?.dataset.hidden,'1','隐藏版本卡片显示恢复眼睛');
+        click(host,hiddenCard.querySelector('[data-detail-image-version-visibility]'));
+        await wait(35);
+        assert.equal(state.imageVersions.find(value=>value.id==='version-hidden')?.is_hidden,false,'点击眼睛恢复隐藏版本');
+        assert.equal(currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-hidden"]')?.dataset.hidden,'0','恢复后按钮取消灰态');
+        click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="original"]'));
+        await wait(0);
+        images.instances.findLast(value=>value.src.endsWith('/media'))?.onload?.();
+        await wait(15);
+        assert.equal(state.imageVersionSelectedId,'original','恢复测试后回到原始提交版本');
+
         state.imageVersions=[state.imageVersions[0],{...VERSIONS[0],is_hidden:true}];
         await host.main.gwCall('preview','renderDetailViewer');
-        assert.equal(currentSwitcher(host),null,'只有一个可见版本时不显示切换条');
-
+        assert.ok(currentSwitcher(host),'仅有一个可见版本时仍显示隐藏版本按钮');
+        assert.equal(currentSwitcher(host).querySelector('.is-hidden')?.hasAttribute('disabled'),false,'隐藏版本保持可操作');
         state.imageVersions=[state.imageVersions[0],...VERSIONS];
         await setSelection(host,[selected.id,'qin-668-other']);
         assert.equal(currentSwitcher(host),null,'多选时不显示切换条');
@@ -231,6 +352,112 @@ test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按�
         host.dispose();
         restoreDom();
         images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：marquee 框选清空选择时取消待切换并刷新版本区',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const selected=image('qin-668-marquee-selected');
+        const other=image('qin-668-marquee-other');
+        await openReference(host,[selected,other]);
+        await setSelection(host,[selected.id]);
+        click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]'));
+        await wait(0);
+        assert.equal(host.main.detailViewerState.imageVersionSwitchPendingId,'version-2');
+        const viewport=host.document.querySelector('[data-detail-media-canvas-viewport]');
+        pointer(host,'pointerdown',viewport,6681,9000,9000);
+        pointer(host,'pointermove',viewport,6681,9010,9010);
+        pointer(host,'pointerup',viewport,6681,9010,9010);
+        assert.equal(host.main.detailViewerState.imageVersionSwitchPendingId,'','框选结束取消挂起的版本媒体请求');
+        assert.equal(host.main.detailViewerState.mediaCanvasSelectedIds.size,0,'空白 marquee 取消单图选择');
+        assert.equal(host.document.querySelector('.asset-detail-media-version-history'),null,'侧栏同步移除不再适用的版本区');
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：Ctrl+A 取消单图待切换并刷新多选侧栏',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const selected=image('qin-668-ctrl-a-selected');
+        const other=image('qin-668-ctrl-a-other');
+        await openReference(host,[selected,other]);
+        await setSelection(host,[selected.id]);
+        click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]'));
+        await wait(0);
+        keydown(host,'a',{ctrlKey:true});
+        await wait(0);
+        const state=host.main.detailViewerState;
+        assert.equal(state.imageVersionSwitchPendingId,'','Ctrl+A 先取消待切换请求');
+        assert.equal(state.mediaCanvasSelectedIds.size,2,'Ctrl+A 选择所有画布对象');
+        assert.equal(host.document.querySelector('.asset-detail-media-version-history'),null,'多选状态刷新后隐藏单图版本区');
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：删除当前节点取消待切换并加载下一节点版本',async()=>{
+    const restoreTimers=trackTimers();
+    const images=installImageLoader();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const selected=image('qin-668-delete-selected');
+        const next=image('qin-668-delete-next');
+        await openReference(host,[selected,next]);
+        await setSelection(host,[selected.id]);
+        click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]'));
+        await wait(0);
+        keydown(host,'Delete');
+        await wait(60);
+        const state=host.main.detailViewerState;
+        assert.equal(state.imageVersionSwitchPendingId,'','删除节点取消待切换请求');
+        assert.equal(state.mediaCanvasActiveId,next.id,'删除当前节点后选中下一节点');
+        assert.equal(state.imageVersionsAssetId,next.id,'下一节点加载自己的版本列表');
+        assert.equal(state.imageVersionsLoading,false,'下一节点版本列表已加载完成');
+        assert.equal(host.document.querySelector('.asset-detail-media-version-card')?.dataset.detailCurrentImageVersion,'original','右侧卡片切换到下一节点的原始版本');
+    }finally{
+        host.dispose();
+        restoreDom();
+        images.restore();
+        restoreTimers();
+    }
+});
+
+test('QIN-668：保存后卡片按当前版本动态计算缩略图，不使用过期缓存字段',async()=>{
+    const restoreTimers=trackTimers();
+    const host=await createHost();
+    const restoreDom=installReplaceWith(host.document);
+    try{
+        const selected=image('qin-668-preview-refresh');
+        await openCanvas(host,[selected]);
+        await setSelection(host,[selected.id]);
+        const state=host.main.detailViewerState;
+        const savedVersion={id:'version-after-save',version_number:4,edit:{crop:{x:0,y:0,w:640,h:360}},created_at:4};
+        state.imageVersions=[state.imageVersions[0],savedVersion];
+        state.imageVersionSelectedId=savedVersion.id;
+        state.imageVersionPreviewUrl='/stale-thumbnail.png';
+        await host.main.gwCall('preview','renderDetailViewer');
+        const thumbnail=host.document.querySelector('.asset-detail-media-version-card img');
+        assert.equal(thumbnail?.getAttribute('src'),'/api/asset-registry/assets/qin-668-preview-refresh/image-versions/version-after-save/media?w=220');
+        assert.notEqual(thumbnail?.getAttribute('src'),state.imageVersionPreviewUrl,'渲染始终根据当前资产与版本计算缩略图');
+    }finally{
+        host.dispose();
+        restoreDom();
         restoreTimers();
     }
 });
