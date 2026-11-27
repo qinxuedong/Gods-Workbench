@@ -3355,6 +3355,7 @@ function renderDetailImageEditor(){
     const selectedLayers=detailImageEditorSelectedLayers();
     const selectedText=selectedLayers.find(layer=>layer.type === 'text');
     const activeColor=selectedText?.color || state.brushColor;
+
     overlay.innerHTML = `<section class="asset-image-editor-shell" data-floating-content role="dialog" aria-modal="true" aria-label="单图影院编辑器">
         <header><div class="asset-image-editor-title"><i data-lucide="clapperboard"></i><span><strong>${escapeHtml(state.name)}</strong><small>非破坏性编辑 · 点击完成保存为当前素材的新版本</small></span></div><div class="asset-image-editor-save-actions"><button type="button" data-image-editor-discard><i data-lucide="undo-2"></i>放弃修改</button><button type="button" data-image-editor-save-as><i data-lucide="download"></i>另存为</button><button type="button" data-image-editor-save-library ${state.saving ? 'disabled' : ''}><i data-lucide="library"></i>保存到当前库</button><button class="primary" type="button" data-image-editor-close ${state.saving ? 'disabled' : ''}><i data-lucide="check"></i>完成</button></div></header>
         <div class="asset-image-editor-toolbar">
