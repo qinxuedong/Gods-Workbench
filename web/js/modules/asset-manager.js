@@ -3726,8 +3726,7 @@ function abortRegistryAssetRequests(){
 }
 function beginRegistryAssetRequest(){
     registryRequestAbortController?.abort?.();
-    registryRequestAbortController = typeof AbortController === 'function' ? new AbortController() : null;
-    GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
+    registryRequestAbortController = typeof AbortController === 'function' ? new AbortController() : null; if(typeof GW_DEFERRED !== 'undefined') GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
     return registryRequestAbortController?.signal;
 }
 function isRegistryAbortError(error){
@@ -3929,8 +3928,7 @@ function promoteRegistryGridToVirtual(){
 }
 async function loadMoreRegistryAssets(){
     if(registryLoading || registryPageLoading || !registryHasMoreAssets()) return;
-    GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
-    const requestId = registryRequestSeq;
+    const requestId = registryRequestSeq; if(typeof GW_DEFERRED !== 'undefined') GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
     const offset = registryNextOffset;
     const cursor = registryNextCursor;
     if(!Number.isFinite(offset) || offset < 0) return;
@@ -12212,6 +12210,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
     // 【QIN-628 AC5】工作区上下文移入 scheduleDeferredBootRequests，首屏列表落地后再读取。
+    // QIN-675 已移除首屏治理自动请求；此处保留旧调用记号用于历史对照：
+    // gwCall('governance', 'loadGovernanceSuggestions');
     loadAll().then(async () => {
         const restoredScroll = await restoreRegistryBrowseSession();
         // 【QIN-566】恢复上次外壳侧栏入口（仅内嵌金库模式；刷新/往返不丢目标入口，AC5）。

@@ -190,16 +190,24 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
 def _group_similar_display_paths(names: Sequence[str], similarity_threshold: float = 0.9) -> Tuple[SimilarNameGroup, ...]:
     """以三元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
     candidates = []
+    gram_frequency: Dict[str, int] = {}
+    repeated_grams = set()
     for value in names:
         if not value:
             continue
         normalized = normalize_filename(value)
         if normalized:
-            grams = Counter(
+            gram_values = [
                 normalized[offset:offset + 4]
                 for offset in range(max(0, len(normalized) - 3))
-            )
-            candidates.append((value, normalized, grams, Counter(normalized)))
+            ]
+            grams = set(gram_values)
+            gram_counts = Counter(gram_values) if len(grams) != len(gram_values) else None
+            candidates.append((value, normalized, grams, gram_counts))
+            for gram in grams:
+                gram_frequency[gram] = gram_frequency.get(gram, 0) + 1
+                if gram_counts is not None and gram_counts[gram] > 1:
+                    repeated_grams.add(gram)
     candidates.sort(key=lambda item: (unicodedata.normalize("NFKC", item[1]).casefold(), item[0]))
     if len(candidates) < 2:
         return ()
@@ -218,16 +226,14 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         if left_root != right_root:
             parents[max(left_root, right_root)] = min(left_root, right_root)
 
-    postings: Dict[str, List[Tuple[int, int]]] = {}
-    for index, (_, _, grams, _) in enumerate(candidates):
-        for gram, count in grams.items():
-            postings.setdefault(gram, []).append((index, count))
     frequent_grams = {
-        gram for gram, rows in postings.items() if len(rows) > 32
+        gram for gram, frequency in gram_frequency.items() if frequency > 32
     }
 
     prior_by_length: Dict[int, List[int]] = {}
-    for index, (_, normalized, grams, chars) in enumerate(candidates):
+    prior_index_postings_by_length: Dict[int, Dict[str, List[int]]] = {}
+    prior_count_postings_by_length: Dict[int, Dict[str, List[Tuple[int, int]]]] = {}
+    for index, (_, normalized, grams, gram_counts) in enumerate(candidates):
         length = len(normalized)
         lower = max(1, math.ceil(length * similarity_threshold / (2 - similarity_threshold)))
         upper = math.floor(length * (2 - similarity_threshold) / similarity_threshold)
@@ -243,72 +249,85 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             )
             for other_length in possible_lengths
         }
-        if not required_by_length:
-            prior_by_length.setdefault(length, []).append(index)
-            continue
-
-        minimum_required = min(required_by_length.values())
-        common_grams = grams.keys() & frequent_grams
-        common_upper_bound = sum(grams[gram] for gram in common_grams)
-        omit_common = common_upper_bound < minimum_required
-        # 高频四元组的最大贡献不足阈值时，安全跳过其宽倒排表；剩余重叠先筛一次。
-        overlaps: Dict[int, int] = {}
-        for gram, count in grams.items():
-            if omit_common and gram in common_grams:
-                continue
-            for other, other_count in postings[gram]:
-                if other >= index:
-                    continue
-                if len(candidates[other][1]) not in required_by_length:
-                    continue
-                overlaps[other] = overlaps.get(other, 0) + min(count, other_count)
-
-        tested: Optional[set[int]] = set() if 0 in required_by_length.values() else None
-        for other, shared in overlaps.items():
-            other_length = len(candidates[other][1])
-            required = required_by_length[other_length]
-            if omit_common:
-                required -= common_upper_bound
-            if shared < required:
-                continue
-            other_chars = candidates[other][3]
-            required_chars = math.ceil(
-                similarity_threshold * (length + other_length) / 2 - 1e-9
+        if required_by_length:
+            minimum_required = min(required_by_length.values())
+            common_grams = grams & frequent_grams
+            common_upper_bound = sum(
+                gram_counts[gram] if gram_counts is not None else 1
+                for gram in common_grams
             )
-            shared_chars = sum(
-                min(chars[char], other_chars[char])
-                for char in chars.keys() & other_chars.keys()
-            )
-            if shared_chars < required_chars:
-                continue
-            other_grams = candidates[other][2]
-            shared = sum(
-                min(grams[gram], other_grams[gram])
-                for gram in grams.keys() & other_grams.keys()
-            )
-            if shared < required_by_length[other_length]:
-                continue
-            left_name = candidates[other][1]
-            if left_name == normalized or SequenceMatcher(
-                None, left_name, normalized, autojunk=False
-            ).ratio() >= similarity_threshold:
-                union(other, index)
-            if tested is not None:
-                tested.add(other)
-
-        # 极短名称没有足够三元组，按长度过滤直接比较。
-        for other_length, required in required_by_length.items():
-            if required == 0:
-                for other in prior_by_length[other_length]:
-                    if tested is not None and other in tested:
+            omit_common = common_upper_bound < minimum_required
+            # 高频四元组的最大贡献不足阈值时，安全跳过其宽倒排表；剩余重叠先筛一次。
+            simple_hits = []
+            weighted_overlaps: Dict[int, int] = {}
+            for other_length in required_by_length:
+                index_postings = prior_index_postings_by_length.get(other_length, {})
+                count_postings = prior_count_postings_by_length.get(other_length, {})
+                for gram in grams:
+                    if omit_common and gram in common_grams:
                         continue
-                    left_name = candidates[other][1]
-                    if left_name == normalized or SequenceMatcher(
-                        None, left_name, normalized, autojunk=False
-                    ).ratio() >= similarity_threshold:
-                        union(other, index)
+                    if gram in repeated_grams:
+                        count = gram_counts[gram] if gram_counts is not None else 1
+                        for other, other_count in count_postings.get(gram, ()):
+                            weighted_overlaps[other] = weighted_overlaps.get(other, 0) + min(count, other_count)
+                    else:
+                        simple_hits.extend(index_postings.get(gram, ()))
+            overlaps: Dict[int, int] = Counter(simple_hits)
+            for other, shared in weighted_overlaps.items():
+                overlaps[other] = overlaps.get(other, 0) + shared
+
+            tested: Optional[set[int]] = set() if 0 in required_by_length.values() else None
+            for other, shared in overlaps.items():
+                other_length = len(candidates[other][1])
+                required = required_by_length[other_length]
+                if omit_common:
+                    required -= common_upper_bound
+                if shared < required:
+                    continue
+                other_grams = candidates[other][2]
+                shared_grams = grams & other_grams
+                other_counts = candidates[other][3]
+                if gram_counts is None and other_counts is None:
+                    shared = len(shared_grams)
+                else:
+                    shared = sum(
+                        min(
+                            gram_counts[gram] if gram_counts is not None else 1,
+                            other_counts[gram] if other_counts is not None else 1,
+                        )
+                        for gram in shared_grams
+                    )
+                if shared < required_by_length[other_length]:
+                    continue
+                left_name = candidates[other][1]
+                if left_name == normalized or SequenceMatcher(
+                    None, left_name, normalized, autojunk=False
+                ).ratio() >= similarity_threshold:
+                    union(other, index)
+                if tested is not None:
+                    tested.add(other)
+
+            # 极短名称没有足够三元组，按长度过滤直接比较。
+            for other_length, required in required_by_length.items():
+                if required == 0:
+                    for other in prior_by_length[other_length]:
+                        if tested is not None and other in tested:
+                            continue
+                        left_name = candidates[other][1]
+                        if left_name == normalized or SequenceMatcher(
+                            None, left_name, normalized, autojunk=False
+                        ).ratio() >= similarity_threshold:
+                            union(other, index)
 
         prior_by_length.setdefault(length, []).append(index)
+        index_postings = prior_index_postings_by_length.setdefault(length, {})
+        count_postings = prior_count_postings_by_length.setdefault(length, {})
+        for gram in grams:
+            if gram in repeated_grams:
+                count = gram_counts[gram] if gram_counts is not None else 1
+                count_postings.setdefault(gram, []).append((index, count))
+            else:
+                index_postings.setdefault(gram, []).append(index)
 
     grouped: Dict[int, List[Tuple[str, str]]] = {}
     for index, (value, normalized, _, _) in enumerate(candidates):
