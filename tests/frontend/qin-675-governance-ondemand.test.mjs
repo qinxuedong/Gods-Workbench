@@ -124,6 +124,76 @@ test('列表请求替换会中止在途治理建议并复位 loading', async () 
     }
 });
 
+test('连续刷新和关闭抽屉会中止对应在途请求', async () => {
+    const pending = [];
+    const host = await createAssetViewHost({
+        embedded: true, tab: 'registry',
+        fetchImpl: (url, init = {}) => {
+            if (String(url).endsWith('/api/asset-registry/governance/suggestions')) {
+                const request = deferred();
+                pending.push({ ...request, signal: init.signal });
+                return request.promise;
+            }
+            return Promise.resolve(response({ items: [], total: 0, limit: 120, offset: 0 }));
+        },
+    });
+    try {
+        await import(pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/governance.js')).href);
+        const { GW_DEFERRED } = await import(stateModuleUrl(host.tree));
+        const first = GW_DEFERRED.governance.openGovernanceDrawer(null);
+        await wait(10);
+        const second = GW_DEFERRED.governance.loadGovernanceSuggestions(true);
+        await wait(10);
+        assert.equal(pending[0].signal.aborted, true);
+        assert.equal(pending[1].signal.aborted, false);
+        const drawerHost = host.document.querySelector('[data-governance-drawer-host]');
+        drawerHost.dispatchEvent({ type: 'click', target: host.document.querySelector('[data-governance-drawer-close]') });
+        assert.equal(pending[1].signal.aborted, true);
+        assert.equal(host.main.governanceSuggestionsLoading, false);
+        pending.forEach(item => item.resolve(suggestionsResponse()));
+        await Promise.all([first, second]);
+    } finally {
+        pending.forEach(item => item.resolve(suggestionsResponse()));
+        host.dispose();
+    }
+});
+
+test('实际加载下一页会中止在途治理建议', async () => {
+    const request = deferred();
+    let signal;
+    const host = await createAssetViewHost({
+        embedded: true, tab: 'registry',
+        fetchImpl: (url, init = {}) => {
+            const target = String(url);
+            if (target.endsWith('/api/asset-registry/governance/suggestions')) {
+                signal = init.signal;
+                return request.promise;
+            }
+            if (target.includes('/api/asset-registry/assets')) {
+                return Promise.resolve(response({ items: [], total: 2, limit: 1, offset: 0, next_offset: 1, has_more: true }));
+            }
+            return Promise.resolve(response({ items: [], total: 0, limit: 120, offset: 0 }));
+        },
+    });
+    try {
+        await host.main.refreshRegistryAssets(false);
+        await wait(10);
+        assert.equal(host.main.registryHasMoreAssets(), true);
+        await import(pathToFileURL(path.join(host.tree, 'web/js/modules/asset-manager/governance.js')).href);
+        const { GW_DEFERRED } = await import(stateModuleUrl(host.tree));
+        const pending = GW_DEFERRED.governance.loadGovernanceSuggestions(true);
+        await wait(10);
+        await host.main.loadMoreRegistryAssets();
+        assert.equal(signal.aborted, true);
+        assert.equal(host.main.governanceSuggestionsLoading, false);
+        request.resolve(suggestionsResponse());
+        await pending;
+    } finally {
+        request.resolve(suggestionsResponse());
+        host.dispose();
+    }
+});
+
 test('延后网关超时会真正中止治理建议请求', async () => {
     let signal = null;
     const request = deferred();

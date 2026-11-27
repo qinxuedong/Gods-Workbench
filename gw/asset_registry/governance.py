@@ -72,8 +72,8 @@ NEAR_DUPLICATE_SIMILARITY = 0.98
 MAX_VECTOR_PAIR_CANDIDATES = 200
 MAX_SUGGESTION_ENTRIES = 200
 _GOVERNANCE_CACHE_LIMIT = 8
-_GOVERNANCE_CACHE: OrderedDict[Tuple[int, str, str], Dict[str, Any]] = OrderedDict()
-_GOVERNANCE_INFLIGHT: Dict[Tuple[int, str, str], Future] = {}
+_GOVERNANCE_CACHE: OrderedDict[tuple, Dict[str, Any]] = OrderedDict()
+_GOVERNANCE_INFLIGHT: Dict[tuple, Future] = {}
 _GOVERNANCE_CACHE_LOCK = threading.Lock()
 
 # 受控词表同义映射：把自由标签归一到 ASC 工业代号（仅建议，不自动改写）。
@@ -188,16 +188,15 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def _group_similar_display_paths(names: Sequence[str], similarity_threshold: float = 0.9) -> Tuple[SimilarNameGroup, ...]:
-    """以四元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
+    """以 q 元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
     candidates = []
+    normalized_values = [(value, normalize_filename(value)) for value in names if value]
+    gram_width = 2 if any(len(normalized) <= 16 for _, normalized in normalized_values) else 4
     gram_frequency: Counter[str] = Counter()
     repeated_grams = set()
-    for value in names:
-        if not value:
-            continue
-        normalized = normalize_filename(value)
+    for value, normalized in normalized_values:
         if normalized:
-            gram_values = [normalized[offset:offset + 4] for offset in range(max(0, len(normalized) - 3))]
+            gram_values = [normalized[offset:offset + gram_width] for offset in range(max(0, len(normalized) - gram_width + 1))]
             grams = set(gram_values)
             gram_counts = Counter(gram_values) if len(grams) != len(gram_values) else None
             candidates.append((value, normalized, grams, gram_counts))
@@ -208,6 +207,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         return ()
 
     parents = list(range(len(candidates)))
+    component_masks = [1 << index for index in range(len(candidates))]
 
     def find(index: int) -> int:
         while parents[index] != index:
@@ -219,7 +219,9 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         left_root = find(left)
         right_root = find(right)
         if left_root != right_root:
-            parents[max(left_root, right_root)] = min(left_root, right_root)
+            root, merged = min(left_root, right_root), max(left_root, right_root)
+            parents[merged] = root
+            component_masks[root] |= component_masks[merged]
 
     frequent_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 8}
 
@@ -255,17 +257,32 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         lower = max(1, math.ceil(length * similarity_threshold / (2 - similarity_threshold)))
         upper = math.floor(length * (2 - similarity_threshold) / similarity_threshold)
         possible_lengths = [n for n in prior_by_length if lower <= n <= upper]
-        # q=4：一个匹配块至少贡献 len(block)-3 个四元组；块数最多为两串未匹配
-        # 字符数之和 + 1，据此得到不漏报的必要重叠下界。
+        # 一个匹配块至少贡献 len(block)-(q-1) 个 q 元组；块数最多为两串
+        # 未匹配字符数之和 + 1，据此得到不漏报的必要重叠下界。
         required_by_length = {
             other_length: max(
                 0,
                 math.ceil(
-                    (3.5 * similarity_threshold - 3) * (length + other_length) - 3 - 1e-9
+                    ((gram_width - 0.5) * similarity_threshold - (gram_width - 1))
+                    * (length + other_length) - (gram_width - 1) - 1e-9
                 ),
             )
             for other_length in possible_lengths
         }
+        if required_by_length:
+            # 相邻的顺序编号素材通常属于同一组，先连接后可整组排除。
+            if index and len(candidates[index - 1][1]) in required_by_length:
+                previous = candidates[index - 1][1]
+                adjacent = SequenceMatcher(None, previous, normalized, autojunk=False)
+                if previous == normalized or (
+                    adjacent.quick_ratio() >= similarity_threshold
+                    and adjacent.ratio() >= similarity_threshold
+                ):
+                    union(index - 1, index)
+            required_by_length = {
+                n: required for n, required in required_by_length.items()
+                if prior_length_masks[n] & ~component_masks[find(index)]
+            }
         if required_by_length:
             minimum_required = min(required_by_length.values())
             common_grams = grams & frequent_grams
@@ -303,7 +320,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                 if required == 0:
                     continue
                 adjusted_required = required - common_upper_bound
-                valid_mask = prior_length_masks.get(other_length, 0)
+                valid_mask = prior_length_masks.get(other_length, 0) & ~component_masks[find(index)]
                 if adjusted_required <= 0:
                     candidate_mask = valid_mask
                 else:
@@ -325,7 +342,10 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                     candidate_mask = mask_at_least(bit_planes, adjusted_required, valid_mask)
 
                 while candidate_mask:
-                    bit = candidate_mask & -candidate_mask
+                    candidate_mask &= ~component_masks[find(index)]
+                    if not candidate_mask:
+                        break
+                    bit = 1 << (candidate_mask.bit_length() - 1)
                     candidate_mask ^= bit
                     other = bit.bit_length() - 1
                     if omitted_common and not omitted_common_universal:
@@ -355,10 +375,17 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                     if matcher.quick_ratio() >= similarity_threshold and matcher.ratio() >= similarity_threshold:
                         union(other, index)
 
-            # 极短名称没有足够四元组，按长度过滤直接比较。
+            # 名称没有足够 q 元组时，按长度过滤直接比较。
             for other_length, required in required_by_length.items():
                 if required == 0:
-                    for other in prior_by_length[other_length]:
+                    candidate_mask = prior_length_masks[other_length]
+                    while candidate_mask:
+                        candidate_mask &= ~component_masks[find(index)]
+                        if not candidate_mask:
+                            break
+                        bit = 1 << (candidate_mask.bit_length() - 1)
+                        candidate_mask ^= bit
+                        other = bit.bit_length() - 1
                         left_name = candidates[other][1]
                         if left_name == normalized:
                             union(other, index)
@@ -991,6 +1018,20 @@ def _visibility_cache_key(explicit_key: Optional[str]) -> str:
     return f"{owner}:{role}"
 
 
+def _index_cache_signature() -> tuple:
+    """索引及 WAL 变化均使治理建议缓存失效。"""
+    path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    signatures = []
+    for filename in (str(path), str(path) + "-wal"):
+        try:
+            info = os.stat(filename)
+        except FileNotFoundError:
+            signatures.append(None)
+        else:
+            signatures.append((info.st_size, info.st_mtime_ns, info.st_ctime_ns))
+    return tuple(signatures)
+
+
 def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]:
     """生成建议；按注册表版本与可见主体缓存，并合并同键并发冷算。"""
     raw = repo.readonly_registry_snapshot()
@@ -1009,6 +1050,8 @@ def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]
         int(raw.get("revision", 1)),
         _visibility_cache_key(visibility_key),
         runtime_scope,
+        tuple(sorted(repo._removed_root_ids())),
+        _index_cache_signature(),
     )
     with _GOVERNANCE_CACHE_LOCK:
         cached = _GOVERNANCE_CACHE.get(key)
