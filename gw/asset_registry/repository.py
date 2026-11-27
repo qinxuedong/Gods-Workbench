@@ -39,6 +39,7 @@ import logging
 import math
 import os
 import re
+import sqlite3
 import threading
 import time
 from collections import Counter
@@ -1926,9 +1927,27 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             items = [a for a in items if _asset_category(a) == normalized_kind]
         else:
             items = [a for a in items if str(a.get("kind") or "") == kind]
+    transcript_matches: dict[str, list[Dict[str, Any]]] = {}
+    transcript_asset_ids: set[str] = set()
     if query:
+        try:
+            from gw.asset_registry import asr_transcription
+            from gw.asset_registry.transcript_index import search_transcripts
+
+            if asr_transcription.settings()["enabled"]:
+                for match in search_transcripts(query, limit=200):
+                    asset_key = str(match.get("asset_id") or "")
+                    transcript_asset_ids.add(asset_key)
+                    transcript_matches.setdefault(asset_key, []).append(match)
+        except (OSError, RuntimeError, ValueError, sqlite3.Error):
+            # ASR FTS 不可用时按原有资产搜索继续工作。
+            transcript_matches = {}
+            transcript_asset_ids = set()
+
         needle = query.casefold()
         def _matches_query(a: Dict[str, Any]) -> bool:
+            if str(a.get("asset_id") or "") in transcript_asset_ids:
+                return True
             if needle in str(a.get("name", "")).casefold():
                 return True
             if needle in str(a.get("asset_id", "")).casefold():
@@ -2003,6 +2022,31 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         {**asset, "related_assets": _related_assets_for(raw, asset, relation_index)}
         for asset in page
     ]
+    for asset in page:
+        matches = transcript_matches.get(str(asset.get("asset_id") or ""))
+        if matches:
+            metadata = copy.deepcopy(asset.get("metadata") if isinstance(asset.get("metadata"), dict) else {})
+            segments = metadata.get("video_segments")
+            first = matches[0]
+            segment_index = int(first["segment_idx"])
+            if isinstance(segments, list) and 0 <= segment_index < len(segments) and isinstance(segments[segment_index], dict):
+                segment = segments[segment_index]
+                tags = list(segment.get("tags") or [])
+                marker = f"[台词] {str(first.get('text') or '').strip()}"
+                if marker not in tags:
+                    segment["tags"] = [*tags, marker]
+                # 该搜索响应是只读投影：卡片命中徽标定位到说话片段绝对时间，
+                # 真源中的 video_segments 镜头边界不变。
+                segment["start_sec"] = float(first["start_sec"])
+                segment["end_sec"] = float(first["end_sec"])
+            asset["metadata"] = metadata
+            asset["transcript_search_match"] = {
+                "label": "[台词]",
+                "segment_idx": segment_index,
+                "start_sec": float(first["start_sec"]),
+                "end_sec": float(first["end_sec"]),
+                "text": str(first.get("text") or ""),
+            }
     has_more = offset + len(page) < total
     next_offset = offset + len(page) if has_more else None
     next_cursor = None

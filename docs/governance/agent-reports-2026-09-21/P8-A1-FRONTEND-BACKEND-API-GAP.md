@@ -68,3 +68,22 @@ QIN-656 新增镜头视觉向量设置、状态与异步补跑接口。经 PM �
 - `node --test tests/frontend/qin-631-native-select-pilot.test.mjs tests/frontend/mvp1-t6-omnibar-asset.test.mjs`：27 passed。
 - `ruff check tests/contracts/projects/test_phase8_frontend_backend_api_gap.py`、`node --check web/js/modules/asset-manager.js` 与 `git diff --check`：通过。
 - GitHub CI 将随 QIN-656 新提交重新运行；本报告不提前宣称全量门禁通过。
+
+## 2026-11-27：QIN-658 / GitHub #820
+
+QIN-658 增加本机 ASR 状态、设置与资产任务队列入口。经 PM 在 issue #820 确认，仅将以下三个已实现路径登记到 `tests/contracts/projects/test_phase8_frontend_backend_api_gap.py` 的 `KNOWN_IMPLEMENTED` 与 `KNOWN_BACKEND_PATHS`：
+
+| 方法 | 路径 | 用途 |
+|---|---|---|
+| POST | `/api/asset-registry/asr/jobs` | 对资源根或单视频提交异步台词转写任务 |
+| POST | `/api/asset-registry/asr/settings` | 保存可选 ASR 引擎、模型与开关 |
+| GET | `/api/asset-registry/asr/status` | 读取本机可选依赖、模型与 ffmpeg 就绪状态 |
+
+除此三项外，不修改其他端点、断言或基线规则；`KNOWN_UNIMPLEMENTED` 保持不变。
+
+### 验证
+
+- `python -m pytest tests/contracts/assets/ -k "asr or transcript or search" -q`：41 passed。
+- `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -q`：7 passed。
+- `node --test tests/frontend/*.test.mjs`：1,206 passed；`python -m pytest tests/hygiene -q`：113 passed；`ruff check` 覆盖本票改动 Python 文件：通过。
+- GitHub CI 与 UI 浏览器截图验收仍待完成；不将本地结果记作 CI 或浏览器通过。

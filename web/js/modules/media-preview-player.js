@@ -186,7 +186,27 @@
       return tags.some(t => String(t).toLowerCase().includes(q))
         || (s.summary && String(s.summary).toLowerCase().includes(q));
     });
-    return matched || null;
+    if (matched) return matched;
+    const transcript = findMatchedVideoTranscript(item, q);
+    return transcript ? {...transcript.segment, start_sec:transcript.start_sec, end_sec:transcript.end_sec, transcript_match:transcript.text} : null;
+  }
+
+  function findMatchedVideoTranscript(item, query = '') {
+    const scenes = item?.metadata?.video_segments || item?.video_segments;
+    const q = String(query || '').trim().toLocaleLowerCase();
+    if (!q || !Array.isArray(scenes)) return null;
+    for (const segment of scenes) {
+      const lines = Array.isArray(segment?.transcript) ? segment.transcript : [];
+      const matched = lines.find(line => String(line?.text || '').toLocaleLowerCase().includes(q)
+        && Number.isFinite(Number(line?.start_sec)) && Number.isFinite(Number(line?.end_sec)));
+      if (matched) return {
+        segment,
+        start_sec:Number(matched.start_sec),
+        end_sec:Number(matched.end_sec),
+        text:String(matched.text || '').trim(),
+      };
+    }
+    return null;
   }
 
   function seekTo(element, seconds, options = {}) {
@@ -274,6 +294,7 @@
     formatVideoSegmentTime,
     formatVideoSegmentRange,
     findMatchedVideoSegment,
+    findMatchedVideoTranscript,
   });
   if (global.document) {
     const boot = () => { void mountAll(global.document); };

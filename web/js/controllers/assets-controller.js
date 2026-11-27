@@ -478,7 +478,9 @@ window.WorkbenchAssets = (() => {
     const canToggleAssetsVisibility = Boolean(bridge?.canToggleAssetsVisibility?.(target.key));
     const canManageResourceFolders = Boolean(bridge?.canManageResourceFolders?.());
     const canRunShotVectorJob = isRoot && Boolean(bridge?.canRunShotVectorJob?.(target.key));
+    const canRunAsrJob = isRoot && Boolean(bridge?.canRunShotVectorJob?.(target.key));
     let shotVectorButton = null;
+    let asrButton = null;
     let hideEmptyFolders = false;
     try {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
@@ -501,6 +503,7 @@ window.WorkbenchAssets = (() => {
         title: toggleAssetsTitle,
       }] : []),
       ...(isRoot ? [
+        { id: 'transcribe', attr: 'data-asset-organize-asr', label: '转写台词', icon: 'audio-lines', disabled: true },
         { id: 'shot-vectors', attr: 'data-asset-organize-shot-vectors', label: '补跑镜头视觉向量', icon: 'scan-search', disabled: true },
         {
           id: 'toggle-empty',
@@ -523,10 +526,50 @@ window.WorkbenchAssets = (() => {
       if (item.title) btn.title = item.title;
       if (item.id === 'shot-vectors') shotVectorButton = btn;
       if (item.id === 'shot-vectors' && !canRunShotVectorJob) btn.title = '仅可对可管理的持久资源根补跑镜头视觉向量';
+      if (item.id === 'transcribe') {
+        asrButton = btn;
+        if (!canRunAsrJob) btn.title = '仅可对可管理的持久资源根转写台词';
+      }
       if (item.danger) btn.className = 'is-danger';
       btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
       btn.addEventListener('click', async (e) => {
         e.stopPropagation();
+        if (item.id === 'transcribe') {
+          if (btn.disabled || !canRunAsrJob) return;
+          closeShellOrganizeMenu();
+          showShellOrganizeToast('正在提交台词转写任务');
+          try {
+            const response = await fetch('/api/asset-registry/asr/jobs', {
+              method:'POST', credentials:'same-origin',
+              headers:{'Content-Type':'application/json', 'Idempotency-Key':`asr:${target.rootId}:${Date.now()}`},
+              body:JSON.stringify({root_id:String(target.rootId || '')}),
+            });
+            const body = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(body?.detail?.message || '转写任务提交失败');
+            const jobId = String(body?.job_id || '');
+            if (!jobId) throw new Error('服务未返回转写任务编号');
+            const deadline = Date.now() + 120000;
+            while (Date.now() < deadline) {
+              await new Promise(resolve => setTimeout(resolve, 500));
+              const poll = await fetch(`/api/asset-registry/workspace-jobs/${encodeURIComponent(jobId)}`, {credentials:'same-origin', headers:{Accept:'application/json'}});
+              const state = await poll.json().catch(() => ({}));
+              if (!poll.ok) throw new Error(state?.detail?.message || '读取转写任务状态失败');
+              const job = state?.job || state;
+              if (job.status === 'succeeded') {
+                const result = job.result || {};
+                showShellOrganizeToast(`转写完成：${Number(result.transcribed || 0)} 个视频，${Number(result.indexed_segments || 0)} 个镜头台词${Number(result.skipped_no_audio || 0) ? `，${Number(result.skipped_no_audio)} 个无音轨跳过` : ''}`);
+                return;
+              }
+              if (['failed','cancelled','interrupted'].includes(job.status)) {
+                throw new Error(`台词转写${job.status === 'failed' ? '失败' : '已停止'}：${job.error_code || job.status}`);
+              }
+            }
+            showShellOrganizeToast('转写任务仍在后台运行，可稍后查看任务状态');
+          } catch (error) {
+            showShellOrganizeToast(error?.message || '台词转写启动失败');
+          }
+          return;
+        }
         if (item.id === 'shot-vectors') {
           if (btn.disabled || !canRunShotVectorJob) return;
           const currentBridge = organizeBridge();
@@ -584,6 +627,22 @@ window.WorkbenchAssets = (() => {
       });
       menu.appendChild(btn);
     });
+    if (asrButton && typeof fetch === 'function') {
+      fetch('/api/asset-registry/asr/status', {credentials:'same-origin', headers:{Accept:'application/json'}})
+        .then(async response => {
+          const body = await response.json().catch(() => ({}));
+          if (!response.ok) throw new Error(body?.detail?.message || '读取 ASR 状态失败');
+          if (!asrButton.isConnected) return;
+          const ready = body?.enabled === true && body?.ready === true;
+          asrButton.disabled = !ready || !canRunAsrJob;
+          asrButton.title = ready
+            ? '异步转写此资源根内可见视频的台词'
+            : (body?.message || (!body?.enabled ? '请先在设置中启用语音台词转写' : '本机 ASR 模型尚未就绪'));
+        })
+        .catch(error => {
+          if (asrButton.isConnected) asrButton.title = error?.message || '无法读取本机 ASR 状态';
+        });
+    }
 
     if (shotVectorButton && canRunShotVectorJob && typeof bridge?.getShotVectorStatus === 'function') {
       bridge.getShotVectorStatus().then(status => {

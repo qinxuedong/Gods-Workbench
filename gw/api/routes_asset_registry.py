@@ -426,6 +426,95 @@ def _shot_vector_model_status() -> Dict[str, Any]:
     return repo.shot_vector_model_status()
 
 
+def _asr_status() -> Dict[str, Any]:
+    from gw.asset_registry import asr_transcription
+
+    selected = asr_transcription.settings()
+    return {**selected, **asr_transcription.model_status(selected["engine"], selected["model"])}
+
+
+@router.get("/asr/status", summary="读取本机 ASR 可选依赖状态")
+def get_asr_status(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _read_auth(authorization, x_user_role)
+    return _asr_status()
+
+
+@router.post("/asr/settings", summary="保存本机 ASR 设置")
+def update_asr_settings(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    from gw.asset_registry import asr_transcription
+
+    body = _payload(payload)
+    current = asr_transcription.settings()
+    enabled = body.get("enabled", current["enabled"])
+    engine = body.get("engine", current["engine"])
+    model = body.get("model", current["model"])
+    if not isinstance(enabled, bool) or not isinstance(engine, str) or not isinstance(model, str):
+        raise CleanroomException(400, "INVALID_REQUEST", "ASR 设置字段类型无效")
+    try:
+        asr_transcription.update_settings(enabled=enabled, engine=engine, model=model)
+    except ValueError as exc:
+        raise CleanroomException(400, "INVALID_REQUEST", str(exc)) from None
+    return _asr_status()
+
+
+@router.post(
+    "/asr/jobs",
+    summary="异步转写单视频或资源根内的可见视频",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def submit_asr_job(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    actor = _edit_auth(authorization, x_user_role)
+    body = _payload(payload)
+    root_id = body.get("root_id")
+    asset_id = body.get("asset_id")
+    if (isinstance(root_id, str) and root_id.strip()) == (isinstance(asset_id, str) and asset_id.strip()):
+        raise CleanroomException(400, "INVALID_REQUEST", "root_id 与 asset_id 必须且只能提供一个")
+    from gw.asset_registry import asr_transcription
+
+    configuration = asr_transcription.settings()
+    model_status = asr_transcription.model_status(configuration["engine"], configuration["model"])
+    if not configuration["enabled"]:
+        raise CleanroomException(409, "ASR_TRACK_DISABLED", "请先在设置中启用语音台词转写")
+    if not model_status["ready"]:
+        raise CleanroomException(409, "ASR_MODEL_UNAVAILABLE", model_status["message"])
+    asset_ids = None
+    if asset_id:
+        asset_id = str(asset_id).strip()
+        snapshot = repo.readonly_registry_snapshot()
+        visible = repo.visible_asset_from_snapshot(
+            snapshot, asset_id, hidden_filter=repo.mounted_asset_hidden_filter()
+        )
+        if visible is None:
+            raise CleanroomException(404, "ASSET_NOT_FOUND", "素材不存在或当前不可见")
+        if repo._asset_category(visible) != "video":
+            raise CleanroomException(400, "ASR_VIDEO_REQUIRED", "仅支持转写视频素材")
+        root_id = str(visible.get("storage_root_id") or visible.get("root_id") or "")
+        if not root_id:
+            raise CleanroomException(409, "ASR_SOURCE_UNAVAILABLE", "视频没有可用的本地资源根")
+        asset_ids = [asset_id]
+    elif not isinstance(root_id, str) or not root_id.strip():
+        raise CleanroomException(400, "INVALID_REQUEST", "root_id 不能为空")
+    key = idempotency_key or f"asr:{root_id}:{asset_id or 'root'}:{uuid.uuid4().hex}"
+    request = {"roots": [str(root_id)], "engine": configuration["engine"], "model": configuration["model"]}
+    if asset_ids:
+        request["asset_ids"] = asset_ids
+    accepted = index_jobs.service().submit("asr_transcription", request, actor, key)
+    return JSONResponse(accepted, status_code=status.HTTP_202_ACCEPTED)
+
+
 _SHOT_VECTOR_EMBEDDER_LOCK = threading.RLock()
 _SHOT_VECTOR_EMBEDDER_KEY = None
 _SHOT_VECTOR_EMBEDDER = None
@@ -673,12 +762,43 @@ def search_registry_shots(
                 "content_hash": hit.content_hash,
             }
         )
+    transcript_items = []
+    try:
+        from gw.asset_registry import asr_transcription
+        from gw.asset_registry.transcript_index import search_transcripts
+
+        if asr_transcription.settings()["enabled"]:
+            for match in search_transcripts(query, limit=bounded_limit):
+                asset_id = str(match.get("asset_id") or "")
+                record = repo.visible_asset_from_snapshot(
+                    registry_snapshot, asset_id, hidden_filter=hidden_filter
+                )
+                if record is None:
+                    continue
+                transcript_items.append({
+                    "asset_id": asset_id,
+                    "granularity": "transcript",
+                    "name": str(record.get("name") or ""),
+                    "kind": str(record.get("kind") or ""),
+                    "display_path": record.get("display_path"),
+                    "segment_idx": int(match["segment_idx"]),
+                    "start_sec": float(match["start_sec"]),
+                    "end_sec": float(match["end_sec"]),
+                    "transcript_text": str(match.get("text") or ""),
+                    "score": 0.0,
+                    "source": "transcript",
+                })
+    except (OSError, RuntimeError, ValueError):
+        # ASR FTS 缺失或当前 SQLite 不支持时仍保留既有视觉/关键词检索。
+        transcript_items = []
+    items = (transcript_items + items)[:bounded_limit]
     return {
         "query": query,
         "granularity": "shot",
         "limit": bounded_limit,
         "items": items,
         "shot_count": sum(1 for item in items if item["granularity"] == "shot"),
+        "transcript_count": sum(1 for item in items if item["granularity"] == "transcript"),
         "vector_track_degraded": bool(
             results.vector_track_degraded or not vector_track_ready
         ),

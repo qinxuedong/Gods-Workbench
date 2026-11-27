@@ -320,6 +320,10 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/shot-vectors/jobs",
         "/api/asset-registry/shot-vectors/settings",
         "/api/asset-registry/shot-vectors/status",
+        # 2026-11-27 QIN-658（issue #820）：本机 ASR 状态、设置与异步转写端点。
+        "/api/asset-registry/asr/jobs",
+        "/api/asset-registry/asr/settings",
+        "/api/asset-registry/asr/status",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",
@@ -598,6 +602,10 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/shot-vectors/jobs",
         "/api/asset-registry/shot-vectors/settings",
         "/api/asset-registry/shot-vectors/status",
+        # 2026-11-27 QIN-658（issue #820）：本机 ASR 状态、设置与异步转写端点。
+        "/api/asset-registry/asr/jobs",
+        "/api/asset-registry/asr/settings",
+        "/api/asset-registry/asr/status",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",

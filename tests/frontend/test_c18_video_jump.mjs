@@ -393,6 +393,21 @@ test('Real source search matching: findMatchedVideoSegment from asset-manager.js
   assert.equal(player.findMatchedVideoSegment(asset, '未知标签'), null);
 });
 
+test('MediaPreviewPlayer 台词搜索返回绝对时间区间', () => {
+  const {player} = createPlayerContext();
+  const asset = {metadata:{video_segments:[
+    {start_sec:20,end_sec:40,transcript:[{start_sec:27.25,end_sec:29.5,text:'现在开始拍摄。'}]},
+  ]}};
+  const hit = player.findMatchedVideoTranscript(asset,'开始拍摄');
+  assert.equal(hit.start_sec,27.25);
+  assert.equal(hit.end_sec,29.5);
+  assert.equal(hit.text,'现在开始拍摄。');
+  const segment = player.findMatchedVideoSegment(asset,'开始拍摄');
+  assert.equal(segment.start_sec,27.25);
+  assert.equal(segment.end_sec,29.5);
+  assert.equal(segment.transcript_match,'现在开始拍摄。');
+});
+
 test('Real source frame rate alignment: alignTimeToFps for 24, 25, 29.97fps from asset-manager.js and MediaPreviewPlayer', () => {
   const { alignTimeToFps } = realAssetManagerFns;
   const { player } = createPlayerContext();
