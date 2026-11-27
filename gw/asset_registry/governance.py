@@ -229,15 +229,14 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
     prior_count_masks_by_length: Dict[int, Dict[str, List[int]]] = {}
 
     def add_count_mask(bit_planes: List[int], mask: int) -> None:
-        bit_index = 0
-        while mask:
-            if bit_index == len(bit_planes):
-                bit_planes.append(mask)
-                break
-            carry = bit_planes[bit_index] & mask
-            bit_planes[bit_index] ^= mask
+        for bit_index, plane in enumerate(bit_planes):
+            carry = plane & mask
+            if not carry:
+                bit_planes[bit_index] = plane | mask
+                return
+            bit_planes[bit_index] = plane ^ mask
             mask = carry
-            bit_index += 1
+        bit_planes.append(mask)
 
     def mask_at_least(bit_planes: Sequence[int], threshold: int, valid_mask: int) -> int:
         greater = 0
@@ -272,6 +271,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             common_grams = grams & frequent_grams
             omitted_common = set()
             common_upper_bound = 0
+            omitted_common_universal = True
             omission_budget = minimum_required // 2
             for gram in sorted(
                 common_grams, key=gram_frequency.__getitem__, reverse=True
@@ -280,6 +280,23 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                 if common_upper_bound + count <= omission_budget:
                     omitted_common.add(gram)
                     common_upper_bound += count
+                    for other_length in possible_lengths:
+                        valid_mask = prior_length_masks.get(other_length, 0)
+                        if count == 1:
+                            if prior_gram_masks_by_length.get(other_length, {}).get(
+                                gram, 0
+                            ) != valid_mask:
+                                omitted_common_universal = False
+                                break
+                            continue
+                        levels = prior_count_masks_by_length.get(other_length, {}).get(
+                            gram, ()
+                        )
+                        if len(levels) < count or any(
+                            levels[level] != valid_mask for level in range(count)
+                        ):
+                            omitted_common_universal = False
+                            break
 
             matcher: Optional[SequenceMatcher] = None
             for other_length, required in required_by_length.items():
@@ -311,16 +328,19 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                     bit = candidate_mask & -candidate_mask
                     candidate_mask ^= bit
                     other = bit.bit_length() - 1
-                    if omitted_common:
+                    if omitted_common and not omitted_common_universal:
                         other_grams = candidates[other][2]
                         other_counts = candidates[other][3]
-                        shared = sum(
-                            min(
-                                gram_counts[gram] if gram_counts is not None else 1,
-                                other_counts[gram] if other_counts is not None else 1,
+                        if gram_counts is None and other_counts is None:
+                            shared = len(grams & other_grams)
+                        else:
+                            shared = sum(
+                                min(
+                                    gram_counts[gram] if gram_counts is not None else 1,
+                                    other_counts[gram] if other_counts is not None else 1,
+                                )
+                                for gram in grams & other_grams
                             )
-                            for gram in grams & other_grams
-                        )
                         if shared < required:
                             continue
 
