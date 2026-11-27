@@ -1436,6 +1436,19 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-sidebar-detail .asset-detail-actions { margin-top:18px; }
 .asset-detail-media-version-history { padding-top:2px; padding-bottom:14px; border-bottom:1px solid var(--line-2); }
 .asset-detail-media-version-history .registry-detail-image-version.is-selected { border-color:var(--sf-cyan); box-shadow:inset 0 0 0 1px var(--sf-cyan); }
+.asset-detail-media-version-card-info { min-width:0; padding:7px 9px; display:grid; grid-template-columns:40px minmax(0,1fr); align-items:center; gap:8px; }
+.asset-detail-media-version-card-info img { width:40px; height:40px; border:1px solid var(--line-2); background:var(--soft-2); object-fit:cover; }
+.asset-detail-media-version-card-info span { min-width:0; display:grid; gap:2px; }
+.asset-detail-media-version-card-info b,.asset-detail-media-version-card-info small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.asset-detail-media-version-card-info b { font-size:var(--gw-type-label-md); }
+.asset-detail-media-version-card-info small { color:var(--muted); font-size:var(--gw-type-label-md); }
+.asset-detail-media-version-switcher { min-width:0; margin-top:10px; padding-top:10px; border-top:1px solid var(--line-2); display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.asset-detail-media-version-switcher button { min-width:0; min-height:30px; padding:0 10px; border:1px solid var(--line-2); border-radius:3px; background:var(--soft); color:var(--text); font:600 var(--gw-type-label-md)/1 var(--gw-font-body); cursor:pointer; }
+.asset-detail-media-version-switcher button:hover,.asset-detail-media-version-switcher button:focus-visible { border-color:var(--sf-cyan); outline:2px solid color-mix(in srgb,var(--sf-cyan) 30%,transparent); outline-offset:1px; }
+.asset-detail-media-version-switcher button.is-selected { border-color:var(--sf-cyan); background:color-mix(in srgb,var(--sf-cyan) 13%,var(--soft)); color:var(--text); box-shadow:inset 0 0 0 1px var(--sf-cyan); }
+.asset-detail-media-version-switcher button.is-pending { border-style:dashed; }
+.asset-detail-media-version-switch-status { flex:1 0 100%; min-width:0; color:var(--muted); font-size:var(--gw-type-label-md); line-height:1.4; overflow-wrap:anywhere; }
+.asset-detail-media-version-switch-status.is-error { color:var(--sf-coral); }
 .asset-detail-media-version-status { margin:0; padding:12px 9px; border:1px solid var(--line); background:var(--soft); color:var(--muted); font-size: var(--gw-type-label-md); }
 .asset-detail-media-library.is-collapsed { min-width:44px; grid-template-rows:minmax(0,1fr); }
 .asset-lightbox-image { max-width:100%; max-height:100%; width:auto; height:auto; object-fit:contain; display:block; transform-origin:center center; will-change:transform; cursor:zoom-in; user-select:none; }
@@ -4428,4 +4441,150 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
 .registry-detail-image-version > button:hover:not(:disabled) {
     background:var(--gold-dim,rgba(223,195,132,.14));
     color:var(--gold-primary,var(--text));
+}
+
+
+/* QIN-668：单卡与连续圆角版本切换区。 */
+.asset-detail-media-sidebar-tabs button[role="tab"] {
+    border-radius:9px;
+    background:linear-gradient(180deg,#1e222d 0%,#11131a 100%);
+    border-color:rgb(223 195 132 / .2);
+    color:#d1d5db;
+    font-weight:700;
+}
+.asset-detail-media-sidebar-tabs button[role="tab"].is-active {
+    border:1px solid var(--gw-keycap-flare,#fae2c8);
+    border-bottom-color:#8c6828;
+    background:linear-gradient(180deg,var(--gw-keycap-gold,#dfc384) 0%,#b89354 100%);
+    color:var(--gw-engraved-text,#171107);
+    box-shadow:0 4px 6px rgb(0 0 0 / .75),inset 0 1px 0 rgb(255 255 255 / .9),inset 0 -2px 3px rgb(140 104 40 / .6);
+}
+.asset-detail-media-version-history {
+    margin-top:14px;
+    padding:6px;
+    border:1px solid var(--line-2,rgba(223,195,132,.26));
+    border-radius:9px;
+    background:var(--panel);
+    gap:0;
+    overflow:visible;
+}
+.asset-detail-media-version-history .registry-detail-image-version.asset-detail-media-version-card {
+    position:relative;
+    grid-template-columns:minmax(0,1fr) repeat(2,30px);
+    padding-right:7px;
+    border:0;
+    border-radius:9px;
+    background:transparent;
+    box-shadow:none;
+    overflow:visible;
+}
+.asset-detail-media-version-history .registry-detail-image-version.asset-detail-media-version-card.is-selected {
+    background:#141822;
+    color:var(--vault-gold,#dfc384);
+}
+.asset-detail-media-version-history .registry-detail-image-version.asset-detail-media-version-card.is-hidden {
+    opacity:1;
+}
+.asset-detail-media-version-history .asset-detail-media-version-card-info {
+    padding:7px 9px;
+}
+.asset-detail-media-version-history .asset-detail-media-version-card > button {
+    width:30px;
+    height:30px;
+    align-self:center;
+    border:1px solid transparent;
+    border-radius:3px;
+    background:transparent;
+    color:#d1d5db;
+}
+.asset-detail-media-version-history .asset-detail-media-version-card > button:hover:not(:disabled),
+.asset-detail-media-version-history .asset-detail-media-version-card > button:focus-visible {
+    border-color:var(--gold-primary,var(--text));
+    background:var(--gold-dim,rgba(223,195,132,.14));
+    color:var(--gold-primary,var(--text));
+    outline:none;
+}
+.asset-detail-media-version-history .asset-detail-media-version-card > button:disabled {
+    opacity:.35;
+}
+.asset-detail-media-version-count {
+    position:absolute;
+    z-index:1;
+    top:-5px;
+    right:7px;
+    min-width:16px;
+    height:16px;
+    padding:0 3px;
+    border:1px solid var(--line-2,rgba(223,195,132,.3));
+    border-radius:2px;
+    background:var(--panel);
+    color:var(--muted);
+    display:grid;
+    place-items:center;
+    font-size:var(--gw-type-body-sm);
+    line-height:1;
+    pointer-events:none;
+}
+.asset-detail-media-version-switcher {
+    min-width:0;
+    margin:0;
+    padding:8px 2px 2px;
+    border:0;
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    gap:6px;
+}
+.asset-detail-media-version-switcher button {
+    flex:0 0 auto;
+    min-width:40px;
+    height:32px;
+    min-height:32px;
+    padding:0 10px;
+    border:1px solid var(--line-2,rgba(223,195,132,.26));
+    border-radius:9px;
+    background:linear-gradient(180deg,#1e222d 0%,#11131a 100%);
+    color:#d1d5db;
+    font:600 var(--gw-type-label-md)/1 var(--gw-font-body);
+    white-space:nowrap;
+    cursor:pointer;
+}
+.asset-detail-media-version-switcher button.is-hidden {
+    border-color:var(--line-2,rgba(223,195,132,.2));
+    background:var(--soft-2,var(--soft));
+    color:var(--muted);
+    opacity:.48;
+}
+.asset-detail-media-version-switcher button:hover:not(:disabled),
+.asset-detail-media-version-switcher button:focus-visible {
+    border-color:var(--gold-primary,var(--text));
+    outline:2px solid color-mix(in srgb,var(--gold-primary,#dfc384) 28%,transparent);
+    outline-offset:1px;
+    color:var(--gold-primary,var(--text));
+}
+.asset-detail-media-version-switcher button.is-selected {
+    border-color:var(--gold-primary,#dfc384);
+    background:#141822;
+    color:var(--vault-gold,#dfc384);
+    box-shadow:0 0 8px rgba(223,195,132,.18),inset 0 0 0 1px rgba(223,195,132,.25);
+}
+.asset-detail-media-version-switcher button.is-selected.is-hidden {
+    border-color:var(--gold-primary,#dfc384);
+    background:#141822;
+    color:var(--muted);
+    opacity:.72;
+}
+.asset-detail-media-version-switcher button.is-pending {
+    border-style:dashed;
+}
+.asset-detail-media-version-switch-status {
+    flex:1 0 100%;
+    min-width:0;
+    color:var(--muted);
+    font-size:var(--gw-type-label-md);
+    line-height:1.4;
+    overflow-wrap:anywhere;
+}
+.asset-detail-media-version-switch-status.is-error {
+    color:var(--sf-coral);
 }
