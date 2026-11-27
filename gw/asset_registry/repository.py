@@ -1675,6 +1675,96 @@ def _asset_category(asset: Dict[str, Any]) -> str:
     return kind if kind in _ASSET_CATEGORY_EXTENSIONS else "other"
 
 
+_ASSET_LIST_METADATA_FIELDS = (
+    "source_id",
+    "classification",
+    "collect_sources",
+    "preview_url",
+    "width",
+    "height",
+    "frame_rate",
+    "duration",
+    "original_filename",
+    "file_name",
+    "filename",
+    "extension",
+    "file_extension",
+    "workflow_id",
+    "job_id",
+)
+_ASSET_LIST_VIDEO_SEGMENT_FIELDS = ("start_sec", "end_sec", "tags", "summary")
+_ASSET_LIST_SOURCE_CONTEXT_FIELDS = ("project_id", "canvas_id")
+_ASSET_LIST_COMFYUI_FIELDS = ("source", "has_workflow", "has_prompt_graph")
+
+
+def _project_asset_metadata_for_list(metadata: Any) -> Dict[str, Any]:
+    """为列表视图保留轻量卡片字段，丢弃工作流、提示词与任意原始载荷。"""
+    if not isinstance(metadata, dict):
+        return {}
+    result = {
+        key: metadata[key]
+        for key in _ASSET_LIST_METADATA_FIELDS
+        if key in metadata
+    }
+
+    source_context = metadata.get("source_context")
+    if isinstance(source_context, dict):
+        projected_source = {
+            key: source_context[key]
+            for key in _ASSET_LIST_SOURCE_CONTEXT_FIELDS
+            if key in source_context
+        }
+        if projected_source:
+            result["source_context"] = projected_source
+
+    lut = metadata.get("lut")
+    if isinstance(lut, dict) and "preview_url" in lut:
+        result["lut"] = {"preview_url": lut["preview_url"]}
+
+    video_segments = metadata.get("video_segments")
+    if isinstance(video_segments, list):
+        result["video_segments"] = [
+            {
+                key: segment[key]
+                for key in _ASSET_LIST_VIDEO_SEGMENT_FIELDS
+                if key in segment
+            }
+            for segment in video_segments
+            if isinstance(segment, dict)
+        ]
+
+    generation = metadata.get("generation")
+    comfyui = generation.get("comfyui") if isinstance(generation, dict) else None
+    if isinstance(comfyui, dict):
+        projected_comfyui = {
+            key: comfyui[key]
+            for key in _ASSET_LIST_COMFYUI_FIELDS
+            if key in comfyui
+        }
+        if projected_comfyui:
+            result["generation"] = {"comfyui": projected_comfyui}
+    return result
+
+
+def _project_asset_list_response(payload: Dict[str, Any], view: Optional[str]) -> Dict[str, Any]:
+    """只投影显式卡片视图的分页结果，不改变存储记录或分页元数据。"""
+    if view not in {"card", "grid", "list"}:
+        return payload
+    assets = payload.get("assets")
+    if not isinstance(assets, list):
+        return payload
+    projected = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            projected.append(asset)
+            continue
+        item = {**asset}
+        if "metadata" in asset:
+            item["metadata"] = _project_asset_metadata_for_list(asset.get("metadata"))
+        projected.append(item)
+    return {**payload, "assets": projected, "items": projected}
+
+
 def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[str],
                 archived: Optional[bool], *, cursor: Optional[str] = None, sort: Optional[str] = None,
                 view: Optional[str] = None, category: Optional[str] = None, tag: Optional[str] = None,
@@ -1723,7 +1813,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         ):
             raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE",
                                      "结构化查询不能混用旧版过滤参数")
-        return _list_structured_assets(
+        result = _list_structured_assets(
             limit=limit,
             offset=offset,
             cursor=cursor,
@@ -1734,6 +1824,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             include=include,
             include_removed=include_removed,
         )
+        return _project_asset_list_response(result, view)
     cutoff = None
     if recent_days is not None:
         if type(recent_days) is not int or not 1 <= recent_days <= 36500:
@@ -2017,10 +2108,13 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 "canonical_relpath": str(last_asset.get("canonical_relpath") or ""),
             },
         }, separators=(",", ":")).encode()).decode().rstrip("=")
-    return {"assets": page, "items": page, "total": total, "total_known": True,
-            "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
-            "next_cursor": next_cursor, "revision": raw["revision"],
-            "data_status": DATA_STATUS_OK, "data_gaps": []}
+    return _project_asset_list_response(
+        {"assets": page, "items": page, "total": total, "total_known": True,
+         "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
+         "next_cursor": next_cursor, "revision": raw["revision"],
+         "data_status": DATA_STATUS_OK, "data_gaps": []},
+        view,
+    )
 
 
 def _structured_cursor_fingerprint(normalized: Dict[str, Any]) -> str:
