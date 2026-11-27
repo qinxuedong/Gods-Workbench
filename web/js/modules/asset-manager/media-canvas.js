@@ -137,11 +137,11 @@ import {
     customAssetLibraryAllItems,
 } from './organize.js';
 import {
-    detailViewerItems,
+    detailViewerItems, detailCurrentImageVersion, detailImageVersionActions, detailImageVersionLabel, detailImageVersionSwitchStatus,
     detailViewerMetaRows,
     detailViewerSyncSelection,
     detailViewerTypeLabel,
-    hydrateDetailRegistryAsset,
+    hydrateDetailRegistryAsset, isDetailImageVersionSwitchable,
     loadDetailViewerFileInfo,
     positionDetailMediaVideoDock,
     renderDetailImageEditor,
@@ -1019,28 +1019,30 @@ function renderDetailMediaCanvasLibraryContent(values, baseItems, options, thumb
 }
 function renderDetailMediaCanvasImageVersionHistory(){
     const item=detailActiveImageItem(),assetId=detailImageVersionAssetId(item);
-    if(!assetId) return '';
+    if(!assetId || detailMediaCanvasSingleSelectedImageItem()?.id!==item.id) return '';
     const versions=detailViewerState.imageVersionsAssetId===assetId ? detailViewerState.imageVersions : [];
+    const currentVersion=detailCurrentImageVersion(versions,detailViewerState.imageVersionSelectedId);
+    const currentLabel=detailImageVersionLabel(currentVersion);
+    const actions=detailImageVersionActions(currentVersion);
+    const switchStatus=detailImageVersionSwitchStatus(detailViewerState);
     const content=detailViewerState.imageVersionsLoading
         ? '<p class="asset-detail-media-version-status">正在读取版本…</p>'
-        : versions.map(version=>{
-            const number=Number(version.version_number||0),selected=String(detailViewerState.imageVersionSelectedId)===String(version.id);
-            const label=version.is_original?'原始素材':`V${number}`;
-            return `<div class="registry-detail-image-version ${selected?'is-selected':''} ${version.is_hidden?'is-hidden':''}"><button type="button" data-detail-image-version-select="${escapeAttr(version.id)}" title="打开${escapeAttr(label)}"><span><b>${escapeHtml(label)}${version.is_hidden?' · 已隐藏':''}</b><small>${escapeHtml(formatDate(version.created_at))}</small></span><i data-lucide="chevron-right"></i></button><button type="button" data-detail-image-version-visibility="${escapeAttr(version.id)}" data-hidden="${version.is_hidden?'1':'0'}" title="${version.is_original?'原始素材不能隐藏':version.is_hidden?'显示此版本':'隐藏此版本'}" aria-label="${version.is_hidden?'显示':'隐藏'}${escapeAttr(label)}" ${version.is_original?'disabled':''}><i data-lucide="${version.is_hidden?'eye-off':'eye'}"></i></button><button type="button" data-detail-image-version-edit="${escapeAttr(version.id)}" title="编辑${escapeAttr(label)}" aria-label="编辑${escapeAttr(label)}"><i data-lucide="pencil"></i></button><button type="button" data-detail-image-version-delete="${escapeAttr(version.id)}" title="${version.is_original?'原始素材不能删除':`删除${label}`}" aria-label="删除${escapeAttr(label)}" ${version.is_original?'disabled':''}><i data-lucide="trash-2"></i></button></div>`;
-        }).join('') || '<p class="asset-detail-media-version-status">当前仅有原始素材</p>';
-    const switchVersions=detailViewerState.referenceCanvasMode && detailMediaCanvasSingleSelectedImageItem()?.id===item.id && !detailViewerState.imageVersionsLoading
-        ? versions.filter(version=>!version.is_hidden)
+        : currentVersion
+            ? `<div class="registry-detail-image-version asset-detail-media-version-card is-selected ${currentVersion.is_hidden?'is-hidden':''}" data-detail-current-image-version="${escapeAttr(currentVersion.id)}"><div class="asset-detail-media-version-card-info"><img src="${escapeAttr(detailViewerState.imageVersionPreviewUrl || '')}" alt="${escapeAttr(currentLabel)}预览" loading="lazy"><span><b>${escapeHtml(currentLabel)}${currentVersion.is_hidden?' · 已隐藏':''}</b><small>${escapeHtml(formatDate(currentVersion.created_at))}</small></span></div><button type="button" data-detail-image-version-visibility="${escapeAttr(actions.visibility.id)}" data-hidden="${actions.visibility.hidden?'1':'0'}" title="${escapeAttr(actions.visibility.title)}" aria-label="${escapeAttr(actions.visibility.ariaLabel)}" ${actions.visibility.disabled?'disabled':''}><i data-lucide="${actions.visibility.icon}"></i></button><button type="button" data-detail-image-version-edit="${escapeAttr(actions.edit.id)}" title="${escapeAttr(actions.edit.title)}" aria-label="${escapeAttr(actions.edit.ariaLabel)}"><i data-lucide="pencil"></i></button><button type="button" data-detail-image-version-delete="${escapeAttr(actions.delete.id)}" title="${escapeAttr(actions.delete.title)}" aria-label="${escapeAttr(actions.delete.ariaLabel)}" ${actions.delete.disabled?'disabled':''}><i data-lucide="trash-2"></i></button></div>`
+            : '<p class="asset-detail-media-version-status">当前没有可用版本</p>';
+    const switchVersions=!detailViewerState.imageVersionsLoading
+        ? versions.filter(isDetailImageVersionSwitchable)
         : [];
-    const switcher=switchVersions.length<2 ? '' : `<div class="asset-detail-media-version-switcher" data-detail-canvas-image-version-switcher role="group" aria-label="画布图片版本切换" ${detailViewerState.imageVersionSwitchPendingId?'aria-busy="true"':''}>
+    const switcher=switchVersions.length<2 ? '' : `<div class="asset-detail-media-version-switcher" data-detail-canvas-image-version-switcher role="group" aria-label="画布图片版本切换" ${switchStatus.isPending?`aria-busy="${switchStatus.ariaBusy}"`:''}>
         ${switchVersions.map(version=>{
             const original=version.is_original || version.id==='original';
             const label=original?'原始':`版本${Number(version.version_number||0)}`;
             const selected=String(detailViewerState.imageVersionSelectedId)===String(version.id);
-            const pending=String(detailViewerState.imageVersionSwitchPendingId||'')===String(version.id);
+            const pending=switchStatus.pendingId===String(version.id);
             return `<button type="button" class="${selected?'is-selected':''} ${pending?'is-pending':''}" data-detail-canvas-image-version-select="${escapeAttr(version.id)}" aria-pressed="${selected}" title="切换到${escapeAttr(label)}">${escapeHtml(label)}</button>`;
         }).join('')}
-        ${detailViewerState.imageVersionSwitchPendingId?`<span class="asset-detail-media-version-switch-status" role="status">正在加载目标版本…</span>`:''}
-        ${detailViewerState.imageVersionSwitchError?`<span class="asset-detail-media-version-switch-status is-error" role="alert">${escapeHtml(detailViewerState.imageVersionSwitchError)}</span>`:''}
+        ${switchStatus.isPending?`<span class="asset-detail-media-version-switch-status" role="status">正在加载目标版本…</span>`:''}
+        ${switchStatus.hasError?`<span class="asset-detail-media-version-switch-status is-error" role="alert">${escapeHtml(switchStatus.error)}</span>`:''}
     </div>`;
     return `<section class="registry-detail-block registry-image-versions asset-detail-media-version-history"><div class="registry-detail-heading"><strong>版本历史</strong><span>${versions.length || 0}</span></div>${content}${switcher}</section>`;
 }

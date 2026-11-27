@@ -38,9 +38,13 @@ function createHost(){
     });
 }
 async function openReference(host, items){
+    return openCanvas(host,items,{referenceCanvasMode:true});
+}
+
+async function openCanvas(host, items, options={}){
     host.main.setRegistryAssets(items);
     await host.main.gwCall('preview','showDetailPreview','registry',items[0].id,{
-        items, mediaCanvasItems:items, referenceCanvasMode:true,
+        items, mediaCanvasItems:items, ...options,
     });
     await wait(35);
 }
@@ -91,7 +95,7 @@ function installReplaceWith(doc){
     };
 }
 
-test('QIN-668：参考画布版本切换条与异步选择行为',async()=>{
+test('QIN-668：所有媒体画布入口共用右侧当前版本卡、切换按钮与异步选择',async()=>{
     const restoreTimers=trackTimers();
     const images=installImageLoader();
     const host=await createHost();
@@ -112,13 +116,16 @@ test('QIN-668：参考画布版本切换条与异步选择行为',async()=>{
         assert.equal(body.querySelector('.asset-detail-image-versions'),null,'不再出现左侧展开栏');
         assert.equal(body.querySelector('[data-detail-image-versions-toggle]'),null,'不再出现左侧折叠窄条');
         assert.equal(body.querySelector('.asset-detail-structure-versions'),null,'合并版本结构卡随左栏移除');
-        assert.ok(history,'右侧版本历史管理列表保留');
+        assert.ok(history,'右侧版本区域保留');
+        assert.equal(history.querySelectorAll('.registry-detail-image-version').length,1,'右侧只渲染当前版本卡，不显示多版本卡片列表');
+        assert.equal(history.querySelector('.asset-detail-media-version-card')?.dataset.detailCurrentImageVersion,'original','唯一卡片对应已提交的原始版本');
         assert.equal(history.lastElementChild,switcher,'切换条位于版本历史列表下方');
         assert.deepEqual([...switcher.querySelectorAll('button')].map(button=>button.textContent),['原始','版本2','版本1']);
         assert.equal(switcher.querySelector('[data-detail-canvas-image-version-select="original"]').getAttribute('aria-pressed'),'true');
-        assert.ok(history.querySelector('[data-detail-image-version-visibility="version-hidden"]'),'历史列表仍提供隐藏管理');
-        assert.ok(history.querySelector('[data-detail-image-version-edit="version-2"]'),'历史列表仍提供编辑管理');
-        assert.ok(history.querySelector('[data-detail-image-version-delete="version-2"]'),'历史列表仍提供删除管理');
+        assert.ok(history.querySelector('[data-detail-image-version-visibility="original"]'),'当前版本卡保留隐藏操作');
+        assert.ok(history.querySelector('[data-detail-image-version-edit="original"]'),'当前版本卡保留编辑操作');
+        assert.ok(history.querySelector('[data-detail-image-version-delete="original"]'),'当前版本卡保留删除操作');
+        assert.equal(history.querySelector('[data-detail-image-version-select]'),null,'版本卡本身不另设切换入口');
         assert.equal(switcher.querySelector('[data-detail-image-version-edit],[data-detail-image-version-delete],[data-detail-image-version-visibility]'),null,'切换条不重复版本管理动作');
         assert.equal(state.imageVersionSelectedId,'original');
 
@@ -129,6 +136,7 @@ test('QIN-668：参考画布版本切换条与异步选择行为',async()=>{
         state.imageVersions=[state.imageVersions[0],...VERSIONS];
         await setSelection(host,[selected.id,'qin-668-other']);
         assert.equal(currentSwitcher(host),null,'多选时不显示切换条');
+        assert.equal(host.document.querySelector('.asset-detail-media-version-history'),null,'多选时不显示单版本卡');
         await setSelection(host,[]);
         assert.equal(currentSwitcher(host),null,'无选中时不显示切换条');
         const imageItems=state.mediaCanvasItems;
@@ -173,6 +181,11 @@ test('QIN-668：参考画布版本切换条与异步选择行为',async()=>{
         assert.equal(state.imageVersionSelectedId,'version-2');
         assert.match(state.mediaCanvasItems[0].url,/image-versions\/version-2\/media$/);
         assert.equal(currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]').getAttribute('aria-pressed'),'true');
+        const selectedCard=host.document.querySelector('.asset-detail-media-version-card');
+        assert.equal(selectedCard?.dataset.detailCurrentImageVersion,'version-2','切换成功后唯一版本卡更新为当前版本');
+        assert.ok(selectedCard?.querySelector('[data-detail-image-version-visibility="version-2"]'),'隐藏操作绑定当前版本');
+        assert.ok(selectedCard?.querySelector('[data-detail-image-version-edit="version-2"]'),'编辑操作绑定当前版本');
+        assert.ok(selectedCard?.querySelector('[data-detail-image-version-delete="version-2"]'),'删除操作绑定当前版本');
 
         click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-1"]'));
         await wait(0);
@@ -271,30 +284,38 @@ test('QIN-668：参考画布版本媒体慢加载 1500ms / 5000ms 时保留旧�
     }
 });
 
-test('QIN-668：普通媒体画布保留既有左侧版本管理栏',async()=>{
+test('QIN-668：普通媒体画布入口也使用右侧单卡和切换按钮',async()=>{
     const restoreTimers=trackTimers();
-    const host=await createHost(async url=>String(url).includes('/image-versions?')?new Promise(()=>{}):jsonResponse({asset:{}}));
+    const images=installImageLoader();
+    const host=await createHost();
     const restoreDom=installReplaceWith(host.document);
     try{
-        const local=image('qin-668-local',{asset_id:'',url:'/assets/qin-668-local.png'});
-        await host.main.gwCall('preview','showDetailPreview','local',local.id,{items:[local],mediaCanvasItems:[]});
-        const selected=image('qin-668-legacy');
+        const selected=image('qin-668-regular-entry');
+        await openCanvas(host,[selected]);
         const state=host.main.detailViewerState;
-        state.source='registry';
-        state.id=selected.id;
-        state.index=0;
-        state.items=[selected];
-        state.mediaCanvasItems=[selected];
-        state.mediaCanvasActiveId=selected.id;
-        state.mediaCanvasSelectedIds=new Set([selected.id]);
-        state.mediaCanvasSelectionOrder=[selected.id];
+        await setSelection(host,[selected.id]);
         state.referenceCanvasMode=false;
         await host.main.gwCall('preview','renderDetailViewer');
         const body=host.document.querySelector('.asset-detail-viewer-body');
-        assert.ok(body?.querySelector('.asset-detail-image-versions'),'非参考媒体画布继续显示原版本管理栏');
-        assert.equal(body.querySelector('.asset-detail-media-version-switcher'),null,'新切换条仅属于参考画布');    }finally{
+        assert.equal(state.referenceCanvasMode,false,'此案例覆盖非参考画布入口');
+        assert.equal(body?.querySelector('.asset-detail-image-versions'),null,'普通媒体画布入口也不显示左侧版本栏');
+        assert.equal(body?.querySelector('[data-detail-image-versions-toggle]'),null,'普通入口不保留折叠窄条');
+        assert.equal(body?.querySelector('.asset-detail-structure-versions'),null,'普通入口不显示左侧结构卡');
+        assert.equal(host.document.querySelectorAll('.asset-detail-media-version-history .registry-detail-image-version').length,1,'普通入口右侧只显示一张当前版本卡');
+        assert.ok(currentSwitcher(host),'普通入口也显示版本切换按钮');
+        click(host,currentSwitcher(host).querySelector('[data-detail-canvas-image-version-select="version-2"]'));
+        await wait(0);
+        assert.equal(state.imageVersionSelectedId,'original','普通入口 pending 不提前提交当前版本');
+        const request=images.instances.findLast(value=>value.src.includes('/image-versions/version-2/media'));
+        assert.ok(request,'普通入口复用异步媒体加载');
+        request.onload();
+        await wait(15);
+        assert.equal(state.imageVersionSelectedId,'version-2','普通入口加载成功后提交当前版本');
+        assert.equal(host.document.querySelector('.asset-detail-media-version-card')?.dataset.detailCurrentImageVersion,'version-2','普通入口右侧卡片同步到新版本');
+    }finally{
         host.dispose();
         restoreDom();
+        images.restore();
         restoreTimers();
     }
 });

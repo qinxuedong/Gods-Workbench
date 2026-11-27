@@ -1436,6 +1436,12 @@ body.studio-theme-dark .asset-detail-video-dock .asset-detail-video-volume input
 .asset-detail-media-sidebar-detail .asset-detail-actions { margin-top:18px; }
 .asset-detail-media-version-history { padding-top:2px; padding-bottom:14px; border-bottom:1px solid var(--line-2); }
 .asset-detail-media-version-history .registry-detail-image-version.is-selected { border-color:var(--sf-cyan); box-shadow:inset 0 0 0 1px var(--sf-cyan); }
+.asset-detail-media-version-card-info { min-width:0; padding:7px 9px; display:grid; grid-template-columns:40px minmax(0,1fr); align-items:center; gap:8px; }
+.asset-detail-media-version-card-info img { width:40px; height:40px; border:1px solid var(--line-2); background:var(--soft-2); object-fit:cover; }
+.asset-detail-media-version-card-info span { min-width:0; display:grid; gap:2px; }
+.asset-detail-media-version-card-info b,.asset-detail-media-version-card-info small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.asset-detail-media-version-card-info b { font-size:var(--gw-type-label-md); }
+.asset-detail-media-version-card-info small { color:var(--muted); font-size:var(--gw-type-label-md); }
 .asset-detail-media-version-switcher { min-width:0; margin-top:10px; padding-top:10px; border-top:1px solid var(--line-2); display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
 .asset-detail-media-version-switcher button { min-width:0; min-height:30px; padding:0 10px; border:1px solid var(--line-2); border-radius:3px; background:var(--soft); color:var(--text); font:600 var(--gw-type-label-md)/1 var(--gw-font-body); cursor:pointer; }
 .asset-detail-media-version-switcher button:hover,.asset-detail-media-version-switcher button:focus-visible { border-color:var(--sf-cyan); outline:2px solid color-mix(in srgb,var(--sf-cyan) 30%,transparent); outline-offset:1px; }
