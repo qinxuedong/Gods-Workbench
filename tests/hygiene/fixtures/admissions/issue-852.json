@@ -1,14 +1,16 @@
 {
   "schema": "gw.cleanroom-admission-shard/v1",
   "issue": 852,
-  "authorization_basis": "GitHub Issue #852 (QIN-673), PM design approval 2026-11-26",
+  "authorization_basis": "GitHub Issue #852 (QIN-673), PM design approval 2026-11-26; user-approved test scope extension 2026-11-27",
   "files": [
     "web/js/modules/asset-manager.js",
     "tests/frontend/qin-518-registry-virtual-scroll-smooth.test.mjs",
+    "tests/frontend/qin-573-asset-vault-fast-boot.test.mjs",
     "tests/frontend/qin-609-preview-scheduling.test.mjs",
+    "tests/frontend/qin-631-native-select-pilot.test.mjs",
     "tests/frontend/qin-673-asset-library-click-during-thumbnail-load.test.mjs",
     "tests/frontend/node-files.txt",
     "tests/hygiene/fixtures/admissions/issue-852.json"
   ],
-  "notes": "QIN-673：保留虚拟窗口内卡片节点，限制缩略图并发并为交互请求让路。"
+  "notes": "QIN-673：保留虚拟窗口内卡片节点，限制缩略图并发并为交互请求让路；同步 QIN-573 并发断言与 QIN-631 既有选择控件行号基线。"
 }

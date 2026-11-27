@@ -253,19 +253,19 @@ export const FROZEN_BASELINE_SELECTS = [
   },
   {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6256,
+    "line": 6362,
     "col": 77,
     "pattern": "registryCanvasTarget"
   },
   {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6257,
+    "line": 6363,
     "col": 199,
     "pattern": "registryNewCanvasKind"
   },
   {
     "file": "web/js/modules/asset-manager.js",
-    "line": 6355,
+    "line": 6461,
     "col": 19,
     "pattern": "<select>"
   },

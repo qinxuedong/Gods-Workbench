@@ -85,14 +85,14 @@ test('AC4: 首次冷启动（无快照）安全降级，渲染完成后骨架屏
 });
 
 test('AC5: 首屏缩略图即时加载，避免二次无谓重绘与清空队列', () => {
-  // 1. 并发度调优至 8
+  // 1. 预览并发上限收敛至 4，为用户交互请求保留连接
   assert.match(
     assetManagerJs,
-    /const REGISTRY_PREVIEW_CONCURRENCY = 8;/,
-    '并发度提升至 8 以加速滚动批次下载'
+    /const REGISTRY_PREVIEW_CONCURRENCY = 4;/,
+    '预览并发上限为 4，为用户交互请求让路'
   );
 
-  // 2.【QIN-609】immediate 直加载路径已删除：全部缩略图统一走 defer 占位 + 8 并发队列
+  // 2.【QIN-609/QIN-673】immediate 直加载路径已删除：全部缩略图统一走 defer 占位 + 4 并发队列
   //   （票面 AC1 并发上限要求首屏卡片也受队列管控，不再绕过并发上限直出真实 src）。
   assert.match(
     assetManagerJs,
