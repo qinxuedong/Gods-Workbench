@@ -3739,7 +3739,10 @@ function isRegistryAbortError(error){
 // 与 refreshRegistryBootstrapTracked 同口径：返回**原始 request**，业务调用方的
 // await / .then / .catch 仍能拿到列表 500 等真实失败，终态登记不吞错误。
 function refreshRegistryAssets(renderNow=true, options={}){
-    return withRegistryPreviewInteraction(() => trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow, options)));
+    const request = () => trackRegistryBootstrapSettled(refreshRegistryAssetsRequest(renderNow, options));
+    return typeof withRegistryPreviewInteraction === 'function'
+        ? withRegistryPreviewInteraction(request)
+        : request();
 }
 // 【QIN-603】一次点击只出「一次加载态 + 一次终态」：
 // - 目录索引按根作用域签名门控（AC2：筛选不变不重拉 /api/asset-registry/folders）；
