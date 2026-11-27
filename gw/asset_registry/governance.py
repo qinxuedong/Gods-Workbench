@@ -222,7 +222,6 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             parents[max(left_root, right_root)] = min(left_root, right_root)
 
     frequent_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 8}
-    frequent_gram_order = sorted(frequent_grams, key=gram_frequency.__getitem__, reverse=True)
 
     prior_by_length: Dict[int, List[int]] = {}
     prior_length_masks: Dict[int, int] = {}
@@ -274,9 +273,9 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             omitted_common = set()
             common_upper_bound = 0
             omission_budget = minimum_required // 2
-            for gram in frequent_gram_order:
-                if gram not in common_grams:
-                    continue
+            for gram in sorted(
+                common_grams, key=gram_frequency.__getitem__, reverse=True
+            ):
                 count = gram_counts[gram] if gram_counts is not None else 1
                 if common_upper_bound + count <= omission_budget:
                     omitted_common.add(gram)
