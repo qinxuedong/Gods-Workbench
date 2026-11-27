@@ -188,7 +188,7 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
 
 
 def _group_similar_display_paths(names: Sequence[str], similarity_threshold: float = 0.9) -> Tuple[SimilarNameGroup, ...]:
-    """以三元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
+    """以四元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
     candidates = []
     gram_frequency: Counter[str] = Counter()
     repeated_grams = set()
@@ -204,7 +204,6 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             if gram_counts is not None:
                 repeated_grams.update(gram for gram, count in gram_counts.items() if count > 1)
             gram_frequency.update(grams)
-    candidates.sort(key=lambda item: (item[1], item[0]))
     if len(candidates) < 2:
         return ()
 
@@ -223,6 +222,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             parents[max(left_root, right_root)] = min(left_root, right_root)
 
     frequent_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 8}
+    frequent_gram_order = sorted(frequent_grams, key=gram_frequency.__getitem__, reverse=True)
 
     prior_by_length: Dict[int, List[int]] = {}
     prior_length_masks: Dict[int, int] = {}
@@ -271,16 +271,12 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         if required_by_length:
             minimum_required = min(required_by_length.values())
             common_grams = grams & frequent_grams
-            ranked_common = sorted(
-                common_grams,
-                key=lambda gram: gram_frequency[gram]
-                / (gram_counts[gram] if gram_counts is not None else 1),
-                reverse=True,
-            )
             omitted_common = set()
             common_upper_bound = 0
             omission_budget = minimum_required // 2
-            for gram in ranked_common:
+            for gram in frequent_gram_order:
+                if gram not in common_grams:
+                    continue
                 count = gram_counts[gram] if gram_counts is not None else 1
                 if common_upper_bound + count <= omission_budget:
                     omitted_common.add(gram)
