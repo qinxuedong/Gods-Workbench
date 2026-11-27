@@ -139,7 +139,7 @@ test('延后网关超时会真正中止治理建议请求', async () => {
     });
     const tree = makeProductTree({}, [{
         from: 'const DEFERRED_DOMAIN_JOB_TIMEOUT_MS = 15000;',
-        to: 'const DEFERRED_DOMAIN_JOB_TIMEOUT_MS = 25;',
+        to: 'const DEFERRED_DOMAIN_JOB_TIMEOUT_MS = 500;',
     }]);
     try {
         const main = await loadProduct(tree);
