@@ -143,6 +143,7 @@ async def _app_lifespan(app: FastAPI):
     """
     integration_enabled = os.getenv("GW_DISABLE_AGENT_INTEGRATION", "").strip() != "1"
     stop_integration = None
+    http_observation_writer = None
     primary_error = None
     owned_data_lock = None
     owned_instance_lock = None
@@ -234,6 +235,10 @@ async def _app_lifespan(app: FastAPI):
                 logging.getLogger("gw.api.app").warning(
                     "Agent 集成因缺少可选运行期依赖未启动 (%s)，应用在兼容模式下正常运行", dep_err
                 )
+        from gw.observability.telemetry import start_http_observation_writer
+
+        http_observation_writer = start_http_observation_writer()
+        app.state.http_observation_writer = http_observation_writer
         yield
     except BaseException as error:
         primary_error = error
@@ -245,6 +250,15 @@ async def _app_lifespan(app: FastAPI):
                 await stop_integration(app)
             except BaseException as error:
                 cleanup_errors.append(error)
+        if http_observation_writer is not None:
+            try:
+                from gw.observability.telemetry import stop_http_observation_writer
+
+                stop_http_observation_writer(http_observation_writer)
+            except BaseException as error:
+                cleanup_errors.append(error)
+            finally:
+                app.state.http_observation_writer = None
         try:
             # FastAPI 0.141 起应用对象不再提供 add_event_handler。
             from gw.asset_registry.index_jobs import shutdown as shutdown_index_jobs
@@ -330,7 +344,7 @@ def create_app(*, agent_integration_factory=None) -> FastAPI:
         )
 
     @app.get("/healthz", tags=["governance"])
-    def health_check():
+    async def health_check():
         """健康检查端点；如实暴露认证模式与发布授权状态，便于部署核验。"""
         auth_runtime = load_runtime_auth_config()
         return {
