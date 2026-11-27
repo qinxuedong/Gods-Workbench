@@ -4449,7 +4449,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     border-radius:9px;
     background:linear-gradient(180deg,#1e222d 0%,#11131a 100%);
     border-color:rgb(223 195 132 / .2);
-    color:var(--text);
+    color:#d1d5db;
     font-weight:700;
 }
 .asset-detail-media-sidebar-tabs button[role="tab"].is-active {
@@ -4495,6 +4495,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     border:1px solid transparent;
     border-radius:3px;
     background:transparent;
+    color:#d1d5db;
 }
 .asset-detail-media-version-history .asset-detail-media-version-card > button:hover:not(:disabled),
 .asset-detail-media-version-history .asset-detail-media-version-card > button:focus-visible {
@@ -4543,7 +4544,7 @@ html.vault-shell-embedded .asset-manager-root.asset-tree-layout > :is(.registry-
     border:1px solid var(--line-2,rgba(223,195,132,.26));
     border-radius:9px;
     background:linear-gradient(180deg,#1e222d 0%,#11131a 100%);
-    color:var(--text);
+    color:#d1d5db;
     font:600 var(--gw-type-label-md)/1 var(--gw-font-body);
     white-space:nowrap;
     cursor:pointer;
