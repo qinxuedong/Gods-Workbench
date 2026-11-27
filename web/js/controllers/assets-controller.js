@@ -479,6 +479,7 @@ window.WorkbenchAssets = (() => {
     const canManageResourceFolders = Boolean(bridge?.canManageResourceFolders?.());
     const canRunShotVectorJob = isRoot && Boolean(bridge?.canRunShotVectorJob?.(target.key));
     let shotVectorButton = null;
+    let videoDescriptionButton = null;
     let hideEmptyFolders = false;
     try {
       hideEmptyFolders = window?.localStorage?.getItem?.('gw.asset.tree.hideEmptyFolders') === '1';
@@ -502,6 +503,7 @@ window.WorkbenchAssets = (() => {
       }] : []),
       ...(isRoot ? [
         { id: 'shot-vectors', attr: 'data-asset-organize-shot-vectors', label: '补跑镜头视觉向量', icon: 'scan-search', disabled: true },
+        { id: 'video-descriptions', attr: 'data-asset-organize-video-descriptions', label: '批量镜头描述与打标', icon: 'sparkles', disabled: true },
         {
           id: 'toggle-empty',
           attr: 'data-asset-organize-toggle-empty',
@@ -522,6 +524,7 @@ window.WorkbenchAssets = (() => {
       if (item.disabled) btn.disabled = true;
       if (item.title) btn.title = item.title;
       if (item.id === 'shot-vectors') shotVectorButton = btn;
+      if (item.id === 'video-descriptions') videoDescriptionButton = btn;
       if (item.id === 'shot-vectors' && !canRunShotVectorJob) btn.title = '仅可对可管理的持久资源根补跑镜头视觉向量';
       if (item.danger) btn.className = 'is-danger';
       btn.innerHTML = `<i data-lucide="${item.icon}"></i><span>${item.label}</span>`;
@@ -545,6 +548,25 @@ window.WorkbenchAssets = (() => {
             }
           } catch (_) {
             showShellOrganizeToast('镜头视觉向量补跑启动失败');
+          }
+          return;
+        }
+        if (item.id === 'video-descriptions') {
+          if (btn.disabled || !canRunShotVectorJob || !target.rootId) return;
+          closeShellOrganizeMenu();
+          showShellOrganizeToast('正在提交镜头描述与打标任务');
+          try {
+            const requestId = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const response = await fetch('/api/asset-registry/video-descriptions/jobs', {
+              method:'POST', credentials:'same-origin',
+              headers:{'Content-Type':'application/json', Accept:'application/json', 'Idempotency-Key':`video-descriptions:${target.rootId}:${requestId}`},
+              body:JSON.stringify({root_id:target.rootId}),
+            });
+            const body = await response.json();
+            if (!response.ok) throw new Error(body?.detail?.message || '任务提交失败');
+            showShellOrganizeToast(`已提交镜头描述任务：${body?.job_id || '可在任务中心查看'}`);
+          } catch (error) {
+            showShellOrganizeToast(error?.message || '镜头描述任务提交失败');
           }
           return;
         }
@@ -596,6 +618,24 @@ window.WorkbenchAssets = (() => {
       }).catch(() => {
         if (shotVectorButton.isConnected) shotVectorButton.title = '无法读取本地视觉模型状态';
       });
+    }
+    if (videoDescriptionButton && canRunShotVectorJob && typeof fetch === 'function') {
+      fetch('/api/asset-registry/video-descriptions/settings', {credentials:'same-origin', headers:{Accept:'application/json'}})
+        .then(response => response.json().then(body => ({response, body})))
+        .then(({response, body}) => {
+          if (!videoDescriptionButton.isConnected) return;
+          videoDescriptionButton.disabled = !response.ok || body?.configured !== true;
+          videoDescriptionButton.title = videoDescriptionButton.disabled
+            ? (body?.detail?.message || '请先在智能检索与媒体分析中选择可用的视觉模型')
+            : '对该资源根内当前可见的视频镜头批量生成摘要与标签';
+        })
+        .catch(() => {
+          if (videoDescriptionButton.isConnected) videoDescriptionButton.title = '无法读取 VLM 设置';
+        });
+    } else if (videoDescriptionButton) {
+      videoDescriptionButton.title = canRunShotVectorJob
+        ? '无法读取 VLM 设置'
+        : '仅可对可管理的持久资源根批量补跑';
     }
 
     menu.style.left = `${Math.max(8, Math.min(clientX, window.innerWidth - 230))}px`;

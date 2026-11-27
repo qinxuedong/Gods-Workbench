@@ -535,6 +535,107 @@ def submit_shot_vector_job(
     return JSONResponse(accepted, status_code=status.HTTP_202_ACCEPTED)
 
 
+@router.get("/video-descriptions/settings", summary="读取 VLM 镜头描述设置")
+def get_video_description_settings(
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _read_auth(authorization, x_user_role)
+    from gw.asset_registry import video_descriptions
+
+    config = video_descriptions.get_settings()
+    configured = bool(config["provider_id"] and config["model"])
+    if configured:
+        try:
+            video_descriptions.validate_provider_selection(config["provider_id"], config["model"])
+        except CleanroomException:
+            configured = False
+    return {**config, "configured": configured}
+
+
+@router.put("/video-descriptions/settings", summary="保存 VLM 镜头描述设置")
+def update_video_description_settings(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+):
+    _edit_auth(authorization, x_user_role)
+    from gw.asset_registry import video_descriptions
+
+    body = _payload(payload)
+    if set(body) - {"auto_enabled", "provider_id", "model", "prompt"}:
+        raise CleanroomException(400, "INVALID_REQUEST", "VLM 设置字段无效")
+    candidate = video_descriptions.validate_settings(
+        {**video_descriptions.get_settings(), **body}
+    )
+    if candidate["provider_id"] and candidate["model"]:
+        video_descriptions.validate_provider_selection(candidate["provider_id"], candidate["model"])
+    elif candidate["auto_enabled"]:
+        raise CleanroomException(400, "VLM_MODEL_UNAVAILABLE", "开启自动打标前请先选择视觉模型")
+    video_descriptions.set_settings(candidate)
+    return get_video_description_settings(authorization, x_user_role)
+
+
+@router.post(
+    "/video-descriptions/jobs",
+    summary="异步生成视频镜头摘要与标签",
+    status_code=status.HTTP_202_ACCEPTED,
+)
+def submit_video_description_job(
+    payload: Optional[Dict[str, Any]] = Body(None),
+    authorization: Optional[str] = Header(None),
+    x_user_role: str = Header("editor", alias="X-User-Role"),
+    idempotency_key: Optional[str] = Header(None, alias="Idempotency-Key"),
+):
+    from uuid import uuid4
+
+    from gw.asset_registry import video_descriptions
+
+    actor = _edit_auth(authorization, x_user_role)
+    body = _payload(payload)
+    if set(body) - {"asset_id", "root_id"}:
+        raise CleanroomException(400, "INVALID_REQUEST", "VLM 任务仅接受 asset_id 或 root_id")
+    asset_id = body.get("asset_id")
+    root_id = body.get("root_id")
+    if bool(asset_id) == bool(root_id):
+        raise CleanroomException(400, "INVALID_REQUEST", "asset_id 与 root_id 必须且只能提供一个")
+    config = video_descriptions.get_settings()
+    if not config["provider_id"] or not config["model"]:
+        raise CleanroomException(409, "VLM_MODEL_UNAVAILABLE", "请先在智能检索与媒体分析中选择视觉模型")
+    video_descriptions.validate_provider_selection(config["provider_id"], config["model"])
+
+    if asset_id:
+        if not isinstance(asset_id, str) or not asset_id.strip():
+            raise CleanroomException(400, "INVALID_REQUEST", "asset_id 无效")
+        snapshot = repo.readonly_registry_snapshot()
+        asset = repo.visible_asset_from_snapshot(snapshot, asset_id.strip())
+        if asset is None:
+            raise CleanroomException(404, "ASSET_NOT_FOUND", "视频素材不存在或当前不可见")
+        metadata = asset.get("metadata")
+        segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+        if not isinstance(segments, list) or not segments:
+            raise CleanroomException(409, "VIDEO_SEGMENTS_UNAVAILABLE", "该视频尚无可处理的镜头")
+        root_id = str(asset.get("root_id") or "")
+    elif not isinstance(root_id, str) or not root_id.strip():
+        raise CleanroomException(400, "INVALID_REQUEST", "root_id 无效")
+
+    key = idempotency_key or f"video-descriptions:{uuid4().hex}"
+    accepted = index_jobs.service().submit(
+        "video_descriptions",
+        {
+            "roots": [root_id.strip()],
+            "asset_ids": [asset_id.strip()] if asset_id else [],
+            "provider_id": config["provider_id"],
+            "model": config["model"],
+            "prompt": config["prompt"],
+            "trigger": "manual",
+        },
+        actor,
+        key,
+    )
+    return JSONResponse(accepted, status_code=status.HTTP_202_ACCEPTED)
+
+
 @router.get("/search/shots", summary="镜头级素材检索", status_code=status.HTTP_200_OK)
 def search_registry_shots(
     q: Optional[str] = Query(None),

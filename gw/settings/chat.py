@@ -16,7 +16,10 @@
 
 from __future__ import annotations
 
+import base64
+import binascii
 import math
+import re
 import threading
 import time
 from typing import Any
@@ -29,6 +32,8 @@ MAX_OUTPUT_TOKENS = 512
 MAX_CONCURRENT_REQUESTS = 2
 _USAGE_SOURCE = "chat_completions.usage.completion_tokens"
 _CHAT_SLOTS = threading.BoundedSemaphore(MAX_CONCURRENT_REQUESTS)
+_INLINE_IMAGE_MAX_BYTES = 1_500_000
+_INLINE_JPEG_RE = re.compile(r"^data:image/jpeg;base64,([A-Za-z0-9+/]+={0,2})$")
 
 
 def _metric(
@@ -351,7 +356,7 @@ def _build_metrics(
 
 def complete_messages(
     payload: dict[str, Any],
-    messages: list[dict[str, str]],
+    messages: list[dict[str, Any]],
     *,
     timeout_seconds: int = int(TIMEOUT_SECONDS),
     max_output_tokens: int = MAX_OUTPUT_TOKENS,
@@ -392,7 +397,7 @@ def complete_messages(
             endpoint,
             reason="invalid_messages",
         )
-    normalized_messages: list[dict[str, str]] = []
+    normalized_messages: list[dict[str, Any]] = []
     allowed_roles = {"system", "developer", "user", "assistant", "tool"}
     for message in messages:
         if not isinstance(message, dict) or set(message) - {"role", "content", "name"}:
@@ -405,11 +410,7 @@ def complete_messages(
             )
         role = message.get("role")
         content = message.get("content")
-        if (
-            not isinstance(role, str)
-            or role not in allowed_roles
-            or not isinstance(content, str)
-        ):
+        if not isinstance(role, str) or role not in allowed_roles:
             _fail(
                 400,
                 "INVALID_REQUEST",
@@ -417,7 +418,67 @@ def complete_messages(
                 endpoint,
                 reason="invalid_messages",
             )
-        item = {"role": role, "content": content}
+        if isinstance(content, str):
+            normalized_content: str | list[dict[str, Any]] = content
+        elif (
+            role == "user"
+            and isinstance(content, list)
+            and len(content) == 2
+            and isinstance(content[0], dict)
+            and set(content[0]) == {"type", "text"}
+            and content[0].get("type") == "text"
+            and isinstance(content[0].get("text"), str)
+            and isinstance(content[1], dict)
+            and set(content[1]) == {"type", "image_url"}
+            and content[1].get("type") == "image_url"
+            and isinstance(content[1].get("image_url"), dict)
+            and set(content[1]["image_url"]) == {"url"}
+            and isinstance(content[1]["image_url"].get("url"), str)
+        ):
+            match = _INLINE_JPEG_RE.fullmatch(content[1]["image_url"]["url"])
+            if not match:
+                _fail(
+                    400,
+                    "INVALID_REQUEST",
+                    "多模态消息仅允许受限的内存 JPEG 数据",
+                    endpoint,
+                    reason="invalid_inline_image",
+                )
+            try:
+                image_bytes = base64.b64decode(match.group(1), validate=True)
+            except (ValueError, binascii.Error):
+                _fail(
+                    400,
+                    "INVALID_REQUEST",
+                    "多模态 JPEG 编码无效",
+                    endpoint,
+                    reason="invalid_inline_image",
+                )
+            if (
+                not image_bytes
+                or len(image_bytes) > _INLINE_IMAGE_MAX_BYTES
+                or not image_bytes.startswith(b"\xff\xd8\xff")
+            ):
+                _fail(
+                    400,
+                    "INVALID_REQUEST",
+                    "多模态 JPEG 超出大小或格式边界",
+                    endpoint,
+                    reason="invalid_inline_image",
+                )
+            normalized_content = [
+                {"type": "text", "text": content[0]["text"]},
+                {"type": "image_url", "image_url": {"url": content[1]["image_url"]["url"]}},
+            ]
+        else:
+            _fail(
+                400,
+                "INVALID_REQUEST",
+                "messages 内容不符合Agent调用边界",
+                endpoint,
+                reason="invalid_messages",
+            )
+        item = {"role": role, "content": normalized_content}
         name = message.get("name")
         if name is not None:
             if not isinstance(name, str) or len(name) > 64:
