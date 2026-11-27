@@ -86,4 +86,4 @@ QIN-658 增加本机 ASR 状态、设置与资产任务队列入口。经 PM 在
 - `python -m pytest tests/contracts/assets/ -k "asr or transcript or search" -q`：41 passed。
 - `python -m pytest tests/contracts/projects/test_phase8_frontend_backend_api_gap.py -q`：7 passed。
 - `node --test tests/frontend/*.test.mjs`：1,206 passed；`python -m pytest tests/hygiene -q`：113 passed；`ruff check` 覆盖本票改动 Python 文件：通过。
-- GitHub CI 与 UI 浏览器截图验收仍待完成；不将本地结果记作 CI 或浏览器通过。
+- 本次 Draft PR 的 Python 与 Frontend 主 CI jobs 为 `skipped`，CLA Assistant 通过；UI 浏览器截图验收仍待完成。不将本地结果记作 CI 或浏览器通过。
