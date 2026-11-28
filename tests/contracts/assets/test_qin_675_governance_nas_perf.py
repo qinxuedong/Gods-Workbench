@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
+import gc
 import gzip
 import hashlib
 import json
@@ -63,6 +64,8 @@ def test_qin675_five_thousand_snapshot_cold_and_hot_budget(monkeypatch, tmp_path
     def forbidden(*_args, **_kwargs):
         raise AssertionError("治理建议 GET 不得逐资产解析或探测物理路径")
 
+    # 隔离前序测试遗留垃圾；计时期间仍保持正常垃圾回收与墙钟预算。
+    gc.collect()
     started = time.perf_counter()
     with monkeypatch.context() as patch:
         patch.setattr(dedup_confirm, "resolve_asset_media_path", forbidden)
