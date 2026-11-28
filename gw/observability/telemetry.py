@@ -27,6 +27,8 @@
 
 from __future__ import annotations
 
+import logging
+import queue
 import threading
 import time
 from typing import Any
@@ -162,6 +164,179 @@ _HTTP_PENDING: dict[str, float] = {}
 _HTTP_LAST_FLUSH = 0.0
 #: 落盘节流间隔（秒）；缓冲内的真实读数在下次读取前强制刷盘。
 HTTP_FLUSH_INTERVAL_SECONDS = 1.0
+HTTP_OBSERVATION_QUEUE_CAPACITY = 256
+HTTP_OBSERVATION_WRITER_THREAD = "gw-http-observation-writer"
+
+
+class _HttpObservationWriter:
+    """串行持久化 HTTP 观测批次的单写者线程。"""
+
+    def __init__(self) -> None:
+        self._queue: queue.Queue[tuple[str, dict[str, float] | None, threading.Event | None]] = queue.Queue(
+            maxsize=HTTP_OBSERVATION_QUEUE_CAPACITY
+        )
+        self._state_lock = threading.Lock()
+        self._stopping = False
+        self._stopped = threading.Event()
+        self._thread = threading.Thread(
+            target=self._run,
+            name=HTTP_OBSERVATION_WRITER_THREAD,
+            daemon=False,
+        )
+        self._thread.start()
+
+    @property
+    def is_alive(self) -> bool:
+        return self._thread.is_alive()
+
+    def submit(self, payload: dict[str, float]) -> bool:
+        with self._state_lock:
+            if self._stopping:
+                return False
+            try:
+                self._queue.put_nowait(("payload", dict(payload), None))
+            except queue.Full:
+                return False
+        return True
+
+    def flush(self, payload: dict[str, float] | None = None) -> bool:
+        completed = threading.Event()
+        command = ("flush", dict(payload) if payload else None, completed)
+        while True:
+            with self._state_lock:
+                if self._stopping:
+                    stopping = True
+                else:
+                    stopping = False
+                    try:
+                        self._queue.put_nowait(command)
+                    except queue.Full:
+                        pass
+                    else:
+                        break
+            if stopping:
+                self._stopped.wait()
+                return False
+            time.sleep(0.001)
+        completed.wait()
+        return True
+
+    def stop(self, payload: dict[str, float] | None = None) -> None:
+        with self._state_lock:
+            enqueue_stop = not self._stopping
+            self._stopping = True
+        if enqueue_stop:
+            self._queue.put(
+                ("stop", dict(payload) if payload else None, self._stopped)
+            )
+        self._stopped.wait()
+        self._thread.join()
+
+    def _run(self) -> None:
+        try:
+            while True:
+                command, payload, completed = self._queue.get()
+                try:
+                    if payload:
+                        _persist_http_payload(payload)
+                except Exception:
+                    logging.getLogger(__name__).exception(
+                        "HTTP 观测采样后台落盘异常；请求处理不受影响"
+                    )
+                finally:
+                    if completed is not None:
+                        completed.set()
+                if command == "stop":
+                    return
+        finally:
+            self._stopped.set()
+
+
+_HTTP_WRITER_LOCK = threading.Lock()
+_HTTP_WRITER: _HttpObservationWriter | None = None
+_HTTP_WRITER_STOPPING: _HttpObservationWriter | None = None
+_HTTP_WRITER_RESTART_EVENT = threading.Event()
+_HTTP_WRITER_RESTART_EVENT.set()
+_HTTP_WRITER_LEASES = 0
+
+
+class _HttpObservationWriterLease:
+    """单个 app lifespan 对进程级单写者的幂等所有权句柄。"""
+
+    def __init__(self, writer: _HttpObservationWriter) -> None:
+        self.writer = writer
+        self._released = threading.Event()
+        self._release_lock = threading.Lock()
+
+    @property
+    def is_alive(self) -> bool:
+        return self.writer.is_alive
+
+    def release_once(self) -> bool:
+        with self._release_lock:
+            if self._released.is_set():
+                return False
+            self._released.set()
+            return True
+
+
+def start_http_observation_writer() -> _HttpObservationWriterLease:
+    """启动或共享 app lifespan 持有的单写者；模块导入本身不会创建线程。"""
+    global _HTTP_WRITER, _HTTP_WRITER_LEASES
+    while True:
+        with _HTTP_WRITER_LOCK:
+            if _HTTP_WRITER_STOPPING is not None:
+                restart_event = _HTTP_WRITER_RESTART_EVENT
+            else:
+                if _HTTP_WRITER is not None and _HTTP_WRITER.is_alive:
+                    _HTTP_WRITER_LEASES += 1
+                    return _HttpObservationWriterLease(_HTTP_WRITER)
+                _HTTP_WRITER = _HttpObservationWriter()
+                _HTTP_WRITER_LEASES = 1
+                return _HttpObservationWriterLease(_HTTP_WRITER)
+        restart_event.wait()
+
+
+def stop_http_observation_writer(
+    lease: _HttpObservationWriterLease | None,
+) -> None:
+    """排空当前缓冲后停止 worker；重复调用安全。"""
+    global _HTTP_WRITER, _HTTP_WRITER_LEASES, _HTTP_WRITER_STOPPING, _HTTP_LAST_FLUSH
+    if lease is None or not lease.release_once():
+        return
+    writer = lease.writer
+    with _HTTP_WRITER_LOCK:
+        if _HTTP_WRITER is not writer:
+            return
+        _HTTP_WRITER_LEASES = max(0, _HTTP_WRITER_LEASES - 1)
+        if _HTTP_WRITER_LEASES:
+            return
+        _HTTP_WRITER = None
+        _HTTP_WRITER_STOPPING = writer
+        _HTTP_WRITER_RESTART_EVENT.clear()
+    with _HTTP_LOCK:
+        payload = dict(_HTTP_PENDING)
+        _HTTP_PENDING.clear()
+        _HTTP_LAST_FLUSH = time.time()
+    try:
+        writer.stop(payload)
+    finally:
+        with _HTTP_WRITER_LOCK:
+            if _HTTP_WRITER_STOPPING is writer:
+                _HTTP_WRITER_STOPPING = None
+                _HTTP_WRITER_RESTART_EVENT.set()
+
+
+def _active_http_writer() -> _HttpObservationWriter | None:
+    with _HTTP_WRITER_LOCK:
+        writer = _HTTP_WRITER
+        return writer if writer is not None and writer.is_alive else None
+
+
+def _restore_http_pending(payload: dict[str, float]) -> None:
+    with _HTTP_LOCK:
+        for key, value in payload.items():
+            _HTTP_PENDING[key] = _HTTP_PENDING.get(key, 0.0) + float(value)
 
 
 def record_http_observation(
@@ -196,7 +371,9 @@ def record_http_observation(
         else:
             payload = None
     if payload:
-        _persist_http_payload(payload)
+        writer = _active_http_writer()
+        if writer is None or not writer.submit(payload):
+            _restore_http_pending(payload)
 
 
 def flush_http_samples() -> None:
@@ -206,6 +383,9 @@ def flush_http_samples() -> None:
         payload = dict(_HTTP_PENDING)
         _HTTP_PENDING.clear()
         _HTTP_LAST_FLUSH = time.time()
+    writer = _active_http_writer()
+    if writer is not None and writer.flush(payload):
+        return
     if payload:
         _persist_http_payload(payload)
 
@@ -240,7 +420,7 @@ def _persist_http_payload(payload: dict[str, float]) -> None:
     try:
         _samples_state().mutate(mutate)
     except Exception:
-        return
+        logging.getLogger(__name__).exception("HTTP 观测采样落盘失败")
 
 
 def record_sample() -> dict[str, Any]:

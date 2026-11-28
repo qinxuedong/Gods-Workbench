@@ -13,6 +13,7 @@
     "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
     "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
     "tests/frontend/qin-541-registry-card-info-layout.test.mjs",
+    "tests/frontend/qin-657-video-descriptions.test.mjs",
     "tests/frontend/test_c18_video_jump.mjs",
     "tests/hygiene/fixtures/admissions/issue-537.json",
     "tests/hygiene/fixtures/admissions/issue-820.json",

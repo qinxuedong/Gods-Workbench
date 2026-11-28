@@ -1,0 +1,24 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 839,
+  "authorization_basis": "GitHub Issue #839 (QIN-668), revised Cut and design approved 2026-11-27",
+  "files": [
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-668-reference-canvas-version-switcher.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-839.json",
+    "web/css/pages/asset-manager.css",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/media-canvas.js",
+    "web/js/modules/asset-manager/preview.js"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/frontend/qin-668-reference-canvas-version-switcher.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #839 (QIN-668), revised Cut approved 2026-11-27",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-668：所有媒体画布入口移除左侧版本栏；右侧只显示当前版本单卡并在卡片下切换版本，编辑/隐藏/删除作用于当前选中版本；覆盖异步提交、失败、取消、乱序及真实入口布局。"
+}

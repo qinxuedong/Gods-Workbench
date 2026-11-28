@@ -504,31 +504,27 @@ test('AC2: 执行真实启动段时，首屏列表落地前没有任何非首屏
 
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），两条链路的到达顺序不再固定；
-    // 行为契约不变：两条都补齐、且各自只发一次。
+    // QIN-675：首屏调度只补收集箱；治理建议必须等用户显式打开或刷新。
     assert.deepEqual(
         [...state.requests].sort(),
-        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
-        '延后块落地后收集箱与治理建议都应补发'
+        ['/api/asset-inbox?limit=500'],
+        '延后块落地后只补发收集箱，不自动读取治理建议'
     );
 });
 
-test('AC2: 首屏列表落地前，启动期治理建议请求不发出去', async () => {
+test('AC3: 启动与自动调度不读取治理建议，显式打开后按需读取', async () => {
     const {api, state, startLoadAll, settle} = createHarness();
     const bootstrap = startLoadAll();
     assert.equal(api.bootstrapPending, true);
+    assert.deepEqual(state.requests, [], '启动期不应自动请求治理建议');
 
-    await api.loadGovernanceSuggestions();
-    assert.deepEqual(state.requests, [], '首屏列表未落地时不得发起治理建议请求');
-
-    // 用户在首屏期间点开治理抽屉，也走同一道闸门。
+    // 用户显式打开抽屉时允许按需请求，不依赖首屏自动调度。
     api.governanceDrawerOpen = true;
-    await api.loadGovernanceSuggestions();
-    assert.deepEqual(state.requests, [], '抽屉打开也不得抢在首屏列表之前');
-
-    // 闸门放行后请求会挂在假 HTTP 上（用例不关心响应），因此只等微任务、不 await 请求本身。
-    await settle(bootstrap);
     void api.loadGovernanceSuggestions();
+    await flush();
+    assert.deepEqual(state.requests, ['/api/asset-registry/governance/suggestions']);
+
+    await settle(bootstrap);
     await flush();
     assert.deepEqual(state.requests, ['/api/asset-registry/governance/suggestions']);
 });
@@ -551,12 +547,11 @@ test('AC2: 真实 loadAll 的失败分支不得放行延后块（列表仍在途
 
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），两条链路的到达顺序不再固定；
-    // 行为契约不变：两条都补齐、且各自只发一次。
+    // QIN-675：首屏调度只补收集箱；治理建议必须等用户显式打开或刷新。
     assert.deepEqual(
         [...state.requests].sort(),
-        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
-        '延后块落地后收集箱与治理建议都应补发'
+        ['/api/asset-inbox?limit=500'],
+        '延后块落地后只补发收集箱，不自动读取治理建议'
     );
 });
 
@@ -585,10 +580,9 @@ test('AC2: 首屏在途时刷新，正等 A 的延后调度不得被旧代际放
 
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    // QIN-675：新一代落地后只补收集箱，不自动读取治理建议。
     assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
-        '/api/asset-registry/governance/suggestions',
     ]);
 });
 
@@ -619,12 +613,11 @@ test('AC2: 收集箱已加载时，延后块不再重复读一遍', async () => 
     await flush();
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
-    // 行为契约不变：收集箱不重读（仅直读那一次）+ 延后块只补治理建议。
+    // QIN-675：收集箱只读取一次；延后块不得自动补治理建议。
     assert.deepEqual(
         [...state.requests].sort(),
-        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
-        '收集箱已经加载过，延后块只该补治理建议'
+        ['/api/asset-inbox?limit=500'],
+        '收集箱已加载后不重复读取，且不自动补治理建议'
     );
 });
 
@@ -739,10 +732,9 @@ test('AC2: 首屏 A 在途时真实「添加公网 URL」入口启动 B，A 落�
 
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    // QIN-675：新一代落地后只补收集箱，不自动读取治理建议。
     assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
-        '/api/asset-registry/governance/suggestions',
     ]);
 });
 
@@ -769,10 +761,9 @@ test('AC2: 首屏 A 在途时真实「删除公网 URL」入口同样登记 B �
     assert.equal(state.idle.length, 1);
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    // QIN-675：新一代落地后只补收集箱，不自动读取治理建议。
     assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
-        '/api/asset-registry/governance/suggestions',
     ]);
 });
 
@@ -841,11 +832,11 @@ test('AC2: idle 已排队后刷新，收集箱不得提前发出且治理补取�
     await settle(second);
     await flush();
     // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
-    // 行为契约不变：B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失。
+    // QIN-675：B 落地后只补收集箱，治理建议不参与自动调度。
     assert.deepEqual(
         [...state.requests].sort(),
-        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
-        'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
+        ['/api/asset-inbox?limit=500'],
+        'B 落地后只补发收集箱，不自动读取治理建议'
     );
 });
 
@@ -882,10 +873,9 @@ test('AC2: 首屏 A 在途时真实「搜索输入」启动 B，A 旧终态不�
     assert.equal(state.idle.length, 1, 'B 落地后才放行延后调度');
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    // QIN-675：B 落地后只补收集箱，治理建议不参与自动调度。
     assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
-        '/api/asset-registry/governance/suggestions',
     ]);
 });
 
@@ -915,10 +905,9 @@ test('AC2: 首屏 A 在途时筛选/排序直接替换列表，共享入口同�
     assert.equal(state.idle.length, 1);
     state.idle.shift()();
     await flush();
-    // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定，契约仍是两条都补齐。
+    // QIN-675：B 落地后只补收集箱，治理建议不参与自动调度。
     assert.deepEqual([...state.requests].sort(), [
         '/api/asset-inbox?limit=500',
-        '/api/asset-registry/governance/suggestions',
     ]);
 });
 
@@ -1012,10 +1001,10 @@ test('AC2: idle 已排队后搜索，收集箱不得提前发出且治理补取�
     await settle(second);
     await flush();
     // QIN-591：延后块经网关补发（gwLoad 动态导入异步化），到达顺序不再固定；
-    // 行为契约不变：B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失。
+    // QIN-675：B 落地后只补收集箱，治理建议不参与自动调度。
     assert.deepEqual(
         [...state.requests].sort(),
-        ['/api/asset-inbox?limit=500', '/api/asset-registry/governance/suggestions'],
-        'B 落地后两条链路都要补齐，治理不能被闸门挡下后丢失'
+        ['/api/asset-inbox?limit=500'],
+        'B 落地后只补发收集箱，不自动读取治理建议'
     );
 });

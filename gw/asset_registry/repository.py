@@ -1439,6 +1439,142 @@ def update_asset(asset_id: str, payload: Dict[str, Any]) -> Dict[str, Any]:
     return state().mutate(mutate)
 
 
+def update_video_segment_descriptions(
+    asset_id: str,
+    *,
+    expected_version: int,
+    expected_scan_version: Dict[str, Any],
+    updates: Dict[int, Dict[str, Any]],
+) -> bool:
+    """以资产版本 CAS 写入 VLM 文本，并只更新 FTS 文档，不重建镜头向量。"""
+    if type(expected_version) is not int or expected_version < 1 or not updates:
+        return False
+    hidden_filter = mounted_asset_hidden_filter()
+
+    def same_version(left, right):
+        fields = ("size_bytes", "mtime_ns", "ino", "dev")
+        if not isinstance(left, dict) or not isinstance(right, dict):
+            return False
+        try:
+            return all(int(left[key]) == int(right[key]) for key in fields)
+        except (KeyError, TypeError, ValueError):
+            return False
+
+    def mutate(raw):
+        asset = visible_asset_from_snapshot(raw, asset_id, hidden_filter=hidden_filter)
+        if not isinstance(asset, dict) or asset.get("version") != expected_version:
+            return False
+        if not same_version(asset.get("scan_version"), expected_scan_version):
+            return False
+        source = _asset_local_video_path(asset)
+        if source is None:
+            return False
+        try:
+            info = source.stat()
+        except OSError:
+            return False
+        current_scan_version = {
+            "size_bytes": int(info.st_size),
+            "mtime_ns": int(info.st_mtime_ns),
+            "ino": int(info.st_ino),
+            "dev": int(info.st_dev),
+        }
+        if not same_version(current_scan_version, expected_scan_version):
+            return False
+        metadata = asset.get("metadata")
+        if not isinstance(metadata, dict):
+            return False
+        current_segments = metadata.get("video_segments")
+        if not isinstance(current_segments, list):
+            return False
+        applicable = []
+        for shot_index, description in updates.items():
+            if type(shot_index) is not int or not 0 <= shot_index < len(current_segments):
+                return False
+            if not isinstance(current_segments[shot_index], dict):
+                return False
+            if (
+                not isinstance(description, dict)
+                or not isinstance(description.get("summary"), str)
+                or not isinstance(description.get("tags"), list)
+                or any(not isinstance(tag, str) for tag in description["tags"])
+            ):
+                return False
+            applicable.append((shot_index, description))
+        if not applicable:
+            return False
+
+        updated_asset = dict(asset)
+        updated_metadata = dict(metadata)
+        updated_segments = list(current_segments)
+        for shot_index, description in applicable:
+            updated_segment = dict(current_segments[shot_index])
+            updated_segment["summary"] = description["summary"]
+            updated_segment["tags"] = list(description["tags"])
+            updated_segments[shot_index] = updated_segment
+        updated_metadata["video_segments"] = updated_segments
+        updated_asset["metadata"] = updated_metadata
+        updated_asset["version"] = expected_version + 1
+        updated_asset["updated_at"] = storage.now_iso()
+        document = _asset_search_document(updated_asset)
+        if document is None:
+            return False
+
+        from gw.core.sqlite_vec_engine import SQLiteVecEngine, _fts_index_text
+
+        db_path = storage.data_root() / ASSET_SEARCH_INDEX_FILENAME
+        if not db_path.is_file():
+            raise CleanroomException(503, "SEARCH_INDEX_NOT_READY", "本地检索索引尚未建立，请先重建素材索引")
+        with SQLiteVecEngine(db_path) as engine:
+            # 只刷新全文文本和镜头内容哈希，保留资产/镜头既有视觉向量。
+            connection = engine._db
+            with engine._lock:
+                connection.execute("BEGIN IMMEDIATE")
+                try:
+                    row = connection.execute(
+                        f"SELECT row_id FROM {engine._DOCUMENTS} WHERE asset_id=?",  # noqa: S608
+                        (document["asset_id"],),
+                    ).fetchone()
+                    if row:
+                        row_id = int(row["row_id"])
+                        connection.execute(
+                            f"UPDATE {engine._DOCUMENTS} SET title=?,content=? WHERE row_id=?",  # noqa: S608
+                            (document["title"], document["content"], row_id),
+                        )
+                    else:
+                        cursor = connection.execute(
+                            f"INSERT INTO {engine._DOCUMENTS}(asset_id,title,content,vector_hash) VALUES(?,?,?,NULL)",  # noqa: S608
+                            (document["asset_id"], document["title"], document["content"]),
+                        )
+                        row_id = int(cursor.lastrowid)
+                    connection.execute(
+                        f"DELETE FROM {engine._FTS} WHERE rowid=?",  # noqa: S608
+                        (row_id,),
+                    )
+                    connection.execute(
+                        f"INSERT INTO {engine._FTS}(rowid,asset_id,title,content) VALUES(?,?,?,?)",  # noqa: S608
+                        (
+                            row_id,
+                            document["asset_id"],
+                            _fts_index_text(document["title"]),
+                            _fts_index_text(document["content"]),
+                        ),
+                    )
+                    for shot in _asset_shot_rows(updated_asset)[0]:
+                        connection.execute(
+                            "UPDATE mvp1_shots SET content_hash=? WHERE asset_id=? AND shot_index=?",
+                            (shot["content_hash"], shot["asset_id"], shot["shot_index"]),
+                        )
+                    connection.commit()
+                except Exception:
+                    connection.rollback()
+                    raise
+        asset.update(updated_asset)
+        return True
+
+    return bool(state().mutate(mutate))
+
+
 def rename_asset_file(
     asset_id: str, expected_version: int, new_name: str, display_path: str
 ) -> Dict[str, Any]:
@@ -1676,6 +1812,96 @@ def _asset_category(asset: Dict[str, Any]) -> str:
     return kind if kind in _ASSET_CATEGORY_EXTENSIONS else "other"
 
 
+_ASSET_LIST_METADATA_FIELDS = (
+    "source_id",
+    "classification",
+    "collect_sources",
+    "preview_url",
+    "width",
+    "height",
+    "frame_rate",
+    "duration",
+    "original_filename",
+    "file_name",
+    "filename",
+    "extension",
+    "file_extension",
+    "workflow_id",
+    "job_id",
+)
+_ASSET_LIST_VIDEO_SEGMENT_FIELDS = ("start_sec", "end_sec", "tags", "summary")
+_ASSET_LIST_SOURCE_CONTEXT_FIELDS = ("project_id", "canvas_id")
+_ASSET_LIST_COMFYUI_FIELDS = ("source", "has_workflow", "has_prompt_graph")
+
+
+def _project_asset_metadata_for_list(metadata: Any) -> Dict[str, Any]:
+    """为列表视图保留轻量卡片字段，丢弃工作流、提示词与任意原始载荷。"""
+    if not isinstance(metadata, dict):
+        return {}
+    result = {
+        key: metadata[key]
+        for key in _ASSET_LIST_METADATA_FIELDS
+        if key in metadata
+    }
+
+    source_context = metadata.get("source_context")
+    if isinstance(source_context, dict):
+        projected_source = {
+            key: source_context[key]
+            for key in _ASSET_LIST_SOURCE_CONTEXT_FIELDS
+            if key in source_context
+        }
+        if projected_source:
+            result["source_context"] = projected_source
+
+    lut = metadata.get("lut")
+    if isinstance(lut, dict) and "preview_url" in lut:
+        result["lut"] = {"preview_url": lut["preview_url"]}
+
+    video_segments = metadata.get("video_segments")
+    if isinstance(video_segments, list):
+        result["video_segments"] = [
+            {
+                key: segment[key]
+                for key in _ASSET_LIST_VIDEO_SEGMENT_FIELDS
+                if key in segment
+            }
+            for segment in video_segments
+            if isinstance(segment, dict)
+        ]
+
+    generation = metadata.get("generation")
+    comfyui = generation.get("comfyui") if isinstance(generation, dict) else None
+    if isinstance(comfyui, dict):
+        projected_comfyui = {
+            key: comfyui[key]
+            for key in _ASSET_LIST_COMFYUI_FIELDS
+            if key in comfyui
+        }
+        if projected_comfyui:
+            result["generation"] = {"comfyui": projected_comfyui}
+    return result
+
+
+def _project_asset_list_response(payload: Dict[str, Any], view: Optional[str]) -> Dict[str, Any]:
+    """只投影显式卡片视图的分页结果，不改变存储记录或分页元数据。"""
+    if view not in {"card", "grid", "list"}:
+        return payload
+    assets = payload.get("assets")
+    if not isinstance(assets, list):
+        return payload
+    projected = []
+    for asset in assets:
+        if not isinstance(asset, dict):
+            projected.append(asset)
+            continue
+        item = {**asset}
+        if "metadata" in asset:
+            item["metadata"] = _project_asset_metadata_for_list(asset.get("metadata"))
+        projected.append(item)
+    return {**payload, "assets": projected, "items": projected}
+
+
 def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[str],
                 archived: Optional[bool], *, cursor: Optional[str] = None, sort: Optional[str] = None,
                 view: Optional[str] = None, category: Optional[str] = None, tag: Optional[str] = None,
@@ -1724,7 +1950,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
         ):
             raise CleanroomException(400, "UNSUPPORTED_FILTER_VALUE",
                                      "结构化查询不能混用旧版过滤参数")
-        return _list_structured_assets(
+        result = _list_structured_assets(
             limit=limit,
             offset=offset,
             cursor=cursor,
@@ -1735,6 +1961,7 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
             include=include,
             include_removed=include_removed,
         )
+        return _project_asset_list_response(result, view)
     cutoff = None
     if recent_days is not None:
         if type(recent_days) is not int or not 1 <= recent_days <= 36500:
@@ -2061,10 +2288,13 @@ def list_assets(limit: int, offset: int, query: Optional[str], kind: Optional[st
                 "canonical_relpath": str(last_asset.get("canonical_relpath") or ""),
             },
         }, separators=(",", ":")).encode()).decode().rstrip("=")
-    return {"assets": page, "items": page, "total": total, "total_known": True,
-            "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
-            "next_cursor": next_cursor, "revision": raw["revision"],
-            "data_status": DATA_STATUS_OK, "data_gaps": []}
+    return _project_asset_list_response(
+        {"assets": page, "items": page, "total": total, "total_known": True,
+         "limit": limit, "offset": offset, "has_more": has_more, "next_offset": next_offset,
+         "next_cursor": next_cursor, "revision": raw["revision"],
+         "data_status": DATA_STATUS_OK, "data_gaps": []},
+        view,
+    )
 
 
 def _structured_cursor_fingerprint(normalized: Dict[str, Any]) -> str:

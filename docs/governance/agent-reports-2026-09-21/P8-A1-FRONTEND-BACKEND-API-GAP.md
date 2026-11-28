@@ -58,6 +58,9 @@ QIN-656 新增镜头视觉向量设置、状态与异步补跑接口。经 PM �
 | POST | `/api/asset-registry/shot-vectors/jobs` | 为资源根异步补跑镜头视觉向量任务 |
 | POST | `/api/asset-registry/shot-vectors/settings` | 保存镜头视觉向量开关 |
 | GET | `/api/asset-registry/shot-vectors/status` | 读取本地镜头视觉向量依赖与状态 |
+| GET | `/api/asset-registry/video-descriptions/settings` | 读取 VLM 镜头描述设置 |
+| PUT | `/api/asset-registry/video-descriptions/settings` | 保存 VLM 镜头描述设置 |
+| POST | `/api/asset-registry/video-descriptions/jobs` | 异步提交可见视频镜头摘要与标签任务 |
 
 除此三项外，不修改或放宽其他端点、断言或基线规则；`KNOWN_UNIMPLEMENTED` 保持不变。
 

@@ -1,0 +1,21 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 860,
+  "authorization_basis": "GitHub Issue #860 (QIN-675), PM design approval comment #7209106827, user-approved AC3 regression alignment 2026-11-27",
+  "files": [
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/dedup_confirm.py",
+    "gw/asset_registry/governance.py",
+    "tests/contracts/assets/test_qin_619_dedup_full_sha.py",
+    "tests/contracts/assets/test_qin_675_governance_nas_perf.py",
+    "tests/frontend/mvp1-t5-governance-list.test.mjs",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-585-asset-first-paint.test.mjs",
+    "tests/frontend/qin-591-domain-gate.test.mjs",
+    "tests/frontend/qin-675-governance-ondemand.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-860.json",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/governance.js"
+  ],
+  "notes": "QIN-675：治理建议读取与取消、5K 性能优化，以及 QIN-619 显式核验缓存失效回归。按用户批准同步更新 QIN-585 / QIN-591 与 AC3 冲突的旧启动断言；基础准入账本和 ADMISSION_BASE_METADATA_SHA256 保持不变。"
+}

@@ -2209,6 +2209,33 @@ class IndexJobs:
             request["asset_ids"] = list(dict.fromkeys(asset_ids or []))
             request["engine"] = str(payload.get("engine") or "funasr")
             request["model"] = str(payload.get("model") or "paraformer-zh")
+        if kind == "video_descriptions":
+            asset_ids = payload.get("asset_ids", [])
+            provider_id = payload.get("provider_id")
+            model = payload.get("model")
+            prompt = payload.get("prompt")
+            trigger = payload.get("trigger", "manual")
+            if (
+                not isinstance(asset_ids, list)
+                or len(asset_ids) > MAX_FILES
+                or any(not isinstance(value, str) or not value.strip() for value in asset_ids)
+            ):
+                _error(400, "INVALID_REQUEST", "VLM 资产范围无效")
+            if not isinstance(provider_id, str) or not provider_id.strip() or len(provider_id) > 128:
+                _error(400, "INVALID_REQUEST", "VLM 平台无效")
+            if not isinstance(model, str) or not model.strip() or len(model) > 256:
+                _error(400, "INVALID_REQUEST", "VLM 模型无效")
+            if not isinstance(prompt, str) or len(prompt) > 4000:
+                _error(400, "INVALID_REQUEST", "VLM 提示词长度无效")
+            if trigger not in {"manual", "auto"}:
+                _error(400, "INVALID_REQUEST", "VLM 任务触发来源无效")
+            request.update(
+                asset_ids=list(dict.fromkeys(value.strip() for value in asset_ids)),
+                provider_id=provider_id.strip(),
+                model=model.strip(),
+                prompt=prompt,
+                trigger=trigger,
+            )
         fingerprint = _root_configuration_fingerprint(aliases)
         request_digest = _digest([request, fingerprint])
         key_digest = _digest([_owner(actor), key])
@@ -2239,6 +2266,8 @@ class IndexJobs:
                     if kind == "shot_vectors"
                     else "asset.asr_transcription"
                     if kind == "asr_transcription"
+                    else "asset.video_descriptions"
+                    if kind == "video_descriptions"
                     else "asset.index.sync"
                 ),
                 "name": (
@@ -2248,6 +2277,8 @@ class IndexJobs:
                     if kind == "shot_vectors"
                     else "转写视频台词"
                     if kind == "asr_transcription"
+                    else "生成视频镜头描述与标签"
+                    if kind == "video_descriptions"
                     else "同步索引差集"
                 ),
                 "status": "queued",
@@ -2762,6 +2793,131 @@ class IndexJobs:
             ))
         return result
 
+    def _run_video_descriptions(self, job_id, attempt, roots):
+        """为显式范围内可见视频逐个镜头生成摘要；自动任务按最新开关执行。"""
+        from gw.asset_registry import repository as repo, video_descriptions
+
+        job = self._checkpoint(job_id, attempt)
+        request = job.get("_request") or {}
+        root_ids = {str(value) for value in request.get("roots") or []}
+        root_ids.intersection_update(str(value) for value in roots)
+        selected_ids = {str(value) for value in request.get("asset_ids") or []}
+        snapshot = repo.readonly_registry_snapshot()
+        assets = []
+        for asset_id, asset in (snapshot.get("assets") or {}).items():
+            stable_id = str(asset.get("asset_id") or asset_id) if isinstance(asset, dict) else ""
+            if selected_ids and stable_id not in selected_ids:
+                continue
+            if not isinstance(asset, dict) or str(asset.get("root_id") or "") not in root_ids:
+                continue
+            visible = repo.visible_asset_from_snapshot(snapshot, stable_id)
+            if visible is None:
+                continue
+            name = str(visible.get("canonical_relpath") or visible.get("name") or "")
+            if Path(name).suffix.lower() not in VIDEO_SUFFIXES:
+                continue
+            metadata = visible.get("metadata")
+            segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+            if isinstance(segments, list) and segments:
+                assets.append(visible)
+
+        result = {"assets": 0, "generated": 0, "failed": 0, "errors": []}
+        for asset in assets:
+            self._checkpoint(job_id, attempt)
+            if request.get("trigger") == "auto" and not video_descriptions.get_settings()["auto_enabled"]:
+                continue
+            item_result = video_descriptions.process_asset(
+                asset,
+                provider_id=request["provider_id"],
+                model=request["model"],
+                prompt=request["prompt"],
+                frame_decoder=_decode_shot_vector_frame,
+                checkpoint=lambda: self._checkpoint(job_id, attempt),
+                is_auto=request.get("trigger") == "auto",
+            )
+            result["assets"] += 1
+            result["generated"] += int(item_result.get("generated") or 0)
+            result["failed"] += int(item_result.get("failed") or 0)
+            if len(result["errors"]) < 100:
+                result["errors"].extend(item_result.get("errors") or [])
+                result["errors"] = result["errors"][:100]
+            with self.condition:
+                current = self._checkpoint(job_id, attempt)
+                current.update(
+                    phase="generating_descriptions",
+                    scanned=result["assets"],
+                    error_count=result["failed"],
+                    result={**result, "total": len(assets)},
+                )
+                current["version"] += 1
+                self._save(current)
+                self.condition.notify_all()
+        result["total"] = len(assets)
+        return result
+
+    def _enqueue_auto_video_descriptions(self, job, files, tasks, pre_commit_existing):
+        """只为本次新建/改变视频镜头排队；不枚举历史资产做补跑。"""
+        from gw.asset_registry import repository as repo, video_descriptions
+
+        settings = video_descriptions.get_settings()
+        if not settings["auto_enabled"] or not settings["provider_id"] or not settings["model"]:
+            return {"queued": 0, "skipped": True}
+        snapshot = repo.readonly_registry_snapshot()
+        assets_by_identity = {}
+        for asset_id, record in (snapshot.get("assets") or {}).items():
+            if not isinstance(record, dict):
+                continue
+            identity = (
+                str(record.get("root_id") or ""),
+                str(record.get("canonical_relpath") or ""),
+            )
+            assets_by_identity.setdefault(identity, str(record.get("asset_id") or asset_id))
+        root_assets = {}
+        for task in tasks:
+            if not task.get("want_video"):
+                continue
+            item = files[task["index"]]
+            identity = (str(task["root_id"]), str(task["canonical_relpath"]))
+            previous = pre_commit_existing.get(identity) or {}
+            previous_video = (previous.get("metadata") or {}).get("video_metadata") or {}
+            unchanged_complete = _same_file_version(
+                previous.get("scan_version"), item.get("scan_version")
+            ) and previous_video.get("scene_detection_status") == "complete"
+            if unchanged_complete:
+                continue
+            asset_id = assets_by_identity.get(identity)
+            if not asset_id:
+                continue
+            visible = repo.visible_asset_from_snapshot(snapshot, asset_id)
+            if visible is None:
+                continue
+            metadata = visible.get("metadata")
+            segments = metadata.get("video_segments") if isinstance(metadata, dict) else None
+            if isinstance(segments, list) and segments:
+                root_assets.setdefault(identity[0], set()).add(
+                    str(visible.get("asset_id") or asset_id)
+                )
+        queued = []
+        for root_id, asset_ids in root_assets.items():
+            try:
+                self.submit(
+                    "video_descriptions",
+                    {
+                        "roots": [root_id],
+                        "asset_ids": sorted(asset_ids),
+                        "provider_id": settings["provider_id"],
+                        "model": settings["model"],
+                        "prompt": settings["prompt"],
+                        "trigger": "auto",
+                    },
+                    job.get("_actor"),
+                    f"video-auto:{job['job_id']}:{_digest(sorted(asset_ids))}",
+                )
+                queued.append({"root_id": root_id, "assets": len(asset_ids)})
+            except CleanroomException as exc:
+                queued.append({"root_id": root_id, "assets": len(asset_ids), "error_code": exc.code})
+        return {"queued": sum(item["assets"] for item in queued if not item.get("error_code")), "roots": queued}
+
     # ------------------------------------------------------------------
     # QIN-652：快扫入库后的后台富化（视频探测并发 1 / 文件哈希并发 N）
     # ------------------------------------------------------------------
@@ -3193,6 +3349,23 @@ class IndexJobs:
             # QIN-652：只在 reindex 的 request 副本上打开快扫。_request 与
             # _request_digest 逐字节不变，幂等键与 sync 分支语义保持原样。
             request = dict(job["_request"])
+            if request.get("kind") == "video_descriptions":
+                result = self._run_video_descriptions(job_id, attempt, roots)
+                with self.condition:
+                    job = self._checkpoint(job_id, attempt)
+                    failed = int(result.get("failed") or 0)
+                    job.update(
+                        status="failed" if failed else "succeeded",
+                        phase="failed" if failed else "completed",
+                        scanned=int(result.get("assets") or 0),
+                        error_count=failed,
+                        result=result,
+                        error_code="VIDEO_DESCRIPTION_FAILED" if failed else None,
+                    )
+                    job["version"] += 1
+                    self._save(job)
+                    self.condition.notify_all()
+                return
             if request.get("kind") == "shot_vectors":
                 result = self._run_shot_vector_rebuild(job_id, attempt, roots)
                 with self.condition:
@@ -3333,6 +3506,10 @@ class IndexJobs:
             result = self._enrich(
                 job, files, enrich_tasks, result, summary, pre_commit_existing
             )
+            if result.get("enrich", {}).get("interrupted") is not True:
+                result["auto_video_descriptions"] = self._enqueue_auto_video_descriptions(
+                    job, files, enrich_tasks, pre_commit_existing
+                )
             with self.condition:
                 job = self._checkpoint(job_id, attempt)
                 job.update(

@@ -468,6 +468,7 @@ test('QIN-591：真实启动入口在列表仍在途时不得开闸（15s 兜底
 
     // ② 首屏期用户调用进入队列：仍然不得触发 import。
     const queued = sandbox.__api.gwCall('organize', 'activateAssetBoard', 'canvas-assets');
+    const queuedSecond = sandbox.__api.gwCall('organize', 'activateAssetBoard', 'second-board');
     await drain();
     assert.deepEqual(order, [], '排队中的调用不得提前加载域');
 
@@ -485,7 +486,8 @@ test('QIN-591：真实启动入口在列表仍在途时不得开闸（15s 兜底
     await drain();
     assert.equal(sandbox.__api.deferredDomainsGateOpen(), true, '列表落地后必须开闸');
     assert.equal(await queued, 'board:canvas-assets', '排队调用必须拿到域函数的真实返回值');
-    assert.deepEqual(order, ['load:governance', 'call:governance', 'load:organize', 'call:activate:canvas-assets'],
+    assert.equal(await queuedSecond, 'board:second-board', '后续排队调用必须拿到真实返回值');
+    assert.deepEqual(order, ['load:organize', 'call:activate:canvas-assets', 'call:activate:second-board'],
         '放行顺序必须是入队顺序');
 });
 

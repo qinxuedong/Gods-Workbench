@@ -1,0 +1,14 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 861,
+  "authorization_basis": "GitHub Issue #861 (QIN-676), PM design approval comment #7209111701, 2026-11-27",
+  "files": [
+    "gw/asset_registry/repository.py",
+    "gw/api/app.py",
+    "gw/observability/telemetry.py",
+    "tests/contracts/assets/test_qin_676_list_payload_slim.py",
+    "tests/contracts/observability/test_qin_676_async_telemetry_and_healthz.py",
+    "tests/hygiene/fixtures/admissions/issue-861.json"
+  ],
+  "notes": "QIN-676：按视图裁剪列表 metadata、lifespan 托管单写者遥测队列并异步化 /healthz；首屏与翻页现有 view=card 请求已核实，无需改前端。"
+}
