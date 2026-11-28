@@ -1,0 +1,40 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 819,
+  "authorization_basis": "GitHub Issue #819 (QIN-657), PM design approval comment #7196561439",
+  "files": [
+    "docs/governance/agent-reports-2026-09-21/P8-A1-FRONTEND-BACKEND-API-GAP.md",
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/asset_registry/video_descriptions.py",
+    "gw/settings/chat.py",
+    "tests/contracts/assets/test_qin_657_video_descriptions.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/frontend/node-files.txt",
+    "tests/frontend/qin-631-native-select-pilot.test.mjs",
+    "tests/frontend/qin-657-video-descriptions.test.mjs",
+    "tests/hygiene/fixtures/admissions/issue-537.json",
+    "tests/hygiene/fixtures/admissions/issue-819.json",
+    "web/js/controllers/assets-controller.js",
+    "web/js/modules/asset-manager/preview.js",
+    "web/js/modules/asset-manager/settings.js",
+    "web/pages/settings.html"
+  ],
+  "admitted_files": [],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_qin_657_video_descriptions.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #819 (QIN-657)",
+      "admission": "accepted"
+    },
+    {
+      "path": "tests/frontend/qin-657-video-descriptions.test.mjs",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #819 (QIN-657)",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-657：视频镜头 VLM 描述与标签任务、搜索和设置入口迁移。"
+}

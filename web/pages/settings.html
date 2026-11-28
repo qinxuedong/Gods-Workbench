@@ -25,7 +25,7 @@
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
   <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final">
-  <link rel="stylesheet" href="/static/css/pages/settings-workbench.css?v=20261026-qin411">
+  <link rel="stylesheet" href="/static/css/pages/settings-workbench.css?v=20261026-qin411"> <link rel="stylesheet" href="/static/css/components/gw-native-select.css">
   <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
   <style>
     /* 选项卡面板激活与隐藏控制 */
@@ -573,6 +573,37 @@
             <p class="gw-type-body-sm text-slate-500">不会自动下载模型。缺少依赖或缓存时，搜索继续使用关键词，并标记向量轨降级。</p>
           </div>
         </div>
+        <div class="bay-inset p-4 rounded-xl space-y-4 max-w-3xl mt-4" data-smart-media-ai>
+          <div>
+            <strong class="gw-type-body-sm text-slate-200 block">AI 分类与镜头画面描述</strong>
+            <p class="gw-type-body-md text-slate-400 mt-1">平台凭据继续由「API 与密钥配置」管理。VLM 自动打标默认关闭；开启后只处理之后新建或更新的视频镜头。</p>
+          </div>
+          <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <label class="storage-dir-row"><span>视觉平台</span><select id="assetAiProvider" data-gw-select class="gw-native-select-input" disabled><option value="">正在读取…</option></select></label>
+            <label class="storage-dir-row"><span>视觉模型</span><select id="assetAiModel" data-gw-select class="gw-native-select-input" disabled><option value="">正在读取…</option></select></label>
+            <label class="storage-dir-row md:col-span-2"><span>图片反推提示词</span><input id="assetAiCaptionPrompt" type="text" maxlength="1000" placeholder="描述图片"></label>
+            <label class="storage-dir-row md:col-span-2"><span>智能分类追加要求</span><input id="assetAiClassifyPrompt" type="text" maxlength="2000" placeholder="例如：镜头焦段、商业用途、产品材质"></label>
+            <label class="storage-dir-row md:col-span-2"><span>VLM 镜头描述提示词</span><textarea id="assetVlmPrompt" rows="3" maxlength="4000" placeholder="准确描述画面中的主体、动作、场景和可读文字。"></textarea></label>
+          </div>
+          <div class="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
+            <div><strong class="gw-type-body-sm text-slate-200 block">VLM 镜头自动打标</strong><p class="gw-type-body-md text-slate-400">仅对开关开启后的新建或更新镜头触发；历史视频须从资源文件夹菜单显式补跑。</p></div>
+            <button type="button" id="assetVlmAutoToggle" class="toggle hw-slide-toggle" aria-label="VLM 镜头自动打标" aria-pressed="false"><span class="hw-slide-peg" aria-hidden="true"></span></button>
+          </div>
+          <div class="flex items-center justify-between gap-4 border-t border-white/10 pt-3">
+            <div><strong class="gw-type-body-sm text-slate-200 block">一键 AI 智能分类</strong><p class="gw-type-body-md text-slate-400">保留既有图片分类后台动作与规则设置；关闭时停止当前分类任务。</p></div>
+            <button type="button" id="assetAiAutoToggle" class="toggle hw-slide-toggle" aria-label="一键 AI 智能分类" aria-pressed="false"><span class="hw-slide-peg" aria-hidden="true"></span></button>
+          </div>
+          <details>
+            <summary class="gw-type-body-sm text-slate-300 cursor-pointer">智能分类 JSON 规则</summary>
+            <textarea id="assetAiClassificationRule" class="w-full mt-2 p-3 rounded bg-black/40 border border-white/10 text-slate-200 font-mono gw-type-body-sm" rows="6" placeholder="正在读取规则…"></textarea>
+          </details>
+          <div class="flex flex-wrap items-center gap-2">
+            <button type="button" id="assetAiRuleReset" class="hw-btn"><i data-lucide="rotate-ccw"></i><span>恢复内置规则</span></button>
+            <button type="button" id="assetAiSave" class="hw-btn"><i data-lucide="save"></i><span>保存 AI 分类设置</span></button>
+            <button type="button" id="assetVlmSave" class="hw-btn hw-btn-gold"><i data-lucide="save"></i><span>保存 VLM 设置</span></button>
+            <span id="assetAiSettingsStatus" class="gw-type-body-sm text-slate-400" role="status" aria-live="polite">正在读取设置…</span>
+          </div>
+        </div>
       </section>
 
       <!-- 分区 2: 提示词来源 (data-panel="prompt-sources") -->
@@ -831,6 +862,180 @@
       refresh();
     })();
   </script>
+  <script>
+    (() => {
+      const providerSelect = document.getElementById('assetAiProvider');
+      const modelSelect = document.getElementById('assetAiModel');
+      const captionPrompt = document.getElementById('assetAiCaptionPrompt');
+      const classifyPrompt = document.getElementById('assetAiClassifyPrompt');
+      const vlmPrompt = document.getElementById('assetVlmPrompt');
+      const rule = document.getElementById('assetAiClassificationRule');
+      const autoClassify = document.getElementById('assetAiAutoToggle');
+      const autoVlm = document.getElementById('assetVlmAutoToggle');
+      const statusNode = document.getElementById('assetAiSettingsStatus');
+      if (!providerSelect || !modelSelect || !statusNode) return;
+
+      const LOCAL_KEY = 'asset_manager_local_caption_settings_v1';
+      const DEFAULT_CAPTION_PROMPT = '描述图片';
+      let providers = [];
+      let local = {};
+      let vlm = {auto_enabled:false, provider_id:'', model:'', prompt:'', configured:false};
+      let defaultRule = '';
+      const show = message => { statusNode.textContent = message; };
+      const request = async (url, options = {}) => {
+        const response = await fetch(url, {
+          ...options,
+          credentials:options.credentials || 'same-origin',
+          headers:{Accept:'application/json', ...(options.body ? {'Content-Type':'application/json'} : {}), ...(options.headers || {})},
+        });
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body?.detail?.message || '请求失败');
+        return body;
+      };
+      const selectedProvider = () => providers.find(item => (item.id || item.provider_id) === providerSelect.value);
+      const renderModels = preferred => {
+        const provider = selectedProvider();
+        const models = Array.isArray(provider?.chat_models) ? provider.chat_models.filter(model => typeof model === 'string' && model) : [];
+        modelSelect.replaceChildren();
+        for (const model of models) {
+          const option = document.createElement('option');
+          option.value = model;
+          option.textContent = model;
+          modelSelect.appendChild(option);
+        }
+        modelSelect.disabled = !models.length;
+        modelSelect.value = models.includes(preferred) ? preferred : (models[0] || '');
+        window.GWNativeSelect?.sync?.(modelSelect);
+      };
+      const renderProviders = (preferredProvider, preferredModel) => {
+        providerSelect.replaceChildren();
+        const available = providers.filter(item => item && item.enabled !== false && Array.isArray(item.chat_models) && item.chat_models.length);
+        for (const provider of available) {
+          const option = document.createElement('option');
+          option.value = provider.id || provider.provider_id;
+          option.textContent = provider.name || option.value;
+          providerSelect.appendChild(option);
+        }
+        providerSelect.disabled = !available.length;
+        if (available.some(item => (item.id || item.provider_id) === preferredProvider)) providerSelect.value = preferredProvider;
+        else providerSelect.value = available[0]?.id || available[0]?.provider_id || '';
+        window.GWNativeSelect?.sync?.(providerSelect);
+        renderModels(preferredModel);
+      };
+      const persistLocal = () => {
+        local = {
+          ...local,
+          provider:providerSelect.value || '',
+          model:modelSelect.value || '',
+          captionPrompt:captionPrompt.value.trim() || DEFAULT_CAPTION_PROMPT,
+          classifyPrompt:classifyPrompt.value.trim(),
+          autoClassify:autoClassify.getAttribute('aria-pressed') === 'true',
+        };
+        try { localStorage.setItem(LOCAL_KEY, JSON.stringify(local)); } catch (_) {}
+      };
+      const renderSwitch = (button, enabled) => {
+        button.setAttribute('aria-pressed', String(Boolean(enabled)));
+        button.classList.toggle('on', Boolean(enabled));
+      };
+      const saveVlm = async (autoEnabled = vlm.auto_enabled) => {
+        const payload = {
+          auto_enabled:Boolean(autoEnabled),
+          provider_id:providerSelect.value || '',
+          model:modelSelect.value || '',
+          prompt:vlmPrompt.value.trim(),
+        };
+        const saved = await request('/api/asset-registry/video-descriptions/settings', {method:'PUT', body:JSON.stringify(payload)});
+        vlm = saved;
+        renderSwitch(autoVlm, vlm.auto_enabled);
+        return saved;
+      };
+
+      providerSelect.addEventListener('change', () => renderModels(''));
+      modelSelect.addEventListener('change', () => {});
+      document.getElementById('assetAiSave')?.addEventListener('click', async () => {
+        try {
+          persistLocal();
+          const saved = await request('/api/asset-classification-prompt', {method:'PATCH', body:JSON.stringify({prompt:rule.value})});
+          rule.value = saved.prompt || rule.value;
+          show('AI 分类设置已保存');
+        } catch (error) { show(error.message || 'AI 分类设置保存失败'); }
+      });
+      document.getElementById('assetVlmSave')?.addEventListener('click', async () => {
+        try {
+          await saveVlm();
+          persistLocal();
+          show('VLM 设置已保存');
+        } catch (error) { show(error.message || 'VLM 设置保存失败'); }
+      });
+      document.getElementById('assetAiRuleReset')?.addEventListener('click', () => {
+        rule.value = defaultRule;
+        show('已恢复内置规则，保存后生效');
+      });
+      autoVlm.addEventListener('click', async () => {
+        const next = autoVlm.getAttribute('aria-pressed') !== 'true';
+        if (next && (!providerSelect.value || !modelSelect.value)) { show('请先选择可用的视觉平台和模型'); return; }
+        autoVlm.disabled = true;
+        try {
+          await saveVlm(next);
+          persistLocal();
+          show(next ? '自动打标已开启；仅处理之后新建或更新的镜头' : '自动打标已关闭');
+        } catch (error) { show(error.message || 'VLM 设置保存失败'); }
+        finally { autoVlm.disabled = false; }
+      });
+      autoClassify.addEventListener('click', async () => {
+        const next = autoClassify.getAttribute('aria-pressed') !== 'true';
+        if (next && (!providerSelect.value || !modelSelect.value)) { show('请先配置可用的视觉平台和模型'); return; }
+        autoClassify.disabled = true;
+        try {
+          if (next) {
+            await request('/api/asset-classification/background', {method:'POST', body:JSON.stringify({provider:providerSelect.value, model:modelSelect.value, prompt:classifyPrompt.value.trim()})});
+          } else {
+            await request('/api/asset-classification/background', {method:'DELETE'});
+          }
+          renderSwitch(autoClassify, next);
+          persistLocal();
+          show(next ? 'AI 智能分类已启动，可在任务中心查看进度' : 'AI 智能分类已停止');
+        } catch (error) { show(error.message || 'AI 分类任务操作失败'); }
+        finally { autoClassify.disabled = false; }
+      });
+
+      autoVlm.disabled = true;
+      autoClassify.disabled = true;
+      document.getElementById('assetAiSave').disabled = true;
+      document.getElementById('assetVlmSave').disabled = true;
+      Promise.all([
+        request('/api/providers').catch(() => ({providers:[]})),
+        request('/api/asset-classification-prompt').catch(() => ({})),
+        request('/api/asset-registry/video-descriptions/settings'),
+      ]).then(([providerData, ruleData, vlmData]) => {
+        providers = Array.isArray(providerData.providers) ? providerData.providers : [];
+        try { local = JSON.parse(localStorage.getItem(LOCAL_KEY) || '{}') || {}; } catch (_) { local = {}; }
+        vlm = vlmData || vlm;
+        const chosenProvider = vlm.provider_id || local.provider || '';
+        const chosenModel = vlm.model || local.model || '';
+        renderProviders(chosenProvider, chosenModel);
+        captionPrompt.value = local.captionPrompt || DEFAULT_CAPTION_PROMPT;
+        classifyPrompt.value = local.classifyPrompt || '';
+        vlmPrompt.value = vlm.prompt || '';
+        rule.value = ruleData.prompt || ruleData.default_prompt || '';
+        defaultRule = ruleData.default_prompt || '';
+        renderSwitch(autoClassify, local.autoClassify === true);
+        renderSwitch(autoVlm, vlm.auto_enabled === true);
+        autoVlm.disabled = false;
+        autoClassify.disabled = false;
+        document.getElementById('assetAiSave').disabled = false;
+        document.getElementById('assetVlmSave').disabled = false;
+        show(providers.length ? '已加载设置' : '请先在 API 与密钥配置中添加可用模型平台');
+      }).catch(error => {
+        autoVlm.disabled = false;
+        autoClassify.disabled = false;
+        document.getElementById('assetAiSave').disabled = false;
+        document.getElementById('assetVlmSave').disabled = false;
+        show(error.message || '设置读取失败');
+      });
+    })();
+  </script>
 <script src="/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa"></script>
+<script src="/static/js/core/gw-native-select.js"></script>
 </body>
 </html>

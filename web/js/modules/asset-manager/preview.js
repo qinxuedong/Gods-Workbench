@@ -1886,7 +1886,7 @@ function renderDetailViewer(){
     }
     refreshIcons();
     if(type === 'audio') initializeDetailAudioWaveform(overlay, item, url);
-    if(type === 'video') hydrateVideoStoryboardImages(overlay);
+    if(type === 'video'){ hydrateVideoStoryboardImages(overlay); void hydrateVideoDescriptions(overlay, item); }
     if(type === 'font') initializeDetailFontPreview(overlay, url);
     else clearDetailViewerFontFace();
     if(type === 'lut') initializeDetailLutPreview(overlay, item);
@@ -2763,6 +2763,12 @@ function syncDetailVideoControls(video){
         progress.max = String(duration || 0);
         progress.value = String(Math.min(duration || current, current));
         progress.setAttribute('aria-valuetext', `${formatDetailVideoTime(current)} / ${duration ? formatDetailVideoTime(duration) : '时长读取中'}`);
+        const overlay = controls.closest('.asset-detail-viewer');
+        const description = overlay?.querySelector('[data-vlm-video-description-list]');
+        const assetId = detailMediaCanvasPersistId(item, detailViewerState.source);
+        if(duration > 0 && description?.dataset.assetId === assetId && progress.dataset.videoDescriptionDuration !== String(duration)){
+            hydrateVideoDescriptionTimeline(overlay, item, item.metadata?.video_segments || []);
+        }
     }
     const fill = controls.querySelector('[data-detail-video-fill]');
     if(fill){
@@ -3390,6 +3396,223 @@ function renderDetailImageEditor(){
     positionDetailImageEditorInlineText();
     mountDetailImageEditorCoverflow(state, overlay.querySelector('.asset-image-editor-shell'));
 }
+function videoDescriptionParts(segment={}){
+    const summary = typeof segment.summary === 'string' ? segment.summary.trim() : '';
+    const tags = Array.isArray(segment.tags) ? segment.tags.filter(tag => typeof tag === 'string' && tag.trim()).map(tag => tag.trim()) : [];
+    return {summary, tags, text:[summary, tags.length ? `标签：${tags.join('、')}` : ''].filter(Boolean).join('\n')};
+}
+function renderVideoDescriptionList(overlay, assetId, asset){
+    const metadata = asset?.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
+    const segments = Array.isArray(metadata.video_segments) ? metadata.video_segments : [];
+    const existing = overlay.querySelector('[data-vlm-video-description-list]');
+    existing?.remove();
+    if(!segments.length) return;
+    const host = overlay.querySelector('.asset-video-segments-panel')
+        || overlay.querySelector('.asset-detail-inspector-content');
+    if(!host) return;
+    const section = document.createElement('section');
+    section.className = 'asset-detail-versions';
+    section.dataset.vlmVideoDescriptionList = '';
+    section.dataset.assetId = assetId;
+    const header = document.createElement('header');
+    const heading = document.createElement('div');
+    const title = document.createElement('strong');
+    title.textContent = '镜头画面描述';
+    const hint = document.createElement('span');
+    hint.textContent = '摘要与标签';
+    heading.append(title, hint);
+    header.appendChild(heading);
+    section.appendChild(header);
+    const list = document.createElement('div');
+    list.className = 'asset-detail-version-list';
+    segments.forEach((segment, index) => {
+        if(!segment || typeof segment !== 'object') return;
+        const parts = videoDescriptionParts(segment);
+        const start = Number(segment.start_sec);
+        const end = Number(segment.end_sec);
+        const row = document.createElement('article');
+        row.className = 'asset-detail-version-row';
+        const content = document.createElement('div');
+        content.className = 'asset-detail-version-main';
+        const copy = document.createElement('span');
+        copy.className = 'asset-detail-version-copy';
+        const time = document.createElement('strong');
+        time.textContent = `${formatDetailVideoTime(start)}~${formatDetailVideoTime(end)}`;
+        const summary = document.createElement('small');
+        summary.textContent = parts.summary || '暂无画面摘要';
+        summary.style.whiteSpace = 'normal';
+        summary.style.overflow = 'visible';
+        summary.style.textOverflow = 'clip';
+        const tags = document.createElement('small');
+        tags.textContent = parts.tags.length ? `标签：${parts.tags.join(' · ')}` : '暂无标签';
+        tags.style.whiteSpace = 'normal';
+        tags.style.overflow = 'visible';
+        tags.style.textOverflow = 'clip';
+        copy.append(time, summary, tags);
+        content.appendChild(copy);
+        const actions = document.createElement('div');
+        actions.className = 'asset-detail-version-actions';
+        const copyButton = document.createElement('button');
+        copyButton.type = 'button';
+        copyButton.className = 'hw-btn';
+        copyButton.textContent = '复制';
+        copyButton.title = '复制此镜头摘要与标签';
+        copyButton.setAttribute('aria-label', `复制第 ${index + 1} 段镜头摘要与标签`);
+        copyButton.dataset.videoDescriptionCopy = '';
+        copyButton.dataset.videoDescriptionText = parts.text;
+        copyButton.disabled = !parts.text;
+        actions.appendChild(copyButton);
+        row.append(content, actions);
+        list.appendChild(row);
+    });
+    section.appendChild(list);
+    host.appendChild(section);
+    hydrateVideoDescriptionTimeline(overlay, asset, segments);
+}
+function hydrateVideoDescriptionTimeline(overlay, asset, segments){
+    const progress = overlay.querySelector('[data-detail-video-progress]');
+    const track = progress?.closest('.asset-detail-video-progress-wrap');
+    if(!track) return;
+    track.querySelectorAll('[data-video-description-marker]').forEach(marker => marker.remove());
+    const metadata = asset?.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
+    const duration = Number(progress.max) || Number(asset?.duration) || Number(metadata.video_metadata?.duration) || 0;
+    if(!Number.isFinite(duration) || duration <= 0) return;
+    progress.dataset.videoDescriptionDuration = String(duration);
+    segments.forEach((segment, index) => {
+        const start = Number(segment?.start_sec);
+        if(!Number.isFinite(start) || start < 0 || start > duration) return;
+        const parts = videoDescriptionParts(segment);
+        const marker = document.createElement('button');
+        marker.type = 'button';
+        marker.dataset.videoDescriptionMarker = '';
+        marker.dataset.videoDescriptionSeek = String(start);
+        marker.title = [`镜头 ${formatDetailVideoTime(start)}`, parts.summary, parts.tags.length ? `标签：${parts.tags.join('、')}` : ''].filter(Boolean).join('\n');
+        marker.setAttribute('aria-label', `跳至第 ${index + 1} 段镜头：${parts.summary || parts.tags.join('、') || formatDetailVideoTime(start)}`);
+        marker.style.cssText = `position:absolute;z-index:4;left:${Math.max(0, Math.min(100, start / duration * 100))}%;top:0;width:5px;height:100%;padding:0;border:0;background:#dfc384;opacity:.9;cursor:pointer;`;
+        track.appendChild(marker);
+    });
+}
+async function hydrateVideoDescriptions(overlay, item){
+    const assetId = String(detailMediaCanvasPersistId(item, detailViewerState.source) || item?.id || '').trim();
+    if(!assetId) return;
+    const panel = overlay.querySelector('.asset-video-storyboard-panel');
+    const scenePanel = overlay.querySelector('.asset-video-segments-panel');
+    const actionHost = scenePanel || panel?.parentElement;
+    if(actionHost && !actionHost.querySelector('[data-video-description-run]')){
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.className = 'hw-btn hw-btn-gold';
+        button.textContent = '生成画面描述';
+        button.dataset.videoDescriptionRun = assetId;
+        button.title = '使用已配置的视觉模型生成此视频各镜头的摘要与标签';
+        button.style.marginTop = '8px';
+        button.disabled = true;
+        actionHost.appendChild(button);
+        try{
+            const response = await fetch('/api/asset-registry/video-descriptions/settings', {credentials:'same-origin', headers:{Accept:'application/json'}});
+            const settings = await apiJsonResponse(response);
+            if(button.isConnected){
+                button.disabled = settings?.configured !== true;
+                if(button.disabled) button.title = '请先在「设置 → 智能检索与媒体分析」中选择可用的视觉模型';
+            }
+        }catch(_error){
+            button.title = '无法读取 VLM 设置';
+        }
+    }
+    if(overlay.isConnected) renderVideoDescriptionList(overlay, assetId, item);
+}
+async function pollVideoDescriptionJob(pollHint){
+    const rawUrl = String(pollHint?.url || '');
+    const url = new URL(rawUrl, window.location.origin);
+    const pathParts = url.pathname.split('/').filter(Boolean);
+    const jobId = decodeURIComponent(pathParts.at(-1) || '');
+    if(url.origin !== window.location.origin || pathParts[0] !== 'api' || pathParts[1] !== 'asset-registry' || !/^job_index_\d{8}$/.test(jobId)) throw new Error('任务状态地址无效');
+    const interval = Math.max(1000, Number(pollHint?.interval_ms) || 1000);
+    const deadline = Date.now() + 5 * 60 * 1000;
+    while(Date.now() < deadline){
+        await new Promise(resolve => window.setTimeout(resolve, interval));
+        const response = await assetManagerApi.getWorkspaceJob(jobId);
+        const payload = await apiJsonResponse(response);
+        const job = payload?.job || payload;
+        if(['succeeded','failed','cancelled','interrupted'].includes(String(job?.status || ''))) return job;
+    }
+    throw new Error('任务仍在后台运行，可在任务中心查看进度');
+}
+async function startVideoDescriptionJob(button){
+    const assetId = String(button?.dataset?.videoDescriptionRun || '');
+    if(!assetId || button.disabled) return;
+    button.disabled = true;
+    setStatus('正在提交单视频镜头描述任务');
+    try{
+        const key = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random().toString(16).slice(2)}`;
+        const response = await fetch('/api/asset-registry/video-descriptions/jobs', {
+            method:'POST', credentials:'same-origin',
+            headers:{'Content-Type':'application/json', Accept:'application/json', 'Idempotency-Key':`video-description:${assetId}:${key}`},
+            body:JSON.stringify({asset_id:assetId}),
+        });
+        const accepted = await apiJsonResponse(response);
+        const job = await pollVideoDescriptionJob(accepted?.poll_hint);
+        if(job.status === 'succeeded') setStatus(`镜头描述已完成：${Number(job.result?.generated || 0)} 段已更新`);
+        else setStatus(`镜头描述任务${job.status === 'cancelled' ? '已取消' : '未完成'}：${Number(job.error_count || job.result?.failed || 0)} 段失败`);
+        const currentItem = () => detailViewerVideoItem() || detailViewerState.items?.[detailViewerState.index] || detailViewerItem(detailViewerState.source, detailViewerState.id);
+        const isCurrent = () => detailViewerState.open && String(detailMediaCanvasPersistId(currentItem(), detailViewerState.source) || currentItem()?.id || '') === assetId;
+        if(isCurrent()){
+            try{
+                const viewerAtRequest = detailViewerState;
+                const overlayAtRequest = document.querySelector('.asset-detail-viewer');
+                const data = await apiJsonResponse(assetManagerApi.getRegistryAsset(assetId));
+                const refreshedItem = normalizeRegistryAsset(data.asset || {});
+                if(!refreshedItem.id) throw new Error('资产详情缺失');
+                if(detailViewerState !== viewerAtRequest || !isCurrent() || document.querySelector('.asset-detail-viewer') !== overlayAtRequest) return;
+                mergeRegistryAssetUpdate(refreshedItem);
+                const updateItem = item => {
+                    if(detailMediaCanvasPersistId(item, detailViewerState.source) !== assetId) return item;
+                    if(detailViewerState.source === 'registry') return {...item, ...refreshedItem};
+                    mergeResolvedReferenceAsset(item, refreshedItem);
+                    return item;
+                };
+                detailViewerState.items = (detailViewerState.items || []).map(updateItem);
+                detailViewerState.mediaCanvasItems = (detailViewerState.mediaCanvasItems || []).map(updateItem);
+                if(overlayAtRequest) renderVideoDescriptionList(overlayAtRequest, assetId, refreshedItem);
+            }catch(_refreshError){
+                if(isCurrent()) setStatus('任务已结束，但当前素材详情刷新失败；重新打开详情可读取最新摘要');
+            }
+        }
+    }catch(error){
+        setStatus(error?.message || '镜头描述任务提交失败');
+    }finally{
+        if(button.isConnected) button.disabled = false;
+    }
+}
+async function copyVideoDescription(button){
+    const text = String(button?.dataset?.videoDescriptionText || '');
+    if(!text) return;
+    try{
+        if(navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+        else {
+            const field = document.createElement('textarea');
+            field.value = text;
+            field.style.position = 'fixed';
+            field.style.opacity = '0';
+            document.body.appendChild(field);
+            field.select();
+            const copied = document.execCommand('copy');
+            field.remove();
+            if(!copied) throw new Error('复制失败');
+        }
+        setStatus('已复制镜头摘要与标签');
+    }catch(_error){
+        setStatus('复制失败，请检查浏览器剪贴板权限');
+    }
+}
+function seekVideoDescriptionMarker(marker){
+    const seconds = Number(marker?.dataset?.videoDescriptionSeek);
+    const video = marker?.closest('.asset-detail-viewer')?.querySelector('video');
+    if(!video || !Number.isFinite(seconds) || seconds < 0) return;
+    const seek = () => { try{ video.currentTime = seconds; }catch(_error){} };
+    if(video.readyState >= 1) seek();
+    else video.addEventListener('loadedmetadata', seek, {once:true});
+}
 function newDetailImageEditorBrushLayer(select=true){
     const state=detailImageEditorState;
     if(!state) return null;
@@ -3914,6 +4137,12 @@ document.addEventListener('click', event => {
     }
     if(event.target.closest?.('[data-asset-notice-close]')){ event.target.closest('[data-asset-notice]')?.remove(); return; }
     if(event.target.closest?.('[data-asset-error-close]') || (event.target.matches?.('[data-asset-error-dialog]'))){ document.querySelector('[data-asset-error-dialog]')?.remove(); return; }
+    const videoDescriptionRun = event.target.closest?.('[data-video-description-run]');
+    if(videoDescriptionRun){ void startVideoDescriptionJob(videoDescriptionRun); return; }
+    const videoDescriptionCopy = event.target.closest?.('[data-video-description-copy]');
+    if(videoDescriptionCopy){ void copyVideoDescription(videoDescriptionCopy); return; }
+    const videoDescriptionMarker = event.target.closest?.('[data-video-description-marker]');
+    if(videoDescriptionMarker){ seekVideoDescriptionMarker(videoDescriptionMarker); return; }
     if(event.target.closest?.('[data-video-storyboard-close]') || event.target.matches?.('[data-video-storyboard-overlay]')){ closeDetailVideoStoryboard(); return; }
     const storyboardOpen = event.target.closest?.('[data-detail-video-storyboard-open]');
     if(storyboardOpen){ openDetailVideoStoryboard(storyboardOpen); return; }

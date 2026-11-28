@@ -453,29 +453,6 @@ function renderWorkspaceSettingsBody(){
     </section>`;
 }
 let assetProxySettingsState = {projectId:'', enabled:false, autoQueue:false, maxWidth:960, maxHeight:540, loading:false, saving:false, message:''};
-// QIN-599 AC3：「看板显示」设置区块整块移除；偏好弹窗保留 AI 分类、目录设置入口、缩略图与视频。
-function renderAssetAiSettingsBody(){
-    const providers = localCaptionProviders();
-    if(!assetAiSettingsState.loading) normalizeLocalCaptionSettings();
-    const provider = providers.find(item => item.id === localCaptionProvider) || providers[0];
-    const models = (provider?.chat_models || []).filter(Boolean);
-    const stateLabel = assetAiSettingsState.loading ? '正在读取…' : assetAiSettingsState.saving ? '正在保存…' : assetAiSettingsState.message || (providers.length ? '已连接可用模型' : '请先配置 API 平台');
-    return `<section class="asset-pref-section board-ai-settings" data-board-ai-settings>
-        <div class="asset-pref-title"><i data-lucide="sparkles"></i><span>AI 分类设置</span><small>${escapeHtml(stateLabel)}</small></div>
-        <div class="board-ai-settings-grid">
-            <label class="storage-dir-row board-ai-compact"><span>平台</span><select id="prefCaptionProvider" ${providers.length ? '' : 'disabled'}>${providers.length ? providers.map(provider => `<option value="${escapeAttr(provider.id)}" ${provider.id === localCaptionProvider ? 'selected' : ''}>${escapeHtml(provider.name || provider.id)}</option>`).join('') : '<option value="">暂无视觉平台</option>'}</select></label>
-            <label class="storage-dir-row board-ai-compact"><span>模型</span><select id="prefCaptionModel" ${models.length ? '' : 'disabled'}>${models.length ? models.map(model => `<option value="${escapeAttr(model)}" ${model === localCaptionModel ? 'selected' : ''}>${escapeHtml(model)}</option>`).join('') : '<option value="">暂无可用模型</option>'}</select></label>
-            <label class="storage-dir-row board-ai-compact"><span>反推提示词</span><input id="prefCaptionPrompt" value="${escapeAttr(localCaptionPrompt || '描述图片')}" placeholder="描述图片"></label>
-            <button class="board-ai-auto-control" type="button" role="switch" aria-checked="${localAutoClassify}" data-board-ai-auto ${assetAiSettingsState.saving ? 'disabled' : ''}><span class="registry-feature-switch ${localAutoClassify ? 'is-on' : ''}"><i></i></span><span><strong>一键 AI 智能分类</strong><small>打开立即执行，关闭立即停止</small></span></button>
-            <label class="storage-dir-row board-ai-extra"><span>智能分类追加要求</span><input id="prefClassifyPrompt" value="${escapeAttr(localClassifyPrompt || '')}" placeholder="例如：镜头焦段、商业用途、产品材质"></label>
-            <details class="board-ai-rule"><summary><span>智能分类规则</span><small>展开编辑 JSON 输出规则</small></summary><textarea id="prefClassificationRule" class="asset-pref-rule-textarea" rows="5" placeholder="智能分类规则">${escapeHtml(assetAiSettingsState.rule || assetAiSettingsState.defaultRule || '')}</textarea></details>
-        </div>
-        <div class="storage-settings-actions inline board-ai-actions">
-            <button class="hw-btn" type="button" data-board-ai-reset ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="rotate-ccw"></i><span>恢复内置规则</span></button>
-            <button class="hw-btn hw-btn-gold" type="button" data-board-ai-save ${assetAiSettingsState.loading || assetAiSettingsState.saving ? 'disabled' : ''}><i data-lucide="save"></i><span>保存 AI 分类设置</span></button>
-        </div>
-    </section>`;
-}
 function thumbnailCacheDirectoryIsInsideLibrary(directory=thumbnailGeneratorState.directory){
     const libraries = storageSettingsState.localLibraries?.length
         ? storageSettingsState.localLibraries
@@ -1826,7 +1803,7 @@ function renderStorageSettingsModal(){
         document.body.appendChild(overlay);
     }
     const previousFocusId = overlay.contains(document.activeElement) ? String(document.activeElement?.id || '') : '';
-    const unifiedBody = `${renderAssetAiSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div><a class="hw-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
+    const unifiedBody = `<p class="board-settings-hint">AI 分类设置已迁至「设置 → 智能检索与媒体分析」。</p><div class="board-settings-divider" aria-hidden="true"></div><a class="hw-btn" href="/static/pages/index.html?view=settings&section=directories" target="_top"><i data-lucide="folder-cog"></i>目录设置<i data-lucide="arrow-up-right"></i></a><div class="board-settings-divider" aria-hidden="true"></div>${renderAssetPreviewSettingsBody()}<div class="board-settings-divider" aria-hidden="true"></div>${renderAssetVideoSettingsBody()}`;
     overlay.innerHTML = `
         <div class="storage-settings-modal board-settings-modal" data-floating-content role="dialog" aria-modal="true" aria-labelledby="storageSettingsTitle" tabindex="-1">
             <div class="storage-settings-head">

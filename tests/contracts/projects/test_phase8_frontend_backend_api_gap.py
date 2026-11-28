@@ -320,6 +320,9 @@ KNOWN_IMPLEMENTED = frozenset(
         "/api/asset-registry/shot-vectors/jobs",
         "/api/asset-registry/shot-vectors/settings",
         "/api/asset-registry/shot-vectors/status",
+        # 2026-11-27 QIN-657（issue #819）：VLM 镜头描述设置与异步任务端点。
+        "/api/asset-registry/video-descriptions/jobs",
+        "/api/asset-registry/video-descriptions/settings",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",
@@ -598,6 +601,9 @@ KNOWN_BACKEND_PATHS = frozenset(
         "/api/asset-registry/shot-vectors/jobs",
         "/api/asset-registry/shot-vectors/settings",
         "/api/asset-registry/shot-vectors/status",
+        # 2026-11-27 QIN-657（issue #819）：VLM 镜头描述设置与异步任务端点。
+        "/api/asset-registry/video-descriptions/jobs",
+        "/api/asset-registry/video-descriptions/settings",
         "/api/asset-registry/settings/features/{p}",
         "/api/asset-registry/settings/index-automation",
         "/api/asset-registry/status",
