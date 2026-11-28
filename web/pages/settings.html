@@ -905,6 +905,7 @@
         }
         modelSelect.disabled = !models.length;
         modelSelect.value = models.includes(preferred) ? preferred : (models[0] || '');
+        window.GWNativeSelect?.sync?.(modelSelect);
       };
       const renderProviders = (preferredProvider, preferredModel) => {
         providerSelect.replaceChildren();
@@ -918,6 +919,7 @@
         providerSelect.disabled = !available.length;
         if (available.some(item => (item.id || item.provider_id) === preferredProvider)) providerSelect.value = preferredProvider;
         else providerSelect.value = available[0]?.id || available[0]?.provider_id || '';
+        window.GWNativeSelect?.sync?.(providerSelect);
         renderModels(preferredModel);
       };
       const persistLocal = () => {

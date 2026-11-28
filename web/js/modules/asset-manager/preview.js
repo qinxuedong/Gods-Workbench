@@ -2763,6 +2763,12 @@ function syncDetailVideoControls(video){
         progress.max = String(duration || 0);
         progress.value = String(Math.min(duration || current, current));
         progress.setAttribute('aria-valuetext', `${formatDetailVideoTime(current)} / ${duration ? formatDetailVideoTime(duration) : '时长读取中'}`);
+        const overlay = controls.closest('.asset-detail-viewer');
+        const description = overlay?.querySelector('[data-vlm-video-description-list]');
+        const assetId = detailMediaCanvasPersistId(item, detailViewerState.source);
+        if(duration > 0 && description?.dataset.assetId === assetId && progress.dataset.videoDescriptionDuration !== String(duration)){
+            hydrateVideoDescriptionTimeline(overlay, item, item.metadata?.video_segments || []);
+        }
     }
     const fill = controls.querySelector('[data-detail-video-fill]');
     if(fill){
@@ -3469,8 +3475,9 @@ function hydrateVideoDescriptionTimeline(overlay, asset, segments){
     if(!track) return;
     track.querySelectorAll('[data-video-description-marker]').forEach(marker => marker.remove());
     const metadata = asset?.metadata && typeof asset.metadata === 'object' ? asset.metadata : {};
-    const duration = Number(progress.max || asset?.duration || metadata.video_metadata?.duration || 0);
+    const duration = Number(progress.max) || Number(asset?.duration) || Number(metadata.video_metadata?.duration) || 0;
     if(!Number.isFinite(duration) || duration <= 0) return;
+    progress.dataset.videoDescriptionDuration = String(duration);
     segments.forEach((segment, index) => {
         const start = Number(segment?.start_sec);
         if(!Number.isFinite(start) || start < 0 || start > duration) return;
@@ -3547,14 +3554,28 @@ async function startVideoDescriptionJob(button){
         const job = await pollVideoDescriptionJob(accepted?.poll_hint);
         if(job.status === 'succeeded') setStatus(`镜头描述已完成：${Number(job.result?.generated || 0)} 段已更新`);
         else setStatus(`镜头描述任务${job.status === 'cancelled' ? '已取消' : '未完成'}：${Number(job.error_count || job.result?.failed || 0)} 段失败`);
-        if(detailViewerState.open && String(detailMediaCanvasPersistId(detailViewerItem(), detailViewerState.source) || detailViewerItem()?.id || '') === assetId){
+        const currentItem = () => detailViewerVideoItem() || detailViewerState.items?.[detailViewerState.index] || detailViewerItem(detailViewerState.source, detailViewerState.id);
+        const isCurrent = () => detailViewerState.open && String(detailMediaCanvasPersistId(currentItem(), detailViewerState.source) || currentItem()?.id || '') === assetId;
+        if(isCurrent()){
             try{
-                await refreshRegistryAssets(false);
-                const currentOverlay = document.querySelector('.asset-detail-viewer');
-                const refreshedItem = findAssetItem(assetId);
-                if(currentOverlay && refreshedItem) renderVideoDescriptionList(currentOverlay, assetId, refreshedItem);
+                const viewerAtRequest = detailViewerState;
+                const overlayAtRequest = document.querySelector('.asset-detail-viewer');
+                const data = await apiJsonResponse(assetManagerApi.getRegistryAsset(assetId));
+                const refreshedItem = normalizeRegistryAsset(data.asset || {});
+                if(!refreshedItem.id) throw new Error('资产详情缺失');
+                if(detailViewerState !== viewerAtRequest || !isCurrent() || document.querySelector('.asset-detail-viewer') !== overlayAtRequest) return;
+                mergeRegistryAssetUpdate(refreshedItem);
+                const updateItem = item => {
+                    if(detailMediaCanvasPersistId(item, detailViewerState.source) !== assetId) return item;
+                    if(detailViewerState.source === 'registry') return {...item, ...refreshedItem};
+                    mergeResolvedReferenceAsset(item, refreshedItem);
+                    return item;
+                };
+                detailViewerState.items = (detailViewerState.items || []).map(updateItem);
+                detailViewerState.mediaCanvasItems = (detailViewerState.mediaCanvasItems || []).map(updateItem);
+                if(overlayAtRequest) renderVideoDescriptionList(overlayAtRequest, assetId, refreshedItem);
             }catch(_refreshError){
-                setStatus('任务已结束，但当前素材列表刷新失败；重新打开详情可读取最新摘要');
+                if(isCurrent()) setStatus('任务已结束，但当前素材详情刷新失败；重新打开详情可读取最新摘要');
             }
         }
     }catch(error){

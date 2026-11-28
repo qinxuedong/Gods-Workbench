@@ -187,7 +187,7 @@ export const FROZEN_BASELINE_SELECTS = [
   },
   {
     "file": "web/js/modules/asset-manager/preview.js",
-    "line": 3369,
+    "line": 3375,
     "col": 63,
     "pattern": "data-image-editor-crop-ratio"
   },
