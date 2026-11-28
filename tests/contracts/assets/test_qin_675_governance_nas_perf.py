@@ -335,6 +335,16 @@ def test_qin675_unique_qgrams_preserve_similar_groups():
     assert governance._group_similar_display_paths(names) == group_similar_names(names)
 
 
+@pytest.mark.parametrize("threshold", [0.85, 0.9, 0.95])
+def test_qin675_common_and_repeated_qgrams_match_existing_rule(threshold):
+    names = [
+        f"shared_aaaa_{index:03d}_common.mp4" for index in range(60)
+    ] + ["shared_aaaaaaaa_common.mp4", "shared_aaaaaaab_common.mp4"]
+    assert governance._group_similar_display_paths(names, threshold) == group_similar_names(
+        names, similarity_threshold=threshold
+    )
+
+
 def test_qin675_vector_duplicates_use_nearest_candidate_queries():
     vectors = [
         (1.0, 0.0),

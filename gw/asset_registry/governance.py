@@ -37,6 +37,7 @@ from collections import Counter, OrderedDict
 from concurrent.futures import Future
 from copy import deepcopy
 from difflib import SequenceMatcher
+from itertools import chain
 from pathlib import Path
 import sqlite3
 import struct
@@ -227,7 +228,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             candidates.append((value, normalized, grams, gram_counts))
             if gram_counts is not None:
                 repeated_grams.update(gram for gram, count in gram_counts.items() if count > 1)
-            gram_frequency.update(grams)
+    gram_frequency.update(chain.from_iterable(item[2] for item in candidates))
     if len(candidates) < 2:
         return ()
 
@@ -327,6 +328,9 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                 if common_upper_bound + count <= omission_budget:
                     omitted_common.add(gram)
                     common_upper_bound += count
+                    # 单次出现且全库共有时，所有长度桶都必然包含此项。
+                    if count == 1 and gram_frequency[gram] == len(candidates):
+                        continue
                     for other_length in possible_lengths:
                         valid_mask = prior_length_masks.get(other_length, 0)
                         if count == 1:
