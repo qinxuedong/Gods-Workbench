@@ -79,12 +79,6 @@ async function loadGovernanceSuggestions(force=false, options={}){
     const { preserveExistingOnError = false } = options || {};
     if(governanceSuggestionsLoading && !force) return;
     if(!force && (governanceSuggestionsData || governanceSuggestionsError)) return;
-    // 【QIN-585 AC2】首屏列表未落地前不发请求：治理建议不参与第一屏渲染，
-    // 千级素材库上单次要跑数秒，会把首屏列表排在单进程服务端之后。
-    // 排队后由 scheduleDeferredBootRequests 在列表终态后的空闲时段补发；
-    // force（用户显式刷新）不受此闸门限制。
-    // 按代际判定：首屏在途时用户刷新开了新一代，同样要等新一代落地才发。
-    if(!force && isRegistryBootstrapPending()) return;
     const seq = (loadGovernanceSuggestions._seq = (loadGovernanceSuggestions._seq || 0) + 1);
     if(loadGovernanceSuggestions._controller){
         try { loadGovernanceSuggestions._controller.abort(); } catch(_) {}
@@ -137,6 +131,16 @@ async function refreshGovernanceSuggestions(){
     } else {
         setStatus('治理建议已刷新');
     }
+}
+function cancelGovernanceSuggestions({ render = true } = {}){
+    loadGovernanceSuggestions._seq = (loadGovernanceSuggestions._seq || 0) + 1;
+    if(loadGovernanceSuggestions._controller){
+        try { loadGovernanceSuggestions._controller.abort(); } catch(_) {}
+        loadGovernanceSuggestions._controller = null;
+    }
+    setGovernanceSuggestionsLoading(false);
+    updateGovernanceTrigger();
+    if(render && governanceDrawerOpen) renderGovernanceDrawer();
 }
 function governanceSuggestionAssetIds(item={}){
     const memberIds = (Array.isArray(item.members) ? item.members : []).map(member => (
@@ -335,14 +339,9 @@ function renderGovernanceDrawerBody(){
         + '</div>';
 }
 function closeGovernanceDrawerFromDismissal(){
-    loadGovernanceSuggestions._seq = (loadGovernanceSuggestions._seq || 0) + 1;
+    cancelGovernanceSuggestions({render:false});
     dedupConfirmSeq += 1;
     clearDedupPollTimer();
-    if(loadGovernanceSuggestions._controller){
-        try { loadGovernanceSuggestions._controller.abort(); } catch(_) {}
-        loadGovernanceSuggestions._controller = null;
-    }
-    setGovernanceSuggestionsLoading(false);
     setDedupConfirmLoading(false);
     const host = document.querySelector('[data-governance-drawer-host]');
     host?.remove();
@@ -529,6 +528,7 @@ async function confirmGovernanceSuggestion(suggestionId){
 
 // 【QIN-591】域函数面注册：主文件 gwCall('governance', fn) 经由此对象分派。
 GW_DEFERRED['governance'] = {
+    cancelGovernanceSuggestions,
     confirmGovernanceSuggestion,
     loadGovernanceSuggestions,
     openGovernanceDrawer,

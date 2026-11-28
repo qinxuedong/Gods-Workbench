@@ -998,16 +998,44 @@ def get_cascade_preview(
     }
 
 
+def _accepts_governance_gzip(value: Optional[str]) -> bool:
+    """遵循客户端对 gzip 及通配编码的质量权重。"""
+    weights = {}
+    for item in (value or "").split(","):
+        parts = item.strip().lower().split(";")
+        encoding = parts[0].strip()
+        if not encoding:
+            continue
+        quality = 1.0
+        for part in parts[1:]:
+            name, sep, raw = part.strip().partition("=")
+            if sep and name.strip() == "q":
+                try:
+                    quality = float(raw.strip())
+                except ValueError:
+                    quality = 0.0
+        weights[encoding] = quality if 0 <= quality <= 1 else 0.0
+    return weights.get("gzip", weights.get("*", 0.0)) > 0
+
+
 @router.get("/governance/suggestions", summary="读取治理建议清单（MVP1-T5，只建议）", status_code=status.HTTP_200_OK)
 def get_governance_suggestions(
     authorization: Optional[str] = Header(None),
     x_user_role: str = Header("editor", alias="X-User-Role"),
+    accept_encoding: Optional[str] = Header(None, alias="Accept-Encoding"),
 ):
     """治理建议清单：命名/相似名/查重/向量近重/受控打标，只读不落任何字段。"""
     context = _governance_auth(authorization, x_user_role)
-    result = governance.build_suggestions()
-    result["operator_role"] = context.role
-    return result
+    compress = _accepts_governance_gzip(accept_encoding)
+    content = governance.build_suggestions_json(
+        visibility_key=f"{asset_owner_key(context)}:{context.role}",
+        operator_role=context.role,
+        compress=compress,
+    )
+    headers = {"Vary": "Accept-Encoding"}
+    if compress:
+        headers["Content-Encoding"] = "gzip"
+    return Response(content=content, media_type="application/json", headers=headers)
 
 
 @router.post("/governance/suggestions/confirm", summary="确认单条治理建议（写入确认字段）", status_code=status.HTTP_200_OK)

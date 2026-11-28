@@ -3726,7 +3726,7 @@ function abortRegistryAssetRequests(){
 }
 function beginRegistryAssetRequest(){
     registryRequestAbortController?.abort?.();
-    registryRequestAbortController = typeof AbortController === 'function' ? new AbortController() : null;
+    registryRequestAbortController = typeof AbortController === 'function' ? new AbortController() : null; if(typeof GW_DEFERRED !== 'undefined') GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
     return registryRequestAbortController?.signal;
 }
 function isRegistryAbortError(error){
@@ -3928,7 +3928,7 @@ function promoteRegistryGridToVirtual(){
 }
 async function loadMoreRegistryAssets(){
     if(registryLoading || registryPageLoading || !registryHasMoreAssets()) return;
-    const requestId = registryRequestSeq;
+    const requestId = registryRequestSeq; if(typeof GW_DEFERRED !== 'undefined') GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
     const offset = registryNextOffset;
     const cursor = registryNextCursor;
     if(!Number.isFinite(offset) || offset < 0) return;
@@ -12171,10 +12171,7 @@ if(!embeddedSettingsPage){
     renderBoardNavigation();
     if(document.readyState !== 'loading') tryApplyRegistrySnapshot();
 }
-// 【QIN-585 AC2】首屏延后块：收集箱与治理建议都不参与第一屏卡片渲染，
-// 却在 DOMContentLoaded 里与首屏列表并发请求。治理建议在千级素材库上单次要跑数秒，
-// 单进程服务端会把首屏列表请求排在它后面 —— 首屏因此被一个「用户还没打开的抽屉」拖住。
-// 改为首屏就绪后再发，用空闲时段调度；两条链路都自带失败兜底，延后不改变可用性。
+// 【QIN-675】首屏不触发治理建议请求；治理清单只由用户打开抽屉或显式刷新时读取。
 function scheduleDeferredBootRequests(){
     const run = async () => {
         // 【QIN-585 AC2】idle 已经排队之后用户仍可能刷新开了新一代列表：此刻直接发请求
@@ -12192,7 +12189,6 @@ function scheduleDeferredBootRequests(){
                 if(assetInboxUnreadCount() > 0 && activeTab !== 'inbox') render();
             }).catch(() => null);
         }
-        gwCall('governance', 'loadGovernanceSuggestions');
     };
     const dispatch = () => {
         const launch = () => { void run(); };
@@ -12218,9 +12214,8 @@ document.addEventListener('DOMContentLoaded', () => {
     tryApplyRegistrySnapshot();
     loadRegistryPrincipal();
     // 【QIN-628 AC5】工作区上下文移入 scheduleDeferredBootRequests，首屏列表落地后再读取。
-    // 【QIN-585 AC2】治理建议的启动期意图仍在此声明；loadGovernanceSuggestions 会在
-    // 首屏列表落地前把自己排队（见该函数内的闸门），不再与列表争服务端资源。
-    gwCall('governance', 'loadGovernanceSuggestions');
+    // QIN-675 已移除首屏治理自动请求；此处保留旧调用记号用于历史对照：
+    // gwCall('governance', 'loadGovernanceSuggestions');
     loadAll().then(async () => {
         const restoredScroll = await restoreRegistryBrowseSession();
         // 【QIN-566】恢复上次外壳侧栏入口（仅内嵌金库模式；刷新/往返不丢目标入口，AC5）。
@@ -12505,6 +12500,8 @@ function withDeferredJobTimeout(task, label){
         timer = setTimeout(() => reject(new Error(
             `延后域任务超时（${DEFERRED_DOMAIN_JOB_TIMEOUT_MS}ms），已跳过以不阻塞后续：${label}`
         )), DEFERRED_DOMAIN_JOB_TIMEOUT_MS);
+        // Node 中后台域遗留任务不应拖住测试退出；治理超时需要保活以释放 FIFO 队列。
+        if (label !== 'governance/loadGovernanceSuggestions') timer.unref?.();
     });
     return Promise.race([task, timeout]).finally(() => clearTimeout(timer));
 }
@@ -12521,6 +12518,14 @@ async function flushDeferredDomainQueue() {
                     : gwCallNow(job.domain, job.fn, ...job.args);
                 job.resolve(await withDeferredJobTimeout(task, label));
             } catch (err) {
+                if(
+                    job.kind === 'call'
+                    && job.domain === 'governance'
+                    && job.fn === 'loadGovernanceSuggestions'
+                    && String(err?.message || '').includes('延后域任务超时')
+                ){
+                    GW_DEFERRED.governance?.cancelGovernanceSuggestions?.();
+                }
                 job.reject(err);
             }
         }

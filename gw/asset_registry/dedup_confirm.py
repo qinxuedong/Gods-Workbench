@@ -963,7 +963,7 @@ class DedupConfirmJobs:
         self,
         *,
         asset_ids: Optional[Sequence[str]] = None,
-    ) -> tuple[list[dict[str, Any]], int]:
+    ) -> tuple[list[dict[str, Any]], int, list[str]]:
         """按精确 size_bytes 分桶，只筛选同 size >= 2 的疑似重复候选。"""
         from gw.asset_registry import repository as repo
 
@@ -972,6 +972,7 @@ class DedupConfirmJobs:
         filter_ids = {str(aid).strip() for aid in (asset_ids or ()) if str(aid).strip()}
 
         by_size: dict[int, list[tuple[str, dict[str, Any], Optional[Path]]]] = defaultdict(list)
+        missing_cached_ids: list[str] = []
         for aid, record in sorted(raw.get("assets", {}).items()):
             if not isinstance(record, dict) or record.get("archived") or not asset_visible(record):
                 continue
@@ -984,6 +985,25 @@ class DedupConfirmJobs:
                 continue
             path = resolve_asset_media_path(raw, str(aid), record)
             if path is None or not path.is_file():
+                cache = record.get("full_sha256_cache")
+                missing_path = path
+                if missing_path is None and isinstance(cache, dict) and cache.get("verified") is True:
+                    display = str(record.get("display_path") or "").strip()
+                    if display:
+                        try:
+                            missing_path = repo._resolve_display(
+                                display,
+                                root_id=str(record.get("root_id") or "") or None,
+                            )
+                        except (CleanroomException, OSError, RuntimeError, ValueError):
+                            missing_path = None
+                if (
+                    missing_path is not None
+                    and missing_path.parent.is_dir()
+                    and isinstance(cache, dict)
+                    and cache.get("verified") is True
+                ):
+                    missing_cached_ids.append(str(aid))
                 continue
             by_size[size].append((str(aid), record, path))
 
@@ -1014,7 +1034,7 @@ class DedupConfirmJobs:
                         "sha256": cached or None,
                     }
                 )
-        return candidates, unique_skipped
+        return candidates, unique_skipped, missing_cached_ids
 
     def _resolve_rate_params(self, payload: Mapping[str, Any]) -> dict[str, int]:
         max_rate = payload.get(
@@ -1082,7 +1102,7 @@ class DedupConfirmJobs:
             if len(pre_raw["jobs"]) >= MAX_JOBS or active_count >= MAX_ACTIVE:
                 _error(429, "DEDUP_QUEUE_FULL", "查重确认任务队列已满")
 
-            candidates, unique_skipped = self._build_candidates(asset_ids=asset_ids)
+            candidates, unique_skipped, missing_cached_ids = self._build_candidates(asset_ids=asset_ids)
             reused_count = sum(1 for item in candidates if item["file_state"] == "reused")
             owner_scope = current_asset_owner.get()
             if owner_scope is None and hasattr(auth, "subject"):
@@ -1127,6 +1147,7 @@ class DedupConfirmJobs:
                     "_request": request,
                     "_request_digest": request_digest,
                     "_candidates": candidates,
+                    "_missing_cache_asset_ids": missing_cached_ids,
                 }
                 raw["jobs"][new_job_id] = new_job
                 raw["keys"][key_digest] = new_job_id
@@ -1187,7 +1208,7 @@ class DedupConfirmJobs:
 
             if action == "retry":
                 req = pre_job.get("_request") or {}
-                refreshed, unique_skipped = self._build_candidates(
+                refreshed, unique_skipped, missing_cached_ids = self._build_candidates(
                     asset_ids=req.get("asset_ids")
                 )
 
@@ -1221,6 +1242,7 @@ class DedupConfirmJobs:
                         ):
                             cand["file_state"] = prev["file_state"]
                     cur["_candidates"] = refreshed
+                    cur["_missing_cache_asset_ids"] = missing_cached_ids
                     cur["total_candidates"] = len(refreshed)
                     cur["processed_candidates"] = sum(
                         1 for item in refreshed if item.get("file_state") in {"verified", "reused"}
@@ -1552,6 +1574,26 @@ class DedupConfirmJobs:
                 worker_lock.heartbeat()
 
                 raw_assets = repo.readonly_registry_snapshot()
+                missing_cached_ids = sorted(
+                    {str(aid) for aid in job.get("_missing_cache_asset_ids", []) if str(aid)}
+                )
+                if missing_cached_ids:
+                    for aid in missing_cached_ids:
+                        self._checkpoint(job_id, attempt, generation)
+                        self._invalidate_asset_cache(aid)
+
+                    def clear_missing_cache_ids(raw: dict[str, Any]) -> None:
+                        cur = raw["jobs"].get(job_id)
+                        if (
+                            cur
+                            and int(cur.get("attempt", 0)) == attempt
+                            and int(cur.get("generation", 0)) == generation
+                            and cur.get("status") not in TERMINAL
+                        ):
+                            cur["_missing_cache_asset_ids"] = []
+                            cur["updated_at"] = storage.now_iso()
+
+                    self.store.mutate(clear_missing_cache_ids)
                 pending_batch: list[tuple[str, Path]] = []
                 invalidated_ids: set[str] = set()
                 missing_pending_ids: set[str] = set()

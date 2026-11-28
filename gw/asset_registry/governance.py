@@ -29,24 +29,33 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import math
+import os
+from collections import Counter, OrderedDict
+from concurrent.futures import Future
+from copy import deepcopy
+from difflib import SequenceMatcher
+from itertools import chain
 from pathlib import Path
 import sqlite3
 import struct
+import threading
 import unicodedata
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from gw.asset_registry import dedup_confirm, repository as repo
 from gw.asset_registry.governance_rules import (
     NamingRules,
+    SimilarNameGroup,
     find_duplicate_groups,
-    group_similar_names,
+    normalize_filename,
     validate_name,
 )
 from gw.asset_registry.service import DATA_STATUS_NOT_INTEGRATED
 from gw.core import storage
-from gw.core.asset_visibility import asset_visible
+from gw.core.asset_visibility import asset_visible, current_asset_owner, current_auth_context
 from gw.core.errors import CleanroomException
 
 NS_GOVERNANCE = "asset_governance"
@@ -64,6 +73,11 @@ DEFAULT_NAMING_RULES = NamingRules(
 NEAR_DUPLICATE_SIMILARITY = 0.98
 MAX_VECTOR_PAIR_CANDIDATES = 200
 MAX_SUGGESTION_ENTRIES = 200
+_GOVERNANCE_CACHE_LIMIT = 8
+_GOVERNANCE_CACHE: OrderedDict[tuple, Dict[str, Any]] = OrderedDict()
+_GOVERNANCE_JSON_CACHE: OrderedDict[tuple, Tuple[Dict[str, Any], bytes]] = OrderedDict()
+_GOVERNANCE_INFLIGHT: Dict[tuple, Future] = {}
+_GOVERNANCE_CACHE_LOCK = threading.Lock()
 
 # 受控词表同义映射：把自由标签归一到 ASC 工业代号（仅建议，不自动改写）。
 # 中文标准术语取自摄制元数据规范第 2.1/2.3/2.4/2.7 节。
@@ -150,16 +164,6 @@ def _asset_tag_names(raw: Dict[str, Any], asset: Dict[str, Any]) -> List[str]:
     return names
 
 
-def _find_by_display_path(
-    assets: Sequence[Dict[str, Any]], path: str
-) -> Optional[Dict[str, Any]]:
-    for asset in assets:
-        current = str(asset.get("display_path") or asset.get("name") or "").strip()
-        if current == path:
-            return asset
-    return None
-
-
 def _asset_file_records(
     assets: Sequence[Dict[str, Any]],
 ) -> List[Tuple[str, int, str]]:
@@ -184,6 +188,275 @@ def _display_paths(assets: Sequence[Dict[str, Any]]) -> List[str]:
         if path:
             paths.append(path)
     return paths
+
+
+def _group_similar_display_paths(names: Sequence[str], similarity_threshold: float = 0.9) -> Tuple[SimilarNameGroup, ...]:
+    """以 q 元组重叠的必要条件剪枝，并保持原 SequenceMatcher 判定结果。"""
+    candidates = []
+    normalized_values = [(value, normalize_filename(value)) for value in names if value]
+    normalized_values = [(value, name) for value, name in normalized_values if name]
+    # 当每项均能连到此前分量时，已证明全部属于一组，无需构建倒排索引。
+    if len(normalized_values) > 1:
+        for index in range(1, len(normalized_values)):
+            current = normalized_values[index][1]
+            for offset in (1, 10, 100, 1000):
+                if index < offset:
+                    continue
+                previous = normalized_values[index - offset][1]
+                matcher = SequenceMatcher(None, previous, current, autojunk=False)
+                if previous == current or (
+                    matcher.quick_ratio() >= similarity_threshold
+                    and matcher.ratio() >= similarity_threshold
+                ):
+                    break
+            else:
+                break
+        else:
+            paths = tuple(sorted(
+                (value for value, _ in normalized_values),
+                key=lambda value: (unicodedata.normalize("NFKC", value).casefold(), value),
+            ))
+            return (SimilarNameGroup(min(name for _, name in normalized_values), paths),)
+    gram_width = 2 if any(len(normalized) <= 16 for _, normalized in normalized_values) else 4
+    gram_frequency: Counter[str] = Counter()
+    repeated_grams = set()
+    for value, normalized in normalized_values:
+        if normalized:
+            gram_values = [normalized[offset:offset + gram_width] for offset in range(max(0, len(normalized) - gram_width + 1))]
+            grams = set(gram_values)
+            gram_counts = Counter(gram_values) if len(grams) != len(gram_values) else None
+            candidates.append((value, normalized, grams, gram_counts))
+            if gram_counts is not None:
+                repeated_grams.update(gram for gram, count in gram_counts.items() if count > 1)
+    gram_frequency.update(chain.from_iterable(item[2] for item in candidates))
+    if len(candidates) < 2:
+        return ()
+
+    parents = list(range(len(candidates)))
+    component_masks = [1 << index for index in range(len(candidates))]
+
+    def find(index: int) -> int:
+        while parents[index] != index:
+            parents[index] = parents[parents[index]]
+            index = parents[index]
+        return index
+
+    def union(left: int, right: int) -> None:
+        left_root = find(left)
+        right_root = find(right)
+        if left_root != right_root:
+            root, merged = min(left_root, right_root), max(left_root, right_root)
+            parents[merged] = root
+            component_masks[root] |= component_masks[merged]
+
+    frequent_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 8}
+    matchable_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 1}
+
+    prior_by_length: Dict[int, List[int]] = {}
+    prior_length_masks: Dict[int, int] = {}
+    prior_gram_masks_by_length: Dict[int, Dict[str, int]] = {}
+    prior_count_masks_by_length: Dict[int, Dict[str, List[int]]] = {}
+
+    def add_count_mask(bit_planes: List[int], mask: int) -> None:
+        for bit_index, plane in enumerate(bit_planes):
+            carry = plane & mask
+            if not carry:
+                bit_planes[bit_index] = plane | mask
+                return
+            bit_planes[bit_index] = plane ^ mask
+            mask = carry
+        bit_planes.append(mask)
+
+    def mask_at_least(bit_planes: Sequence[int], threshold: int, valid_mask: int) -> int:
+        greater = 0
+        equal = valid_mask
+        for bit_index in range(max(len(bit_planes), threshold.bit_length()) - 1, -1, -1):
+            plane = bit_planes[bit_index] if bit_index < len(bit_planes) else 0
+            if threshold & (1 << bit_index):
+                equal &= plane
+            else:
+                greater |= equal & plane
+                equal &= ~plane
+        return greater | equal
+
+    for index, (_, normalized, grams, gram_counts) in enumerate(candidates):
+        # 全库只出现一次的 q 元组不可能与其他名称重叠。
+        indexed_grams = grams & matchable_grams
+        length = len(normalized)
+        lower = max(1, math.ceil(length * similarity_threshold / (2 - similarity_threshold)))
+        upper = math.floor(length * (2 - similarity_threshold) / similarity_threshold)
+        possible_lengths = [n for n in prior_by_length if lower <= n <= upper]
+        # 一个匹配块至少贡献 len(block)-(q-1) 个 q 元组；块数最多为两串
+        # 未匹配字符数之和 + 1，据此得到不漏报的必要重叠下界。
+        required_by_length = {
+            other_length: max(
+                0,
+                math.ceil(
+                    ((gram_width - 0.5) * similarity_threshold - (gram_width - 1))
+                    * (length + other_length) - (gram_width - 1) - 1e-9
+                ),
+            )
+            for other_length in possible_lengths
+        }
+        if required_by_length:
+            # 相邻的顺序编号素材通常属于同一组，先连接后可整组排除。
+            if index and len(candidates[index - 1][1]) in required_by_length and (
+                length <= 16 or candidates[index - 1][1][:12] == normalized[:12]
+            ):
+                previous = candidates[index - 1][1]
+                adjacent = SequenceMatcher(None, previous, normalized, autojunk=False)
+                if previous == normalized or (
+                    adjacent.quick_ratio() >= similarity_threshold
+                    and adjacent.ratio() >= similarity_threshold
+                ):
+                    union(index - 1, index)
+            required_by_length = {
+                n: required for n, required in required_by_length.items()
+                if prior_length_masks[n] & ~component_masks[find(index)]
+            }
+        if required_by_length:
+            minimum_required = min(required_by_length.values())
+            common_grams = grams & frequent_grams
+            omitted_common = set()
+            common_upper_bound = 0
+            omitted_common_universal = True
+            omission_budget = minimum_required // 2
+            for gram in sorted(
+                common_grams, key=gram_frequency.__getitem__, reverse=True
+            ):
+                count = gram_counts[gram] if gram_counts is not None else 1
+                if common_upper_bound + count <= omission_budget:
+                    omitted_common.add(gram)
+                    common_upper_bound += count
+                    # 单次出现且全库共有时，所有长度桶都必然包含此项。
+                    if count == 1 and gram_frequency[gram] == len(candidates):
+                        continue
+                    for other_length in possible_lengths:
+                        valid_mask = prior_length_masks.get(other_length, 0)
+                        if count == 1:
+                            if prior_gram_masks_by_length.get(other_length, {}).get(
+                                gram, 0
+                            ) != valid_mask:
+                                omitted_common_universal = False
+                                break
+                            continue
+                        levels = prior_count_masks_by_length.get(other_length, {}).get(
+                            gram, ()
+                        )
+                        if len(levels) < count or any(
+                            levels[level] != valid_mask for level in range(count)
+                        ):
+                            omitted_common_universal = False
+                            break
+
+            matcher: Optional[SequenceMatcher] = None
+            for other_length, required in required_by_length.items():
+                if required == 0:
+                    continue
+                adjusted_required = required - common_upper_bound
+                valid_mask = prior_length_masks.get(other_length, 0) & ~component_masks[find(index)]
+                if adjusted_required <= 0:
+                    candidate_mask = valid_mask
+                else:
+                    bit_planes: List[int] = []
+                    postings = prior_gram_masks_by_length.get(other_length, {})
+                    count_postings = prior_count_masks_by_length.get(other_length, {})
+                    for gram in indexed_grams:
+                        if gram in omitted_common:
+                            continue
+                        query_count = gram_counts[gram] if gram_counts is not None else 1
+                        if gram in repeated_grams and query_count > 1:
+                            levels = count_postings.get(gram, ())
+                            masks = levels[:query_count]
+                        else:
+                            mask = postings.get(gram, 0)
+                            masks = (mask,) if mask else ()
+                        for mask in masks:
+                            add_count_mask(bit_planes, mask)
+                    candidate_mask = mask_at_least(bit_planes, adjusted_required, valid_mask)
+
+                while candidate_mask:
+                    candidate_mask &= ~component_masks[find(index)]
+                    if not candidate_mask:
+                        break
+                    bit = 1 << (candidate_mask.bit_length() - 1)
+                    candidate_mask ^= bit
+                    other = bit.bit_length() - 1
+                    if omitted_common and not omitted_common_universal:
+                        other_grams = candidates[other][2]
+                        other_counts = candidates[other][3]
+                        if gram_counts is None and other_counts is None:
+                            shared = len(grams & other_grams)
+                        else:
+                            shared = sum(
+                                min(
+                                    gram_counts[gram] if gram_counts is not None else 1,
+                                    other_counts[gram] if other_counts is not None else 1,
+                                )
+                                for gram in grams & other_grams
+                            )
+                        if shared < required:
+                            continue
+
+                    left_name = candidates[other][1]
+                    if left_name == normalized:
+                        union(other, index)
+                        continue
+                    if matcher is None:
+                        matcher = SequenceMatcher(None, left_name, normalized, autojunk=False)
+                    else:
+                        matcher.set_seq1(left_name)
+                    if matcher.quick_ratio() >= similarity_threshold and matcher.ratio() >= similarity_threshold:
+                        union(other, index)
+
+            # 名称没有足够 q 元组时，按长度过滤直接比较。
+            for other_length, required in required_by_length.items():
+                if required == 0:
+                    candidate_mask = prior_length_masks[other_length]
+                    while candidate_mask:
+                        candidate_mask &= ~component_masks[find(index)]
+                        if not candidate_mask:
+                            break
+                        bit = 1 << (candidate_mask.bit_length() - 1)
+                        candidate_mask ^= bit
+                        other = bit.bit_length() - 1
+                        left_name = candidates[other][1]
+                        if left_name == normalized:
+                            union(other, index)
+                            continue
+                        if matcher is None:
+                            matcher = SequenceMatcher(None, left_name, normalized, autojunk=False)
+                        else:
+                            matcher.set_seq1(left_name)
+                        if matcher.quick_ratio() >= similarity_threshold and matcher.ratio() >= similarity_threshold:
+                            union(other, index)
+
+        prior_by_length.setdefault(length, []).append(index)
+        candidate_bit = 1 << index
+        prior_length_masks[length] = prior_length_masks.get(length, 0) | candidate_bit
+        gram_masks = prior_gram_masks_by_length.setdefault(length, {})
+        count_masks = prior_count_masks_by_length.setdefault(length, {})
+        for gram in indexed_grams:
+            gram_masks[gram] = gram_masks.get(gram, 0) | candidate_bit
+            if gram in repeated_grams:
+                count = gram_counts[gram] if gram_counts is not None else 1
+                levels = count_masks.setdefault(gram, [])
+                if len(levels) < count:
+                    levels.extend([0] * (count - len(levels)))
+                for level in range(count):
+                    levels[level] |= candidate_bit
+
+    grouped: Dict[int, List[Tuple[str, str]]] = {}
+    for index, (value, normalized, _, _) in enumerate(candidates):
+        grouped.setdefault(find(index), []).append((value, normalized))
+    result = []
+    for members in grouped.values():
+        if len(members) < 2:
+            continue
+        normalized_name = min(item[1] for item in members)
+        paths = tuple(sorted((item[0] for item in members), key=lambda value: (unicodedata.normalize("NFKC", value).casefold(), value)))
+        result.append(SimilarNameGroup(normalized_name, paths))
+    return tuple(sorted(result, key=lambda group: (group.normalized_name, group.members)))
 
 
 def _basename(path: str) -> str:
@@ -270,31 +543,50 @@ def _tagging_suggestions(
 
 
 def _vector_near_duplicates(engine: Any) -> List[Dict[str, Any]]:
-    """对索引内单位向量做近重配对；只读访问，不修改引擎状态。
-
-    引擎未暴露向量导出公共接口，这里在引擎已加载扩展的连接上做只读
-    SELECT（同包受限使用）；向量在写入前已归一化，点积即相似度。
-    """
+    """通过 sqlite-vec 最近邻候选找近重，避免 Python 端枚举所有向量对。"""
     try:
         rows = engine._db.execute(
-            "SELECT d.asset_id AS asset_id, v.embedding AS embedding "
+            "SELECT v.rowid AS vector_rowid, d.asset_id AS asset_id, v.embedding AS embedding "
             "FROM c18_vectors AS v JOIN c18_documents AS d ON d.row_id = v.rowid "
-            "WHERE d.vector_hash IS NOT NULL"
+            "WHERE d.vector_hash IS NOT NULL ORDER BY v.rowid"
         ).fetchall()
     except sqlite3.Error:
         return []
-    vectors: List[Tuple[str, Tuple[float, ...]]] = []
+    vectors: List[Tuple[int, str, Tuple[float, ...], bytes]] = []
     for row in rows:
         blob = row["embedding"]
         if not isinstance(blob, (bytes, bytearray)) or len(blob) % 4 != 0:
             continue
         values = struct.unpack(f"<{len(blob) // 4}f", bytes(blob))
-        vectors.append((str(row["asset_id"]), values))
+        vectors.append((int(row["vector_rowid"]), str(row["asset_id"]), values, bytes(blob)))
+
+    row_to_index = {rowid: index for index, (rowid, _, _, _) in enumerate(vectors)}
     pairs: List[Dict[str, Any]] = []
-    for left in range(len(vectors)):
-        left_id, left_vector = vectors[left]
-        for right in range(left + 1, len(vectors)):
-            right_id, right_vector = vectors[right]
+    # 只需保留输出上限内的靠前候选。若当前还未收满 200 对，先前索引最多已有
+    # 199 个符合对；加上自身后，最近 401 条足以覆盖当前可输出的 200 个后续邻居。
+    neighbor_limit = min(len(vectors), MAX_VECTOR_PAIR_CANDIDATES * 2 + 1)
+    for left, (_, left_id, left_vector, query_blob) in enumerate(vectors):
+        try:
+            nearest = engine._db.execute(
+                "SELECT rowid, distance FROM c18_vectors "
+                "WHERE embedding MATCH ? ORDER BY distance ASC LIMIT ?",
+                (query_blob, neighbor_limit),
+            ).fetchall()
+        except (sqlite3.Error, OverflowError, ValueError):
+            # 索引扩展在单次查询故障时保留旧的确定性计算行为。
+            nearest = []
+            candidates = range(left + 1, len(vectors))
+        else:
+            candidates = sorted(
+                {
+                    row_to_index[int(row["rowid"])]
+                    for row in nearest
+                    if int(row["rowid"]) in row_to_index
+                    and row_to_index[int(row["rowid"])] > left
+                }
+            )
+        for right in candidates:
+            _, right_id, right_vector, _ = vectors[right]
             if len(left_vector) != len(right_vector):
                 continue
             similarity = math.fsum(
@@ -374,10 +666,37 @@ def _duplicate_file_suggestions(
     - ``sampled``、未知/缺失 ``hash_mode``、缓存失效或仅同 ``size_bytes`` 最多标为 ``suspected``；
     - 若两个文件都已算出完整 SHA 且不相等，绝不因相同 ``sampled`` 或相同 ``size_bytes`` 共组。
     """
+    if not related_pairs:
+        seen_sizes = set()
+        possible_duplicate = False
+        for asset in assets:
+            metadata = asset.get("metadata")
+            if (
+                asset.get("full_sha256_cache") is not None
+                or asset.get("sha256")
+                or (isinstance(metadata, dict) and metadata.get("collect_sha256"))
+            ):
+                possible_duplicate = True
+                break
+            size = asset.get("size_bytes")
+            if isinstance(size, bool) or not isinstance(size, int) or size < 0:
+                continue
+            if size in seen_sizes:
+                possible_duplicate = True
+                break
+            seen_sizes.add(size)
+        if not possible_duplicate:
+            return []
+
     removed_ids = repo._removed_root_ids()
     records: List[Dict[str, Any]] = []
     for asset in assets:
-        if asset.get("archived") or repo._hidden_builtin(asset) or repo._is_removed_asset(asset, removed_ids):
+        if (
+            asset.get("archived")
+            or repo._hidden_builtin(asset)
+            or asset.get("root_availability") == "removed"
+            or (removed_ids and repo._is_removed_asset(asset, removed_ids))
+        ):
             continue
         asset_id = str(asset.get("asset_id") or asset.get("id") or "").strip()
         path_label = str(asset.get("display_path") or asset.get("name") or "").strip()
@@ -389,22 +708,35 @@ def _duplicate_file_suggestions(
             if isinstance(raw_size, bool) or not isinstance(raw_size, int) or raw_size < 0
             else int(raw_size)
         )
-        local_path: Optional[Path] = None
-        local_stat = None
-        try:
-            local_path = dedup_confirm.resolve_asset_media_path(raw, asset_id, asset)
-            if local_path is not None and local_path.is_file():
-                local_stat = local_path.lstat()
-        except CleanroomException:
-            local_path = None
-        except OSError:
-            local_stat = None
-
-        full_sha = dedup_confirm.trusted_full_sha256(
-            asset, path=local_path, stat_result=local_stat
-        )
-        # 如果资产绑定本地文件但文件不存在或大小已变，不承认过期内存 size/缓存
-        effective_size = int(local_stat.st_size) if local_stat is not None else size
+        cache = asset.get("full_sha256_cache")
+        full_sha = None
+        if cache is not None and dedup_confirm.cache_matches_asset_and_stat(cache, asset):
+            recorded_mtime = asset.get("mtime_ns")
+            cached_mtime = cache.get("mtime_ns") if isinstance(cache, dict) else None
+            if (
+                isinstance(recorded_mtime, int)
+                and not isinstance(recorded_mtime, bool)
+                and isinstance(cached_mtime, int)
+                and recorded_mtime != cached_mtime
+            ):
+                full_sha = None
+            else:
+                full_sha = dedup_confirm.normalize_sha256_hex(cache.get("sha256"))
+        if not full_sha:
+            metadata = asset.get("metadata")
+            collect_sha = (
+                dedup_confirm.normalize_sha256_hex(metadata.get("collect_sha256"))
+                if isinstance(metadata, dict)
+                else ""
+            )
+            is_collect_inbox = (
+                str(asset.get("display_path") or "").startswith("registry_uploads/collect_inbox/")
+                or str(asset.get("stored_name") or "").startswith("registry_uploads/collect_inbox/")
+            )
+            if collect_sha and is_collect_inbox:
+                full_sha = collect_sha
+        # GET 仅认快照内的完整哈希证据；普通文件变化由显式后台核验收敛。
+        effective_size = size
         legacy_sha = dedup_confirm.normalize_sha256_hex(asset.get("sha256"))
         hash_mode = str(asset.get("hash_mode") or "").strip().lower()
         records.append(
@@ -585,9 +917,8 @@ def _duplicate_file_suggestions(
     return suggestions
 
 
-def build_suggestions() -> Dict[str, Any]:
-    """生成完整建议清单；只读，不修改注册表或源文件。"""
-    raw = repo.state().read()
+def _build_suggestions_from_snapshot(raw: Dict[str, Any]) -> Dict[str, Any]:
+    """从注册表只读快照生成完整建议清单。"""
     assets = _registry_assets(raw)
     related_pairs = _duplicate_related_pairs(raw)
 
@@ -618,6 +949,11 @@ def build_suggestions() -> Dict[str, Any]:
         if len(naming) >= MAX_SUGGESTION_ENTRIES:
             break
 
+    asset_by_display_path: Dict[str, Dict[str, Any]] = {}
+    for asset in assets:
+        asset_by_display_path.setdefault(
+            str(asset.get("display_path") or asset.get("name") or "").strip(), asset
+        )
     similar_names = [
         {
             "suggestion_id": _suggestion_id(
@@ -627,13 +963,13 @@ def build_suggestions() -> Dict[str, Any]:
             "normalized_name": group.normalized_name,
             "members": list(group.members),
             "asset_ids": [
-                str(_find_by_display_path(assets, path).get("asset_id") or "")
-                if _find_by_display_path(assets, path) is not None
+                str(asset_by_display_path[path].get("asset_id") or "")
+                if path in asset_by_display_path
                 else ""
                 for path in group.members
             ],
         }
-        for group in group_similar_names(paths)
+        for group in _group_similar_display_paths(paths)
     ]
 
     duplicate_files = _duplicate_file_suggestions(raw, assets, related_pairs)
@@ -705,6 +1041,113 @@ def build_suggestions() -> Dict[str, Any]:
         "data_status": repo.DATA_STATUS_OK if not data_gaps else DATA_STATUS_NOT_INTEGRATED,
         "data_gaps": data_gaps,
     }
+
+
+def _visibility_cache_key(explicit_key: Optional[str]) -> str:
+    if explicit_key is not None:
+        return str(explicit_key)
+    auth = current_auth_context.get()
+    role = str(getattr(auth, "role", "") or "")
+    owner = str(current_asset_owner.get() or "")
+    return f"{owner}:{role}"
+
+
+def _index_cache_signature() -> tuple:
+    """索引及 WAL 变化均使治理建议缓存失效。"""
+    registry_path, _ = repo._snapshot_paths()
+    path = registry_path.parent / repo.ASSET_SEARCH_INDEX_FILENAME
+    signatures = []
+    for filename in (str(path), str(path) + "-wal"):
+        try:
+            info = os.stat(filename)
+        except FileNotFoundError:
+            signatures.append(None)
+        else:
+            signatures.append((info.st_size, info.st_mtime_ns, info.st_ctime_ns))
+    return tuple(signatures)
+
+
+def _cached_suggestions(visibility_key: Optional[str]) -> Tuple[tuple, Dict[str, Any]]:
+    """返回内部只读结果；调用方不得修改缓存对象。"""
+    raw = repo.readonly_registry_snapshot()
+    runtime_identity = "\0".join(
+        os.environ.get(name, "")
+        for name in (
+            storage.RUNTIME_MODE_ENV,
+            storage.DATA_DIR_ENV,
+            storage.LOCAL_AUTH_DB_ENV,
+            storage.VIDEO_DATA_DIR_ENV,
+            "LOCALAPPDATA",
+        )
+    )
+    runtime_scope = hashlib.sha256(runtime_identity.encode("utf-8")).hexdigest()[:24]
+    key = (
+        int(raw.get("revision", 1)),
+        _visibility_cache_key(visibility_key),
+        runtime_scope,
+        tuple(sorted(repo._removed_root_ids_for_search())),
+        _index_cache_signature(),
+    )
+    with _GOVERNANCE_CACHE_LOCK:
+        cached = _GOVERNANCE_CACHE.get(key)
+        if cached is not None:
+            _GOVERNANCE_CACHE.move_to_end(key)
+            return key, cached
+        pending = _GOVERNANCE_INFLIGHT.get(key)
+        if pending is None:
+            pending = Future()
+            _GOVERNANCE_INFLIGHT[key] = pending
+            is_owner = True
+        else:
+            is_owner = False
+    if not is_owner:
+        return key, pending.result()
+
+    try:
+        result = _build_suggestions_from_snapshot(raw)
+    except BaseException as exc:
+        with _GOVERNANCE_CACHE_LOCK:
+            _GOVERNANCE_INFLIGHT.pop(key, None)
+            pending.set_exception(exc)
+        raise
+    with _GOVERNANCE_CACHE_LOCK:
+        _GOVERNANCE_CACHE[key] = result
+        _GOVERNANCE_CACHE.move_to_end(key)
+        while len(_GOVERNANCE_CACHE) > _GOVERNANCE_CACHE_LIMIT:
+            _GOVERNANCE_CACHE.popitem(last=False)
+        _GOVERNANCE_INFLIGHT.pop(key, None)
+        pending.set_result(result)
+    return key, result
+
+
+def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]:
+    """生成建议；对外返回独立副本，避免调用方修改缓存。"""
+    _, result = _cached_suggestions(visibility_key)
+    return deepcopy(result)
+
+
+def build_suggestions_json(*, visibility_key: str, operator_role: str, compress: bool = False) -> bytes:
+    """缓存已编码响应，避免热请求反复复制和编码大型建议清单。"""
+    key, result = _cached_suggestions(visibility_key)
+    json_key = (key, operator_role, compress)
+    with _GOVERNANCE_CACHE_LOCK:
+        cached = _GOVERNANCE_JSON_CACHE.get(json_key)
+        if cached is not None and cached[0] is result:
+            _GOVERNANCE_JSON_CACHE.move_to_end(json_key)
+            return cached[1]
+    encoded = json.dumps(
+        {**result, "operator_role": operator_role}, ensure_ascii=False,
+        allow_nan=False, separators=(",", ":"),
+    ).encode("utf-8")
+    if compress:
+        encoded = gzip.compress(encoded, compresslevel=1, mtime=0)
+    with _GOVERNANCE_CACHE_LOCK:
+        if _GOVERNANCE_CACHE.get(key) is result:
+            _GOVERNANCE_JSON_CACHE[json_key] = (result, encoded)
+            _GOVERNANCE_JSON_CACHE.move_to_end(json_key)
+            while len(_GOVERNANCE_JSON_CACHE) > _GOVERNANCE_CACHE_LIMIT:
+                _GOVERNANCE_JSON_CACHE.popitem(last=False)
+    return encoded
 
 
 def find_suggestion(suggestion_id: str) -> Dict[str, Any]:

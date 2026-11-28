@@ -280,13 +280,13 @@ def test_ac5_cache_invalidation_on_change_mid_read_and_new_same_size_arrival(ded
         )
         assert job["status"] == "succeeded"
 
-        # 改写同长度内容（size 不变，mtime_ns 改变）→ 缓存立刻失效，降级回 suspected
+        # GET 不探测物理文件，快照确认态持续到下一次显式后台核验。
         time.sleep(0.02)
         path_a.write_bytes(b"ac5-modified-2345678" * 16)
         suggestions = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
-        assert suggestions["suggestions"]["duplicate_files"][0]["dedup_status"] == "suspected"
+        assert suggestions["suggestions"]["duplicate_files"][0]["dedup_status"] == "confirmed"
 
-        # 加入第 3 个同 size 文件且与 b 内容相同 → 新文件能被发现；读中修改 a 时，a 失败不写脏缓存，b/c 仍有效
+        # 加入第 3 个同 size 文件且与 b 内容相同 → 显式后台任务发现新文件；读中修改 a 时，a 失败不写脏缓存，b/c 仍有效。
         id_c, path_c = _register_disk_asset(sources, "c.bin", payload)
         svc = dedup_confirm.service()
         injected_once = {"done": False}
@@ -975,8 +975,8 @@ def test_r1_fix3_multi_batch_tail_file_changed_is_persisted_and_recomputed(dedup
         assert repo.state().read()["assets"][tail_id]["full_sha256_cache"]["sha256"] == hashlib.sha256(new_tail).hexdigest()
 
 
-def test_r1_fix4_deleted_disk_file_invalidates_confirmed_cache_and_blocks_confirm(dedup_runtime):
-    """R1 必改 4：曾 confirmed 的查重组在其中一文件被删盘后，立即退出 confirmed 并拒绝 confirm_suggestion（409）。"""
+def test_r1_fix4_deleted_disk_file_invalidates_confirmed_cache_and_blocks_confirm(dedup_runtime, monkeypatch):
+    """GET 零磁盘探测；显式后台核验发现删盘后失效缓存并阻止确认。"""
     sources, _ = dedup_runtime
     payload = b"delete-after-confirm-" * 64
     id_a, path_a = _register_disk_asset(sources, "del_a.mp4", payload)
@@ -996,23 +996,59 @@ def test_r1_fix4_deleted_disk_file_invalidates_confirmed_cache_and_blocks_confir
         confirmed_entry = before["suggestions"]["duplicate_files"][0]
         assert confirmed_entry["dedup_status"] == "confirmed"
 
-        # 从磁盘删除其中一个文件（保留注册表旧 full_sha256_cache）
+        # 删除文件后，GET 仅按快照读取；删盘到显式核验之间允许短暂保留 confirmed。
         path_b.unlink()
         assert id_a != id_b
 
-        # 再次拉取建议，绝不能再返回 confirmed：旧 confirmed ID 已失效（404），降级后的疑似条目确认必须返回 409 DEDUP_NOT_CONFIRMED
-        after = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
-        dups_after = after["suggestions"]["duplicate_files"]
-        assert dups_after and all(item.get("dedup_status") != "confirmed" for item in dups_after), (
-            "源文件删盘后不得继续保留 confirmed 状态"
+        original_is_file = Path.is_file
+        original_lstat = Path.lstat
+        disk_probe_paths = {path_a, path_b}
+        with monkeypatch.context() as patch:
+            def forbidden_resolve(*_args, **_kwargs):
+                pytest.fail("GET suggestions must not resolve per-asset disk paths")
+
+            def track_is_file(path):
+                assert path not in disk_probe_paths, "GET suggestions must not probe asset is_file"
+                return original_is_file(path)
+
+            def track_lstat(path, *args, **kwargs):
+                assert path not in disk_probe_paths, "GET suggestions must not probe asset lstat"
+                return original_lstat(path, *args, **kwargs)
+
+            patch.setattr(dedup_confirm, "resolve_asset_media_path", forbidden_resolve)
+            patch.setattr(Path, "is_file", track_is_file)
+            patch.setattr(Path, "lstat", track_lstat)
+            after = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
+
+        assert after["suggestions"]["duplicate_files"]
+        assert after["suggestions"]["duplicate_files"][0]["dedup_status"] == "confirmed"
+        revision_before_refresh = repo.readonly_registry_snapshot()["revision"]
+        assert repo.state().read()["assets"][id_b]["full_sha256_cache"]
+        _candidates, _skipped, missing_cache_ids = dedup_confirm.service()._build_candidates()
+        assert id_b in missing_cache_ids, "显式核验必须把删盘旧缓存交给后台失效"
+
+        # 显式后台任务负责发现文件缺失、清除旧确认缓存并推进 revision。
+        sub = client.post(
+            f"{BASE}/governance/dedup-confirm-jobs",
+            headers={**ADMIN, "Idempotency-Key": "r1-fix4-deleted-refresh"},
+            json={},
         )
+        assert sub.status_code == 202
+        done = _wait_dedup_job(client, sub.json()["job_id"])
+        assert done["status"] == "succeeded"
+        assert repo.state().read()["assets"][id_b].get("full_sha256_cache") is None
+        assert repo.readonly_registry_snapshot()["revision"] > revision_before_refresh
+
+        refreshed = client.get(f"{BASE}/governance/suggestions", headers=ADMIN).json()
+        dups_after = refreshed["suggestions"]["duplicate_files"]
+        assert dups_after and all(item.get("dedup_status") != "confirmed" for item in dups_after)
 
         old_rejected = client.post(
             f"{BASE}/governance/suggestions/confirm",
             headers=ADMIN,
             json={
                 "suggestion_id": confirmed_entry["suggestion_id"],
-                "expected_version": after["revision"],
+                "expected_version": refreshed["revision"],
             },
         )
         assert old_rejected.status_code == 404
@@ -1022,7 +1058,7 @@ def test_r1_fix4_deleted_disk_file_invalidates_confirmed_cache_and_blocks_confir
             headers=ADMIN,
             json={
                 "suggestion_id": dups_after[0]["suggestion_id"],
-                "expected_version": after["revision"],
+                "expected_version": refreshed["revision"],
             },
         )
         assert suspected_rejected.status_code == 409
