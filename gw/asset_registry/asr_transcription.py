@@ -9,6 +9,7 @@ import importlib
 import importlib.util
 import json
 import math
+import re
 import shutil
 import subprocess
 import tempfile
@@ -57,6 +58,18 @@ def _package_installed(package: str) -> bool:
         return False
 
 
+def _funasr_feature_backend_available() -> bool:
+    for package in ("kaldi_native_fbank", "torchaudio"):
+        if not _package_installed(package):
+            continue
+        try:
+            importlib.import_module(package)
+            return True
+        except (ImportError, OSError, RuntimeError):
+            continue
+    return False
+
+
 def model_path(engine: str, model: str) -> Path:
     if engine not in SUPPORTED_MODELS or model not in SUPPORTED_MODELS[engine]:
         raise ValueError("ASR 引擎或模型不受支持")
@@ -71,6 +84,9 @@ def model_status(engine: str | None = None, model: str | None = None) -> dict[st
         raise ValueError("ASR 引擎或模型不受支持")
     package = "funasr" if engine == "funasr" else "faster_whisper"
     installed = _package_installed(package)
+    if engine == "funasr":
+        installed = (installed and _package_installed("torch") and _package_installed("modelscope")
+                     and _funasr_feature_backend_available())
     local_model = model_path(engine, model)
     try:
         weights_ready = local_model.is_dir() and any(local_model.iterdir())
@@ -81,7 +97,7 @@ def model_status(engine: str | None = None, model: str | None = None) -> dict[st
     instructions = []
     if not installed:
         package_install = (
-            "python -m pip install funasr modelscope"
+            "python -m pip install funasr modelscope kaldi-native-fbank torch"
             if engine == "funasr"
             else "python -m pip install faster-whisper"
         )
@@ -196,6 +212,13 @@ def normalize_asr_segments(raw: Any) -> list[dict[str, Any]]:
             end = source.get("end_sec", source.get("end", source.get("finish")))
             times = source.get("timestamp") or source.get("time")
             funasr_milliseconds = "start_sec" not in source and "end_sec" not in source
+            if (start is None or end is None) and isinstance(times, list) and times and all(
+                isinstance(pair, (list, tuple)) and len(pair) == 2 for pair in times
+            ):
+                bounds = [(_finite_seconds(pair[0]), _finite_seconds(pair[1])) for pair in times]
+                if all(a is not None and b is not None and a >= 0 and b > a for a, b in bounds):
+                    start = min(a for a, _ in bounds)
+                    end = max(b for _, b in bounds)
             if (start is None or end is None) and isinstance(times, (list, tuple)) and len(times) == 2:
                 start, end = times
                 funasr_milliseconds = True
@@ -206,6 +229,8 @@ def normalize_asr_segments(raw: Any) -> list[dict[str, Any]]:
             if funasr_milliseconds and start_sec is not None and end_sec is not None:
                 start_sec, end_sec = start_sec / 1000, end_sec / 1000
             text = str(source.get("text") or source.get("sentence") or "").strip()
+            if isinstance(times, list) and times and isinstance(times[0], (list, tuple)):
+                text = re.sub(r"(?<=[\u3400-\u9fff])\s+(?=[\u3400-\u9fff])", "", text)
             if start_sec is None or end_sec is None or start_sec < 0 or end_sec <= start_sec or not text:
                 continue
             result.append({"start_sec": start_sec, "end_sec": end_sec, "text": text})

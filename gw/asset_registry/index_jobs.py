@@ -2708,7 +2708,8 @@ class IndexJobs:
                 new_segments = []
                 skipped_no_segments = False
                 for retry in range(2):
-                    latest = repo.get_asset(asset_id)
+                    registry = repo.state().read()
+                    latest = (registry.get("assets") or {}).get(asset_id) or {}
                     metadata = latest.get("metadata") if isinstance(latest.get("metadata"), dict) else {}
                     latest_segments = metadata.get("video_segments")
                     if not isinstance(latest_segments, list) or not latest_segments:
@@ -2721,10 +2722,11 @@ class IndexJobs:
                         latest_segments, recognized
                     )
                     try:
-                        updated = repo.update_asset(asset_id, {
-                            "expected_version": int(latest.get("version") or 0),
+                        update_result = repo.update_asset(asset_id, {
+                            "expected_version": int(registry.get("revision") or 0),
                             "video_segments": new_segments,
-                        })["asset"]
+                        })
+                        updated = update_result["asset"]
                         break
                     except CleanroomException as exc:
                         if exc.code != "VERSION_CONFLICT" or retry:
@@ -2739,7 +2741,7 @@ class IndexJobs:
                     except Exception:
                         # FTS replacement is transactional; revert the metadata CAS if it fails.
                         repo.update_asset(asset_id, {
-                            "expected_version": int(updated.get("version") or 0),
+                            "expected_version": int(update_result["revision"]),
                             "video_segments": old_segments,
                         })
                         raise
@@ -3211,12 +3213,12 @@ class IndexJobs:
                 with self.condition:
                     job = self._checkpoint(job_id, attempt)
                     job.update(
-                        status="succeeded",
-                        phase="completed",
+                        status="failed" if result["failed"] else "succeeded",
+                        phase="failed" if result["failed"] else "completed",
                         scanned=result["assets"],
                         error_count=result["failed"],
                         result=result,
-                        error_code=None,
+                        error_code="ASR_TRANSCRIPTION_FAILED" if result["failed"] else None,
                     )
                     job["version"] += 1
                     self._save(job)

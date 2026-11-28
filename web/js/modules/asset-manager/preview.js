@@ -1412,7 +1412,7 @@ function renderDetailViewerMedia(source, item, type){
             const alignedTime = alignTimeToFps(Number(startTime), fps);
             videoSrc = `${videoSrc}#t=${alignedTime}`;
         }
-        queueMicrotask(refreshDetailAsrControls); return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>${renderDetailVideoTranscriptTimeline(item)}`;
+        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>${renderDetailVideoTranscriptTimeline(item)}`;
     }
     if(type === 'audio'){
         const extensionLabel = assetFileExtension(item).toUpperCase() || 'AUDIO';
@@ -4903,6 +4903,7 @@ function detailTranscriptAt(item, seconds){
     return detailTranscriptEntries(item).find(line => value >= line.start && value < line.end) || null;
 }
 function renderDetailVideoTranscriptTimeline(item={}){
+    queueMicrotask(refreshDetailAsrControls);
     const lines = detailTranscriptEntries(item);
     const assetId = String(item.id || item.asset_id || '');
     if(!lines.length) return `<section class="asset-detail-transcript-timeline" data-detail-transcript-timeline="${escapeAttr(assetId)}" aria-label="视频分镜台词"><strong>[台词]</strong><span>尚无台词转写</span></section>`;
@@ -4910,7 +4911,7 @@ function renderDetailVideoTranscriptTimeline(item={}){
 }
 let detailAsrStatusPromise = null;
 async function refreshDetailAsrControls(){
-    const buttons = [...document.querySelectorAll('.asset-detail-viewer [data-detail-video-action="transcribe"]')];
+    const buttons = [...document.querySelectorAll('[data-detail-video-action="transcribe"]')];
     if(!buttons.length) return;
     try {
         detailAsrStatusPromise ||= fetch('/api/asset-registry/asr/status',{credentials:'same-origin',headers:{Accept:'application/json'}})

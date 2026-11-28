@@ -6190,12 +6190,12 @@ function renderRegistryCard(item, index=0){
     const format = isLut ? 'LUT' : (registryAssetExtension(item).toUpperCase() || 'FILE');
     const referenceCanvasId = boardReferenceCanvasSelection[activeTab] || '';
     const mediaAspectStyle = registryMediaAspectStyle(item);
-    const matchedSegment = item.kind === 'video' ? findMatchedVideoSegment(item, registryQuery) : null;
+    const transcriptMatch = item.transcript_search_match; const matchedSegment = transcriptMatch || (item.kind === 'video' ? findMatchedVideoSegment(item, registryQuery) : null);
     if (item.kind === 'video' && typeof window !== 'undefined' && !window.MediaPreviewPlayer) {
         ensureMediaPreviewPlayer();
     }
     const fps = Number(item.frame_rate || item.metadata?.frame_rate || 0);
-    const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):'')}"><i data-lucide="play-circle"></i><strong>${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong></span>` : '';
+    const segmentBadge = matchedSegment ? `<span class="registry-card-segment-badge" data-video-jump-sec="${matchedSegment.start_sec}" data-video-jump-end="${matchedSegment.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="命中片段：${escapeAttr(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))} ${escapeAttr(transcriptMatch?.text || (Array.isArray(matchedSegment.tags)?matchedSegment.tags.join(' · '):''))}"><i data-lucide="play-circle"></i><strong>${transcriptMatch ? '[台词] ' : ''}${escapeHtml(formatVideoSegmentRange(matchedSegment.start_sec, matchedSegment.end_sec))}</strong>${transcriptMatch ? `<span>${escapeHtml(transcriptMatch.text || '')}</span>` : ''}</span>` : '';
     // 【QIN-541】第二行为灰色单行「大小 · 尺寸」：无值字段直接省略，两字段皆无时整行省略。
     const measureParts = [];
     if(Number(item.size || 0) > 0) measureParts.push(formatFileSize(item.size));
@@ -9973,11 +9973,12 @@ function renderDetailVideoSegments(item={}, source=detailViewerState.source){
             ${segments.map((seg) => {
                 const range = formatVideoSegmentRange(seg.start_sec, seg.end_sec);
                 const tags = Array.isArray(seg.tags) ? seg.tags.join(' · ') : '';
-                return `<button type="button" class="asset-video-segment-chip" data-video-jump-sec="${seg.start_sec}" data-video-jump-end="${seg.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="点击跳至 ${range} 起播">
+                const lines = Array.isArray(seg.transcript) ? seg.transcript : [];
+                return `<div><button type="button" class="asset-video-segment-chip" data-video-jump-sec="${seg.start_sec}" data-video-jump-end="${seg.end_sec}" data-video-asset-id="${escapeAttr(item.id)}" data-video-frame-rate="${fps || ''}" title="点击跳至 ${range} 起播">
                     <i data-lucide="play-circle"></i>
                     <strong>${range}</strong>
                     ${tags ? `<span class="chip-tags">${escapeHtml(tags)}</span>` : ''}
-                </button>`;
+                </button>${lines.map(line => `<div class="asset-detail-transcript-line"><button type="button" data-detail-transcript-seek="${Number(line.start_sec)}" data-detail-transcript-video="${escapeAttr(item.id)}">[台词] ${escapeHtml(formatVideoSegmentRange(line.start_sec, line.end_sec))} ${escapeHtml(line.text || '')}</button><button type="button" data-detail-transcript-copy="${escapeAttr(line.text || '')}" aria-label="复制台词">复制</button></div>`).join('')}</div>`;
             }).join('')}
         </div>
     </section>`;
