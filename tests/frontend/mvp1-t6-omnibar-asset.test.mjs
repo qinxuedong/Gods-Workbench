@@ -495,3 +495,40 @@ test('跨源 frame 的 postMessage 失败不会中断同页选中事件', async 
 
   assert.deepEqual(selections, ['asset-shot-1']);
 });
+
+test('ASR 设置保存成功和失败后同步下拉外壳并恢复可用', async () => {
+  const html = readFileSync(new URL('../../web/pages/settings.html', import.meta.url), 'utf8');
+  const match = html.match(/<script>\s*(\(\(\) => \{\s*const toggle = document\.getElementById\('asrToggle'\);[\s\S]*?\}\)\(\);)\s*<\/script>/);
+  assert.ok(match, '应存在 ASR 设置脚本');
+  const controls = Object.fromEntries(['asrToggle','asrEngine','asrModel','asrStatus','asrInstallHint'].map(id => [id, {
+    id, value:'', disabled:false, textContent:'', attrs:{'aria-pressed':'false'}, handlers:{},
+    classList:{toggle(){}}, addEventListener(type, fn){this.handlers[type]=fn;},
+    setAttribute(name, value){this.attrs[name]=value;}, getAttribute(name){return this.attrs[name];},
+    replaceChildren(...children){this.options=children;},
+  }]));
+  const shell = new Map();
+  const sync = node => shell.set(node.id, {disabled:node.disabled,value:node.value});
+  let fail = false;
+  let current = {enabled:false,engine:'funasr',model:'paraformer-zh',supported_models:{funasr:['paraformer-zh'],'faster-whisper':['tiny']}};
+  const document = {getElementById:id=>controls[id],createElement:()=>({value:'',textContent:''})};
+  const window = {GWNativeSelect:{enhanceAll(){sync(controls.asrEngine);sync(controls.asrModel);},sync}};
+  const fetch = async (_url, options) => {
+    if(options?.method === 'POST' && fail) throw new Error('保存失败');
+    if(options?.method === 'POST') current = {...current,...JSON.parse(options.body)};
+    return {ok:true,json:async()=>current};
+  };
+  runInNewContext(match[1], {document,window,fetch,console});
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  await flush();
+  controls.asrToggle.handlers.click(); await flush();
+  assert.equal(shell.get('asrEngine').disabled,false);
+  assert.equal(shell.get('asrModel').disabled,false);
+  controls.asrEngine.value='faster-whisper'; controls.asrEngine.handlers.change(); await flush();
+  assert.equal(shell.get('asrModel').value,'tiny');
+  assert.equal(shell.get('asrModel').disabled,false);
+  fail=true; controls.asrToggle.handlers.click(); await flush();
+  assert.equal(shell.get('asrEngine').disabled,false);
+  assert.equal(shell.get('asrModel').disabled,false);
+  assert.match(controls.asrStatus.textContent,/保存失败/);
+  assert.equal((html.match(/href="\/static\/css\/components\/gw-native-select\.css"/g) || []).length,1);
+});

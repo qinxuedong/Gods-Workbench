@@ -23,7 +23,7 @@
   <title>系统与工程配置 · Gods' Workbench</title>
   <script src="/static/vendor/js/tailwindcss-cdn.js?v=3.4.17&amp;build=d11003b2f6fb"></script>
   <script src="/static/vendor/js/lucide.js?v=1.16.0"></script>
-  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final">
+  <link rel="stylesheet" href="/static/css/base/hardware-design-system.css?ui=20261011-final"><link rel="stylesheet" href="/static/css/components/gw-native-select.css">
   <link rel="stylesheet" href="/static/css/pages/directory-settings.css?v=20261007&ui=20261011-final">
   <link rel="stylesheet" href="/static/css/pages/settings-workbench.css?v=20261026-qin411">
   <link rel="stylesheet" href="/static/css/base/workspace-pages.css?v=20261029-qin478">
@@ -868,10 +868,6 @@
       const statusNode = document.getElementById('asrStatus');
       const hintNode = document.getElementById('asrInstallHint');
       if (!toggle || !engine || !model || !statusNode || !hintNode) return;
-      const selectStyles = document.createElement('link');
-      selectStyles.rel = 'stylesheet';
-      selectStyles.href = '/static/css/components/gw-native-select.css';
-      document.head.appendChild(selectStyles);
       let supported = {funasr:['paraformer-zh'], 'faster-whisper':['small']};
       let current = {enabled:false, engine:'funasr', model:'paraformer-zh'};
       const render = value => {
@@ -887,6 +883,8 @@
         }));
         window.GWNativeSelect?.enhanceAll(document);
         model.value = models.includes(current.model) ? current.model : (models[0] || '');
+        window.GWNativeSelect?.sync?.(engine);
+        window.GWNativeSelect?.sync?.(model);
         toggle.classList.toggle('on', current.enabled === true);
         toggle.setAttribute('aria-pressed', String(current.enabled === true));
         statusNode.textContent = value?.message || '本机 ASR 状态暂不可用';
@@ -911,7 +909,11 @@
           }));
         } catch (error) {
           statusNode.textContent = error?.message || '保存 ASR 设置失败';
-        } finally { toggle.disabled = engine.disabled = model.disabled = false; }
+        } finally {
+          toggle.disabled = engine.disabled = model.disabled = false;
+          window.GWNativeSelect?.sync?.(engine);
+          window.GWNativeSelect?.sync?.(model);
+        }
       };
       toggle.addEventListener('click', () => save({enabled:toggle.getAttribute('aria-pressed') !== 'true'}));
       engine.addEventListener('change', () => {

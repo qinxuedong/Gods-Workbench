@@ -2461,7 +2461,7 @@ async function returnFromDetailViewer(destination='origin'){
 async function hydrateDetailRegistryAsset(id){
     if(!id) return;
     try {
-        const canvasItem = detailMediaCanvasItems().find(item => item.id === id) || detailViewerState.items.find(item => item.id === id) || null;
+        const canvasItem = detailMediaCanvasItems().find(item => item.id === id || detailMediaCanvasPersistId(item) === id) || detailViewerState.items.find(item => item.id === id || detailMediaCanvasPersistId(item) === id) || null;
         if(canvasItem && !detailMediaCanvasPersistId(canvasItem)) await ensureDetailReferenceAssetIds([canvasItem],{silent:true});
         const assetId = canvasItem ? detailMediaCanvasPersistId(canvasItem) : (detailViewerState.source === 'registry' ? id : '');
         if(!assetId) return;
@@ -2485,7 +2485,7 @@ async function hydrateDetailRegistryAsset(id){
             if(detailViewerState.mediaCanvasActiveId === id && detailViewerType(detailViewerState.source,canvasItem || {}) === 'video' && detailVideoStoryboardEnabled()) detailViewerState.mediaCanvasFitted = false;
             if(detailMediaCanvasItems().length){
                 syncDetailMediaCanvasActiveDom();
-                refreshDetailImageVersionsPanelDom();
+                refreshDetailImageVersionsPanelDom(); refreshDetailTranscriptTimeline(id, updated.id);
             } else renderDetailViewer();
         }
     } catch(err){ setStatus(err.message || '资产详情读取失败'); }
@@ -4902,6 +4902,15 @@ function detailTranscriptAt(item, seconds){
     const value = Number(seconds);
     return detailTranscriptEntries(item).find(line => value >= line.start && value < line.end) || null;
 }
+function refreshDetailTranscriptTimeline(id, assetId){
+    const item = detailMediaCanvasItems().find(value => value.id === id || detailMediaCanvasPersistId(value) === assetId);
+    if(!item) return;
+    document.querySelectorAll('[data-detail-transcript-timeline]').forEach(timeline => {
+        if(timeline.dataset.detailTranscriptTimeline === String(item.id || item.asset_id || '')){
+            timeline.outerHTML = renderDetailVideoTranscriptTimeline(item);
+        }
+    });
+}
 function renderDetailVideoTranscriptTimeline(item={}){
     queueMicrotask(refreshDetailAsrControls);
     const lines = detailTranscriptEntries(item);
@@ -4950,7 +4959,7 @@ async function submitDetailAsrJob(videoId=''){
         if(job.status==='succeeded'){
             setStatus(`台词转写完成：${Number(job?.result?.indexed_segments || 0)} 个镜头已写入检索索引`);
             detailAsrStatusPromise = null;
-            if(detailViewerState.open) hydrateDetailRegistryAsset(item.id).catch(()=>{});
+            if(detailViewerState.open) hydrateDetailRegistryAsset(item?.id || assetId).catch(()=>{});
             return job;
         }
         if(['failed','cancelled','interrupted'].includes(job.status)) throw new Error(`台词转写失败：${job.error_code || job.status}`);
