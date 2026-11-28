@@ -89,7 +89,9 @@ def model_status(engine: str | None = None, model: str | None = None) -> dict[st
                      and _funasr_feature_backend_available())
     local_model = model_path(engine, model)
     try:
-        weights_ready = local_model.is_dir() and any(local_model.iterdir())
+        required_files = ("config.yaml", "model.pt") if engine == "funasr" else ("config.json", "model.bin")
+        weights_ready = all((local_model / name).is_file() and (local_model / name).stat().st_size > 0
+                            for name in required_files)
     except OSError:
         weights_ready = False
     ffmpeg_available = bool(shutil.which("ffmpeg") and shutil.which("ffprobe"))

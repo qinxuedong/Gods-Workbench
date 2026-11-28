@@ -50,10 +50,28 @@ def test_funasr_status_rejects_missing_feature_backend(monkeypatch, tmp_path):
     monkeypatch.setattr(asr_transcription.shutil, "which", lambda _: "available")
     model = asr_transcription.model_path("funasr", "paraformer-zh")
     model.mkdir(parents=True)
-    (model / "model.pt").touch()
+    (model / "model.pt").write_bytes(b"weight")
+    (model / "config.yaml").write_text("model: example", encoding="utf-8")
     status = asr_transcription.model_status("funasr", "paraformer-zh")
     assert not status["ready"]
     assert "kaldi-native-fbank" in status["install_hint"]
+
+
+@pytest.mark.parametrize("engine,model,config,weights", [
+    ("funasr", "paraformer-zh", "config.yaml", "model.pt"),
+    ("faster-whisper", "small", "config.json", "model.bin"),
+])
+def test_asr_incomplete_model_is_not_ready(monkeypatch, tmp_path, engine, model, config, weights):
+    monkeypatch.setattr(asr_transcription.storage, "data_root", lambda: tmp_path)
+    monkeypatch.setattr(asr_transcription, "_package_installed", lambda _: True)
+    monkeypatch.setattr(asr_transcription, "_funasr_feature_backend_available", lambda: True)
+    monkeypatch.setattr(asr_transcription.shutil, "which", lambda _: "available")
+    path = asr_transcription.model_path(engine, model)
+    path.mkdir(parents=True)
+    (path / config).write_text("config", encoding="utf-8")
+    assert not asr_transcription.model_status(engine, model)["weights_ready"]
+    (path / weights).write_bytes(b"weights")
+    assert asr_transcription.model_status(engine, model)["ready"]
 
 
 def test_asr_job_writes_with_registry_revision(monkeypatch, tmp_path):
