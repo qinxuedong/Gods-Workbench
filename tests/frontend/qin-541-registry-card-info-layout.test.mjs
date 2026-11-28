@@ -113,6 +113,29 @@ function buildCardRenderer(aspect){
     );
 }
 
+test('台词匹配在索引视频卡片显示文字及可跳转起点', () => {
+    const card = buildCardRenderer('original')({
+        id: 'asset-1', name: 'scene.mp4', kind: 'indexed',
+        transcript_search_match: {start_sec: 2.5, end_sec: 4, text: '开始拍摄'},
+    });
+    assert.match(card, /\[台词\]/);
+    assert.match(card, /开始拍摄/);
+    assert.match(card, /data-video-jump-sec="2.5"/);
+});
+
+test('右侧镜头展示每段台词及复制操作', () => {
+    const render = new Function('detailViewerState', 'detailViewerType', 'formatVideoSegmentRange',
+        'escapeAttr', 'escapeHtml', `${functionSource('renderDetailVideoSegments')}; return renderDetailVideoSegments;`)(
+        {source:'registry'}, () => 'video', (start, end) => `${start}~${end}`,
+        value => String(value ?? ''), value => String(value ?? '')
+    );
+    const html = render({id:'asset-1', metadata:{video_segments:[{start_sec:0, end_sec:5,
+        transcript:[{start_sec:1.5,end_sec:3,text:'开始拍摄'}]}]}});
+    assert.match(html, /\[台词\] 1.5~3 开始拍摄/);
+    assert.match(html, /data-detail-transcript-seek="1.5"/);
+    assert.match(html, /data-detail-transcript-copy="开始拍摄"/);
+});
+
 test('AC1 卡片正文收敛为两行结构，类型/时间/来源文字行全部移除', () => {
     const card = functionSource('renderRegistryCard');
     const standard = buildCardRenderer('original')({

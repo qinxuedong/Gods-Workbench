@@ -1395,9 +1395,9 @@ function renderDetailMediaVideoControls(item={}){
                 <button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="clip-library" data-detail-video-export ${rangeReady && roots.length ? '' : 'disabled'} title="导出入点到出点的视频到所选素材库"><i data-lucide="library-big"></i><span>截取到库</span></button>
                 <button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="frame-file" data-detail-video-export title="导出当前帧到指定位置（Ctrl+Shift+C）"><i data-lucide="image-down"></i><span>单帧到文件</span></button>
                 <button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="frame-library" data-detail-video-export ${roots.length ? '' : 'disabled'} title="导出当前帧到所选素材库"><i data-lucide="images"></i><span>单帧到库</span></button>
-                <button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="frame-copy" title="复制当前帧（Ctrl+C）"><i data-lucide="copy"></i><span>复制帧</span></button>
+                <button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="frame-copy" title="复制当前帧（Ctrl+C）"><i data-lucide="copy"></i><span>复制帧</span></button><button class="is-labeled hw-capsule-btn" type="button" data-detail-video-action="transcribe" disabled title="正在检查本机 ASR 状态"><i data-lucide="audio-lines"></i><span>转写台词</span></button>
             </div>
-        </div>
+        </div>${renderDetailVideoTranscriptTimeline(item)}
     </div>`;
 }
 function renderDetailViewerMedia(source, item, type){
@@ -1412,7 +1412,7 @@ function renderDetailViewerMedia(source, item, type){
             const alignedTime = alignTimeToFps(Number(startTime), fps);
             videoSrc = `${videoSrc}#t=${alignedTime}`;
         }
-        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>`;
+        return `<video class="asset-lightbox-video asset-detail-player" src="${escapeAttr(videoSrc)}" poster="${escapeAttr(assetPreviewUrl(url, 1280, item))}" controls playsinline preload="metadata" data-frame-rate="${fps || ''}"></video>${renderDetailVideoTranscriptTimeline(item)}`;
     }
     if(type === 'audio'){
         const extensionLabel = assetFileExtension(item).toUpperCase() || 'AUDIO';
@@ -2460,7 +2460,7 @@ async function returnFromDetailViewer(destination='origin'){
 async function hydrateDetailRegistryAsset(id){
     if(!id) return;
     try {
-        const canvasItem = detailMediaCanvasItems().find(item => item.id === id) || detailViewerState.items.find(item => item.id === id) || null;
+        const canvasItem = detailMediaCanvasItems().find(item => item.id === id || detailMediaCanvasPersistId(item) === id) || detailViewerState.items.find(item => item.id === id || detailMediaCanvasPersistId(item) === id) || null;
         if(canvasItem && !detailMediaCanvasPersistId(canvasItem)) await ensureDetailReferenceAssetIds([canvasItem],{silent:true});
         const assetId = canvasItem ? detailMediaCanvasPersistId(canvasItem) : (detailViewerState.source === 'registry' ? id : '');
         if(!assetId) return;
@@ -2484,7 +2484,7 @@ async function hydrateDetailRegistryAsset(id){
             if(detailViewerState.mediaCanvasActiveId === id && detailViewerType(detailViewerState.source,canvasItem || {}) === 'video' && detailVideoStoryboardEnabled()) detailViewerState.mediaCanvasFitted = false;
             if(detailMediaCanvasItems().length){
                 syncDetailMediaCanvasActiveDom();
-                refreshDetailImageVersionsPanelDom();
+                refreshDetailImageVersionsPanelDom(); refreshDetailTranscriptTimeline(id, updated.id);
             } else renderDetailViewer();
         }
     } catch(err){ setStatus(err.message || '资产详情读取失败'); }
@@ -2762,7 +2762,7 @@ function syncDetailVideoControls(video){
         progress.disabled = !(duration > 0);
         progress.max = String(duration || 0);
         progress.value = String(Math.min(duration || current, current));
-        progress.setAttribute('aria-valuetext', `${formatDetailVideoTime(current)} / ${duration ? formatDetailVideoTime(duration) : '时长读取中'}`);
+        progress.setAttribute('aria-valuetext', `${formatDetailVideoTime(current)} / ${duration ? formatDetailVideoTime(duration) : '时长读取中'}`); progress.title = (() => { const transcript = detailTranscriptAt(item,current); return transcript ? `[台词] ${detailTranscriptTime(transcript.start)}–${detailTranscriptTime(transcript.end)} ${transcript.text}` : '拖动定位播放时间'; })();
         const overlay = controls.closest('.asset-detail-viewer');
         const description = overlay?.querySelector('[data-vlm-video-description-list]');
         const assetId = detailMediaCanvasPersistId(item, detailViewerState.source);
@@ -2930,7 +2930,7 @@ async function handleDetailVideoControl(button){
     else if(action === 'clip-library') await exportDetailVideoClip(videoId,true);
     else if(action === 'frame-file') await exportDetailVideoFrame(videoId,false);
     else if(action === 'frame-library') await exportDetailVideoFrame(videoId,true);
-    else if(action === 'frame-copy') await copyDetailVideoFrameToClipboard(videoId);
+    else if(action === 'frame-copy') await copyDetailVideoFrameToClipboard(videoId); else if(action === 'transcribe') await submitDetailAsrJob(videoId);
 }
 let detailVideoStoryboardFitHandler = null;
 // 放大层外框贴合图片：按视口可用高度/宽度等比缩放，外框 = 图片 + 四周 10px 内边距 + 边框。
@@ -4185,6 +4185,30 @@ document.addEventListener('click', event => {
         confirmRegistryRecycle().catch(err => setStatus(err.message || '移入回收站失败'));
         return;
     }
+    const transcriptSeek = event.target.closest?.('[data-detail-transcript-seek]');
+    if(transcriptSeek){
+        event.preventDefault();
+        const start = Number(transcriptSeek.dataset.detailTranscriptSeek);
+        const videoId = transcriptSeek.dataset.detailTranscriptVideo || '';
+        if(Number.isFinite(start)) seekDetailVideoTo(start,{play:true,videoId});
+        return;
+    }
+    const transcriptCopy = event.target.closest?.('[data-detail-transcript-copy]');
+    if(transcriptCopy){
+        event.preventDefault();
+        const text = transcriptCopy.dataset.detailTranscriptCopy || '';
+        const fallbackCopy = () => {
+            const field = document.createElement('textarea');
+            field.value = text; field.style.position = 'fixed'; field.style.opacity = '0';
+            document.body.appendChild(field); field.select();
+            const copied = document.execCommand('copy'); field.remove();
+            if(!copied) throw new Error('剪贴板不可用');
+        };
+        (navigator.clipboard?.writeText ? navigator.clipboard.writeText(text) : Promise.resolve().then(fallbackCopy))
+            .then(() => setStatus('已复制台词文本'))
+            .catch(() => { try { fallbackCopy(); setStatus('已复制台词文本'); } catch(_) { setStatus('复制失败，请检查剪贴板权限'); } });
+        return;
+    }
     const viewer = event.target.closest?.('.asset-detail-viewer');
     if(viewer){
         const registryTagEditor = event.target.closest?.('[data-registry-tag-editor]');
@@ -5156,3 +5180,97 @@ function handleRegistryFullscreenViewerEdit(event,state){
         return openDetailImageEditor(item.id,{item}).catch(err => setStatus(err.message || '无法打开单图编辑器'));
     }).catch(err => setStatus(err.message || '无法退出真全屏查看器'));
 }
+
+function detailTranscriptEntries(item={}){
+    const scenes = item?.metadata?.video_segments || item?.video_segments;
+    if(!Array.isArray(scenes)) return [];
+    return scenes.flatMap((scene,segmentIdx) => (Array.isArray(scene?.transcript) ? scene.transcript : [])
+        .filter(line => line && Number.isFinite(Number(line.start_sec)) && Number.isFinite(Number(line.end_sec)) && String(line.text || '').trim())
+        .map(line => ({segmentIdx,start:Number(line.start_sec),end:Number(line.end_sec),text:String(line.text).trim()})))
+        .sort((a,b) => a.start-b.start);
+}
+function detailTranscriptTime(seconds){
+    const total = Math.max(0,Math.floor(Number(seconds) || 0));
+    return `${String(Math.floor(total/60)).padStart(2,'0')}:${String(total%60).padStart(2,'0')}`;
+}
+function detailTranscriptAt(item, seconds){
+    const value = Number(seconds);
+    return detailTranscriptEntries(item).find(line => value >= line.start && value < line.end) || null;
+}
+function refreshDetailTranscriptTimeline(id, assetId){
+    const item = detailMediaCanvasItems().find(value => value.id === id || detailMediaCanvasPersistId(value) === assetId);
+    if(!item) return;
+    document.querySelectorAll('[data-detail-transcript-timeline]').forEach(timeline => {
+        if(timeline.dataset.detailTranscriptTimeline === String(item.id || item.asset_id || '')){
+            timeline.outerHTML = renderDetailVideoTranscriptTimeline(item);
+        }
+    });
+}
+function renderDetailVideoTranscriptTimeline(item={}){
+    queueMicrotask(refreshDetailAsrControls);
+    const lines = detailTranscriptEntries(item);
+    const assetId = String(item.id || item.asset_id || '');
+    if(!lines.length) return `<section class="asset-detail-transcript-timeline" data-detail-transcript-timeline="${escapeAttr(assetId)}" aria-label="视频分镜台词"><strong>[台词]</strong><span>尚无台词转写</span></section>`;
+    return `<section class="asset-detail-transcript-timeline" data-detail-transcript-timeline="${escapeAttr(assetId)}" aria-label="视频分镜台词"><strong>[台词] 视频分镜台词</strong><div>${lines.map(line => `<div class="asset-detail-transcript-line"><button type="button" data-detail-transcript-seek="${line.start}" data-detail-transcript-video="${escapeAttr(assetId)}" title="跳转到 ${detailTranscriptTime(line.start)}">${detailTranscriptTime(line.start)}–${detailTranscriptTime(line.end)}　${escapeHtml(line.text)}</button><button type="button" data-detail-transcript-copy="${escapeAttr(line.text)}" aria-label="复制台词">复制</button></div>`).join('')}</div></section>`;
+}
+let detailAsrStatusPromise = null;
+async function refreshDetailAsrControls(){
+    const buttons = [...document.querySelectorAll('[data-detail-video-action="transcribe"]')];
+    if(!buttons.length) return;
+    try {
+        detailAsrStatusPromise ||= fetch('/api/asset-registry/asr/status',{credentials:'same-origin',headers:{Accept:'application/json'}})
+            .then(async response => { const body = await response.json().catch(()=>({})); if(!response.ok) throw new Error(body?.detail?.message || '无法读取 ASR 状态'); return body; })
+            .catch(error => { detailAsrStatusPromise = null; throw error; });
+        const state = await detailAsrStatusPromise;
+        buttons.forEach(button => {
+            const ready = state?.enabled === true && state?.ready === true;
+            button.disabled = !ready;
+            button.title = ready ? '对当前视频提交异步台词转写' : (state?.message || (!state?.enabled ? '请先在设置中启用语音台词转写' : '本机 ASR 模型尚未就绪'));
+        });
+    } catch(error) {
+        buttons.forEach(button => { button.disabled = true; button.title = error?.message || '无法读取本机 ASR 状态'; });
+    }
+}
+async function submitDetailAsrJob(videoId=''){
+    const item = detailViewerVideoItem(videoId);
+    const assetId = await ensureDetailVideoAssetId(item);
+    setStatus('正在提交视频台词转写任务…');
+    const response = await fetch('/api/asset-registry/asr/jobs',{
+        method:'POST',credentials:'same-origin',
+        headers:{'Content-Type':'application/json','Idempotency-Key':`asr:${assetId}:${globalThis.crypto?.randomUUID?.() || Date.now()}`},
+        body:JSON.stringify({asset_id:assetId}),
+    });
+    const accepted = await response.json().catch(()=>({}));
+    if(!response.ok) throw new Error(accepted?.detail?.message || '转写任务提交失败');
+    const jobId = String(accepted?.job_id || '');
+    if(!jobId) throw new Error('服务未返回转写任务编号');
+    const deadline = Date.now()+120000;
+    while(Date.now()<deadline){
+        await new Promise(resolve=>setTimeout(resolve,500));
+        const state = await apiJsonResponse(assetManagerApi.getWorkspaceJob(jobId));
+        const job = state?.job || state;
+        if(job.status==='succeeded'){
+            setStatus(`台词转写完成：${Number(job?.result?.indexed_segments || 0)} 个镜头已写入检索索引`);
+            detailAsrStatusPromise = null;
+            if(detailViewerState.open) hydrateDetailRegistryAsset(item?.id || assetId).catch(()=>{});
+            return job;
+        }
+        if(['failed','cancelled','interrupted'].includes(job.status)) throw new Error(`台词转写失败：${job.error_code || job.status}`);
+    }
+    setStatus('转写任务仍在后台运行，可稍后查看任务状态');
+    return null;
+}
+document.addEventListener('pointermove', event => {
+    const progress = event.target?.closest?.('[data-detail-video-progress]');
+    if(!progress) return;
+    const controls = progress.closest('[data-detail-video-controls]');
+    const item = detailViewerVideoItem(controls?.dataset?.detailVideoFor || '');
+    const rect = progress.getBoundingClientRect();
+    if(!rect.width) return;
+    const ratio = Math.max(0,Math.min(1,(event.clientX-rect.left)/rect.width));
+    const seconds = ratio*Math.max(0,Number(progress.max || 0));
+    const transcript = detailTranscriptAt(item,seconds);
+    progress.title = transcript
+        ? `[台词] ${detailTranscriptTime(transcript.start)}–${detailTranscriptTime(transcript.end)} ${transcript.text}`
+        : `定位 ${detailTranscriptTime(seconds)}`;
+});

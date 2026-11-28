@@ -393,6 +393,51 @@ test('Real source search matching: findMatchedVideoSegment from asset-manager.js
   assert.equal(player.findMatchedVideoSegment(asset, '未知标签'), null);
 });
 
+test('MediaPreviewPlayer 台词搜索返回绝对时间区间', () => {
+  const {player} = createPlayerContext();
+  const asset = {metadata:{video_segments:[
+    {start_sec:20,end_sec:40,transcript:[{start_sec:27.25,end_sec:29.5,text:'现在开始拍摄。'}]},
+  ]}};
+  const hit = player.findMatchedVideoTranscript(asset,'开始拍摄');
+  assert.equal(hit.start_sec,27.25);
+  assert.equal(hit.end_sec,29.5);
+  assert.equal(hit.text,'现在开始拍摄。');
+  const segment = player.findMatchedVideoSegment(asset,'开始拍摄');
+  assert.equal(segment.start_sec,27.25);
+  assert.equal(segment.end_sec,29.5);
+  assert.equal(segment.transcript_match,'现在开始拍摄。');
+});
+
+test('画布转写回读仅替换目标台词区且保留视频节点', async () => {
+  const preview = readFileSync(new URL('../../web/js/modules/asset-manager/preview.js', import.meta.url), 'utf8');
+  const fn = extractFunction(preview, 'hydrateDetailRegistryAsset');
+  const video = {currentTime: 3.5, paused:false};
+  const timeline = {dataset:{detailTranscriptTimeline:'canvas-1'},outerHTML:'旧台词'};
+  const other = {dataset:{detailTranscriptTimeline:'canvas-2'},outerHTML:'其他台词'};
+  const item = {id:'canvas-1',asset_id:'ast-1',metadata:{video_segments:[]}};
+  const updated = {id:'ast-1',metadata:{video_segments:[{transcript:[{start_sec:1,end_sec:2,text:'新台词'}]}]}};
+  const state = {source:'canvas',open:true,items:[item],mediaCanvasItems:[item],mediaCanvasActiveId:'canvas-1'};
+  const context = {
+    detailViewerState:state, registryAssets:[], selectedRegistryAssetId:'',
+    detailMediaCanvasItems:()=>state.mediaCanvasItems,
+    detailMediaCanvasPersistId:value=>value?.asset_id || '',
+    ensureDetailReferenceAssetIds:async()=>{}, apiJsonResponse:async()=>({asset:updated}),
+    assetManagerApi:{getRegistryAsset:id=>id}, normalizeRegistryAsset:value=>value,
+    mergeResolvedReferenceAsset:(target,asset)=>{target.metadata=asset.metadata;},
+    syncDetailMediaCanvasActiveDom(){},refreshDetailImageVersionsPanelDom(){},
+    detailViewerType:()=> 'video',detailVideoStoryboardEnabled:()=>false,
+    setRegistryDetail(){},renderDetailViewer(){throw new Error('不应重绘播放器');},
+    document:{querySelectorAll:()=>[timeline,other]},
+    renderDetailVideoTranscriptTimeline:value=>`台词:${value.metadata.video_segments[0].transcript[0].text}`,
+    setStatus:message=>{throw new Error(message);},
+  };
+  const refresh = extractFunction(preview, 'refreshDetailTranscriptTimeline');
+  await runInNewContext(`${refresh}; (async ${fn})('ast-1')`,context);
+  assert.equal(timeline.outerHTML,'台词:新台词');
+  assert.equal(other.outerHTML,'其他台词');
+  assert.deepEqual(video,{currentTime:3.5,paused:false});
+});
+
 test('Real source frame rate alignment: alignTimeToFps for 24, 25, 29.97fps from asset-manager.js and MediaPreviewPlayer', () => {
   const { alignTimeToFps } = realAssetManagerFns;
   const { player } = createPlayerContext();

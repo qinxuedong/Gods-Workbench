@@ -173,6 +173,7 @@ test('视频元数据迟到时，控制条获得时长后补挂镜头标记', ()
     detailViewerVideoState:() => ({rate:1}), detailViewerState:{source:'registry'},
     detailMediaCanvasPersistId:value => value.id, detailVideoPoint:() => null,
     detailWritableStorageRoots:() => [], formatDetailVideoTime:value => String(value),
+    detailTranscriptAt:() => ({start:0,end:3,text:'同时显示台词'}), detailTranscriptTime:value => String(value),
   });
   const helpers = extractBlock(preview, 'function videoDescriptionParts(', '\nasync function hydrateVideoDescriptions(');
   const sync = extractBlock(preview, 'function syncDetailVideoControls(', '\nfunction handleDetailVideoMediaEvent(');
@@ -182,6 +183,7 @@ test('视频元数据迟到时，控制条获得时长后补挂镜头标记', ()
   const video = {duration:10, currentTime:0, paused:true, volume:1, playbackRate:1, closest:() => ({dataset:{detailMediaCanvasNode:'asset-1'}, classList:classes()})};
   ctx.syncDetailVideoControls(video);
   assert.equal(markers.length, 1);
+  assert.match(progress.title, /同时显示台词/, '镜头标记与台词提示应同时保留');
   assert.equal(markers[0].dataset.videoDescriptionSeek, '2');
   assert.match(markers[0].title, /画面/);
   ctx.syncDetailVideoControls(video);

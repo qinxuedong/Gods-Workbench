@@ -573,6 +573,34 @@
             <p class="gw-type-body-sm text-slate-500">不会自动下载模型。缺少依赖或缓存时，搜索继续使用关键词，并标记向量轨降级。</p>
           </div>
         </div>
+        <div class="bay-inset p-4 rounded-xl space-y-4 max-w-3xl mt-4" data-asr-settings>
+          <div class="flex items-center justify-between gap-4">
+            <div>
+              <strong class="gw-type-body-sm text-slate-200 block">语音台词转写（ASR）</strong>
+              <p class="gw-type-body-md text-slate-400">启用后可从视频详情或资源根菜单手动提交转写任务。</p>
+            </div>
+            <button type="button" id="asrToggle" class="toggle hw-slide-toggle" aria-label="语音台词转写" aria-pressed="false">
+              <span class="hw-slide-peg" aria-hidden="true"></span>
+            </button>
+          </div>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 border-t border-white/10 pt-3">
+            <label class="gw-type-body-sm text-slate-300">识别引擎
+              <select id="asrEngine" data-gw-select class="gw-native-select-input mt-1 w-full">
+                <option value="funasr">FunASR · 中文推荐</option>
+                <option value="faster-whisper">faster-whisper · 多语种</option>
+              </select>
+            </label>
+            <label class="gw-type-body-sm text-slate-300">本地模型
+              <select id="asrModel" data-gw-select class="gw-native-select-input mt-1 w-full"></select>
+            </label>
+          </div>
+          <div class="border-t border-white/10 pt-3 space-y-1">
+            <strong class="gw-type-body-sm text-slate-200 block">本地 ASR 状态</strong>
+            <p id="asrStatus" class="gw-type-body-md text-slate-400" role="status" aria-live="polite">正在检查可选依赖与模型…</p>
+            <p id="asrInstallHint" class="gw-type-body-sm text-slate-500"></p>
+            <p class="gw-type-body-sm text-slate-500">服务不会自动安装依赖或下载模型。模型目录：&lt;data_root&gt;/models/asr/&lt;engine&gt;/&lt;model&gt;。</p>
+          </div>
+        </div>
         <div class="bay-inset p-4 rounded-xl space-y-4 max-w-3xl mt-4" data-smart-media-ai>
           <div>
             <strong class="gw-type-body-sm text-slate-200 block">AI 分类与镜头画面描述</strong>
@@ -792,6 +820,7 @@
   <script type="module" src="/static/js/modules/asset-auth/api.js?v=20261026-local-recovery"></script>
 
   <!-- 拟物仪表微动态与图标初始化 -->
+  <script src="/static/js/core/gw-native-select.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
       if (window.lucide) window.lucide.createIcons();
@@ -859,6 +888,70 @@
           toggle.disabled = false;
         }
       });
+      refresh();
+    })();
+  </script>
+  <script>
+    (() => {
+      const toggle = document.getElementById('asrToggle');
+      const engine = document.getElementById('asrEngine');
+      const model = document.getElementById('asrModel');
+      const statusNode = document.getElementById('asrStatus');
+      const hintNode = document.getElementById('asrInstallHint');
+      if (!toggle || !engine || !model || !statusNode || !hintNode) return;
+      let supported = {funasr:['paraformer-zh'], 'faster-whisper':['small']};
+      let current = {enabled:false, engine:'funasr', model:'paraformer-zh'};
+      const render = value => {
+        current = {...current, ...(value || {})};
+        supported = value?.supported_models || supported;
+        engine.value = current.engine;
+        const models = supported[current.engine] || [];
+        model.replaceChildren(...models.map(name => {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          return option;
+        }));
+        window.GWNativeSelect?.enhanceAll(document);
+        model.value = models.includes(current.model) ? current.model : (models[0] || '');
+        window.GWNativeSelect?.sync?.(engine);
+        window.GWNativeSelect?.sync?.(model);
+        toggle.classList.toggle('on', current.enabled === true);
+        toggle.setAttribute('aria-pressed', String(current.enabled === true));
+        statusNode.textContent = value?.message || '本机 ASR 状态暂不可用';
+        hintNode.textContent = value?.install_hint || '';
+      };
+      const request = async (url, options) => {
+        const response = await fetch(url, {credentials:'same-origin', headers:{Accept:'application/json', ...(options?.headers || {})}, ...options});
+        const body = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(body?.detail?.message || 'ASR 设置请求失败');
+        return body;
+      };
+      const refresh = async () => {
+        try { render(await request('/api/asset-registry/asr/status')); }
+        catch (error) { statusNode.textContent = error?.message || '读取 ASR 状态失败'; }
+      };
+      const save = async patch => {
+        toggle.disabled = engine.disabled = model.disabled = true;
+        try {
+          render(await request('/api/asset-registry/asr/settings', {
+            method:'POST', headers:{'Content-Type':'application/json'},
+            body:JSON.stringify({...current, ...patch}),
+          }));
+        } catch (error) {
+          statusNode.textContent = error?.message || '保存 ASR 设置失败';
+        } finally {
+          toggle.disabled = engine.disabled = model.disabled = false;
+          window.GWNativeSelect?.sync?.(engine);
+          window.GWNativeSelect?.sync?.(model);
+        }
+      };
+      toggle.addEventListener('click', () => save({enabled:toggle.getAttribute('aria-pressed') !== 'true'}));
+      engine.addEventListener('change', () => {
+        const models = supported[engine.value] || [];
+        save({engine:engine.value, model:models[0] || ''});
+      });
+      model.addEventListener('change', () => save({model:model.value}));
       refresh();
     })();
   </script>
@@ -1036,6 +1129,5 @@
     })();
   </script>
 <script src="/static/js/core/workbench-shell.js?v=20261103-qin526-recycler-qa"></script>
-<script src="/static/js/core/gw-native-select.js"></script>
 </body>
 </html>

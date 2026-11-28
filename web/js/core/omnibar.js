@@ -320,16 +320,18 @@
       const name = String(item?.name || item?.asset_id || '未命名素材');
       const startSec = Number(item?.start_sec);
       const isShot = item?.granularity === 'shot' && item?.start_sec != null && Number.isFinite(startSec);
-      const range = isShot ? `${formatShotTime(startSec)}~${formatShotTime(item?.end_sec)}` : '';
+      const isTranscript = item?.granularity === 'transcript' && item?.start_sec != null && Number.isFinite(startSec);
+      const range = (isShot || isTranscript) ? `${formatShotTime(startSec)}~${formatShotTime(item?.end_sec)}` : '';
       const tags = Array.isArray(item?.tags) ? item.tags.filter(tag => typeof tag === 'string' && tag) : [];
       const summary = String(item?.summary || '').trim();
+      const transcript = String(item?.transcript_text || '').trim();
       return {
         id: String(item?.asset_id || `asset-${index}`),
         asset_id: String(item?.asset_id || ''),
-        granularity: isShot ? 'shot' : 'asset',
-        start_sec: isShot ? startSec : null,
-        title: range ? `${name} · ${range}` : name,
-        description: [range, ...tags, summary].filter(Boolean).join(' · '),
+        granularity: isTranscript ? 'transcript' : isShot ? 'shot' : 'asset',
+        start_sec: isShot || isTranscript ? startSec : null,
+        title: isTranscript ? `[台词] ${name} · ${range}` : range ? `${name} · ${range}` : name,
+        description: [range, ...tags, transcript, summary].filter(Boolean).join(' · '),
       };
     }).filter(result => result.asset_id);
   }
@@ -363,7 +365,7 @@
       type: 'asset-global-search',
       asset_id: assetId,
     };
-    if (result?.granularity === 'shot' && Number.isFinite(startSec)) payload.start_sec = startSec;
+    if (['shot','transcript'].includes(result?.granularity) && Number.isFinite(startSec)) payload.start_sec = startSec;
     let relayed = false;
     Array.prototype.forEach.call(frames, frame => {
       if (!assetFrameMatches(frame)) return;

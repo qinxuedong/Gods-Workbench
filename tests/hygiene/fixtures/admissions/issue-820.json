@@ -1,0 +1,36 @@
+{
+  "schema": "gw.cleanroom-admission-shard/v1",
+  "issue": 820,
+  "authorization_basis": "GitHub Issue #820 (QIN-658), PM design approval issuecomment-7196376118",
+  "files": [
+    "docs/governance/agent-reports-2026-09-21/P8-A1-FRONTEND-BACKEND-API-GAP.md",
+    "gw/api/routes_asset_registry.py",
+    "gw/asset_registry/asr_transcription.py",
+    "gw/asset_registry/index_jobs.py",
+    "gw/asset_registry/repository.py",
+    "gw/asset_registry/transcript_index.py",
+    "tests/contracts/assets/test_asr_transcription.py",
+    "tests/contracts/projects/test_phase8_frontend_backend_api_gap.py",
+    "tests/frontend/mvp1-t6-omnibar-asset.test.mjs",
+    "tests/frontend/qin-541-registry-card-info-layout.test.mjs",
+    "tests/frontend/qin-657-video-descriptions.test.mjs",
+    "tests/frontend/test_c18_video_jump.mjs",
+    "tests/hygiene/fixtures/admissions/issue-537.json",
+    "tests/hygiene/fixtures/admissions/issue-820.json",
+    "web/js/controllers/assets-controller.js",
+    "web/js/core/omnibar.js",
+    "web/js/modules/asset-manager.js",
+    "web/js/modules/asset-manager/preview.js",
+    "web/js/modules/media-preview-player.js",
+    "web/pages/settings.html"
+  ],
+  "accepted_test_files": [
+    {
+      "path": "tests/contracts/assets/test_asr_transcription.py",
+      "classification": "curated_test_coverage",
+      "authorization_basis": "GitHub Issue #820 (QIN-658), PM design approval issuecomment-7196376118",
+      "admission": "accepted"
+    }
+  ],
+  "notes": "QIN-658：本机可选 ASR 转写、绝对时间台词映射、资产任务队列与 FTS5 检索；依赖及权重缺失时展示手动指引并降级。P8 基线只增本票授权的三个端点。"
+}

@@ -241,6 +241,13 @@ function shotPayload() {
   };
 }
 
+function transcriptPayload() {
+  return {items:[{
+    asset_id:'asset-transcript-1', name:'访谈视频', granularity:'transcript',
+    start_sec:31.25, end_sec:34.1, transcript_text:'我们先从创作流程开始。', segment_idx:4,
+  }]};
+}
+
 test('素材模式是第三种模式，切换后更新占位符与 aria 状态', () => {
   const {document, omnibar, input} = openAssetMode();
   assert.equal(omnibar.snapshot().mode, 'asset');
@@ -282,6 +289,21 @@ test('镜头命中项标题带时间范围，供用户辨认命中位置', async
   assert.equal(options[0].children[0].textContent, '海边日落 · 00:12~00:18');
   assert.match(options[0].children[1].textContent, /00:12~00:18/);
   assert.equal(options[1].children[0].textContent, '整段素材', '整段素材不应伪造时间范围');
+});
+
+test('台词命中显示 [台词] 与时间范围，并保留跳转时间', async () => {
+  const env = openAssetMode({fetchImpl:async () => jsonResponse(transcriptPayload())});
+  const selections = [];
+  env.window.addEventListener('gw:omnibar-result-select', event => selections.push(event.detail));
+  env.input.value = '创作流程';
+  env.input.dispatchEvent({type:'input'});
+  await settle();
+  const option = env.document.getElementById('gwOmnibarResults').querySelectorAll('[role="option"]')[0];
+  assert.equal(option.children[0].textContent, '[台词] 访谈视频 · 00:31~00:34');
+  assert.match(option.children[1].textContent, /我们先从创作流程开始。/);
+  env.input.dispatchEvent(keyEvent({key:'Enter',code:'Enter'}));
+  assert.equal(selections[0].result.granularity, 'transcript');
+  assert.equal(selections[0].result.start_sec, 31.25);
 });
 
 test('选中镜头结果派发带 start_sec 与 granularity 的选择事件', async () => {
@@ -472,4 +494,41 @@ test('跨源 frame 的 postMessage 失败不会中断同页选中事件', async 
   env.input.dispatchEvent(keyEvent({key: 'Enter', code: 'Enter'}));
 
   assert.deepEqual(selections, ['asset-shot-1']);
+});
+
+test('ASR 设置保存成功和失败后同步下拉外壳并恢复可用', async () => {
+  const html = readFileSync(new URL('../../web/pages/settings.html', import.meta.url), 'utf8');
+  const match = html.match(/<script>\s*(\(\(\) => \{\s*const toggle = document\.getElementById\('asrToggle'\);[\s\S]*?\}\)\(\);)\s*<\/script>/);
+  assert.ok(match, '应存在 ASR 设置脚本');
+  const controls = Object.fromEntries(['asrToggle','asrEngine','asrModel','asrStatus','asrInstallHint'].map(id => [id, {
+    id, value:'', disabled:false, textContent:'', attrs:{'aria-pressed':'false'}, handlers:{},
+    classList:{toggle(){}}, addEventListener(type, fn){this.handlers[type]=fn;},
+    setAttribute(name, value){this.attrs[name]=value;}, getAttribute(name){return this.attrs[name];},
+    replaceChildren(...children){this.options=children;},
+  }]));
+  const shell = new Map();
+  const sync = node => shell.set(node.id, {disabled:node.disabled,value:node.value});
+  let fail = false;
+  let current = {enabled:false,engine:'funasr',model:'paraformer-zh',supported_models:{funasr:['paraformer-zh'],'faster-whisper':['tiny']}};
+  const document = {getElementById:id=>controls[id],createElement:()=>({value:'',textContent:''})};
+  const window = {GWNativeSelect:{enhanceAll(){sync(controls.asrEngine);sync(controls.asrModel);},sync}};
+  const fetch = async (_url, options) => {
+    if(options?.method === 'POST' && fail) throw new Error('保存失败');
+    if(options?.method === 'POST') current = {...current,...JSON.parse(options.body)};
+    return {ok:true,json:async()=>current};
+  };
+  runInNewContext(match[1], {document,window,fetch,console});
+  const flush = () => new Promise(resolve => setImmediate(resolve));
+  await flush();
+  controls.asrToggle.handlers.click(); await flush();
+  assert.equal(shell.get('asrEngine').disabled,false);
+  assert.equal(shell.get('asrModel').disabled,false);
+  controls.asrEngine.value='faster-whisper'; controls.asrEngine.handlers.change(); await flush();
+  assert.equal(shell.get('asrModel').value,'tiny');
+  assert.equal(shell.get('asrModel').disabled,false);
+  fail=true; controls.asrToggle.handlers.click(); await flush();
+  assert.equal(shell.get('asrEngine').disabled,false);
+  assert.equal(shell.get('asrModel').disabled,false);
+  assert.match(controls.asrStatus.textContent,/保存失败/);
+  assert.equal((html.match(/href="\/static\/css\/components\/gw-native-select\.css"/g) || []).length,1);
 });

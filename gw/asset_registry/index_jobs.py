@@ -2197,6 +2197,18 @@ class IndexJobs:
             "max_files": max_files,
             "hash_files": hash_files,
         }
+        if kind == "asr_transcription":
+            asset_ids = payload.get("asset_ids")
+            if asset_ids is not None and (
+                not isinstance(asset_ids, list)
+                or not asset_ids
+                or len(asset_ids) > 100
+                or any(not isinstance(value, str) or not value.strip() for value in asset_ids)
+            ):
+                _error(400, "ASR_ASSET_IDS_INVALID", "asset_ids 必须是 1 到 100 个有效素材 ID")
+            request["asset_ids"] = list(dict.fromkeys(asset_ids or []))
+            request["engine"] = str(payload.get("engine") or "funasr")
+            request["model"] = str(payload.get("model") or "paraformer-zh")
         if kind == "video_descriptions":
             asset_ids = payload.get("asset_ids", [])
             provider_id = payload.get("provider_id")
@@ -2252,6 +2264,8 @@ class IndexJobs:
                     if kind == "reindex"
                     else "asset.shot_vectors"
                     if kind == "shot_vectors"
+                    else "asset.asr_transcription"
+                    if kind == "asr_transcription"
                     else "asset.video_descriptions"
                     if kind == "video_descriptions"
                     else "asset.index.sync"
@@ -2261,6 +2275,8 @@ class IndexJobs:
                     if kind == "reindex"
                     else "生成镜头视觉向量"
                     if kind == "shot_vectors"
+                    else "转写视频台词"
+                    if kind == "asr_transcription"
                     else "生成视频镜头描述与标签"
                     if kind == "video_descriptions"
                     else "同步索引差集"
@@ -2655,6 +2671,127 @@ class IndexJobs:
                     self._save(job)
                     self.condition.notify_all()
         return {"assets": processed, "shots": shots, "frames": frames, "failed": failed}
+
+    def _run_asr_transcription(self, job_id, attempt, request):
+        """沿用资产任务队列，对授权范围中的可见视频生成台词和 FTS 文档。"""
+        from gw.asset_registry import repository as repo, transcript_index
+        from gw.asset_registry import asr_transcription
+
+        engine = str(request.get("engine") or "funasr")
+        model = str(request.get("model") or "paraformer-zh")
+        if not asr_transcription.model_status(engine, model).get("ready"):
+            raise RuntimeError("ASR_MODEL_UNAVAILABLE")
+
+        snapshot = repo.readonly_registry_snapshot()
+        hidden_filter = repo.mounted_asset_hidden_filter()
+        requested_roots = {str(item) for item in request.get("roots") or []}
+        scopes = request.get("scopes") or []
+        allowed_roots = {
+            str(scope.get(key))
+            for scope in scopes if isinstance(scope, dict)
+            for key in ("root_id", "storage_root_id")
+            if scope.get(key)
+        }
+        requested_assets = {str(item) for item in request.get("asset_ids") or []}
+        assets = []
+        for asset_id, raw_asset in (snapshot.get("assets") or {}).items():
+            if not isinstance(raw_asset, dict):
+                continue
+            stable_id = str(raw_asset.get("asset_id") or asset_id)
+            asset_roots = {
+                str(raw_asset.get("root_id") or ""),
+                str(raw_asset.get("storage_root_id") or ""),
+            }
+            if requested_assets and stable_id not in requested_assets:
+                continue
+            if not requested_assets and not (asset_roots & (requested_roots | allowed_roots)):
+                continue
+            if requested_assets and not (asset_roots & (requested_roots | allowed_roots)):
+                continue
+            visible = repo.visible_asset_from_snapshot(
+                snapshot, stable_id, hidden_filter=hidden_filter
+            )
+            if visible is None or repo._asset_category(visible) != "video":
+                continue
+            assets.append(visible)
+
+        result = {
+            "assets": len(assets), "transcribed": 0, "skipped_no_audio": 0,
+            "skipped_no_segments": 0, "failed": 0, "indexed_segments": 0,
+        }
+        for asset in assets:
+            self._checkpoint(job_id, attempt)
+            asset_id = str(asset.get("asset_id") or "")
+            try:
+                source = storage.resolve_request_path(
+                    str(asset.get("display_path") or ""),
+                    root_id=str(asset.get("root_id") or asset.get("storage_root_id") or "") or None,
+                )
+                recognized = asr_transcription.transcribe_video(
+                    source, engine=engine, model=model
+                )
+                if recognized is None:
+                    result["skipped_no_audio"] += 1
+                    recognized = []
+
+                updated = None
+                old_segments = []
+                new_segments = []
+                skipped_no_segments = False
+                for retry in range(2):
+                    registry = repo.state().read()
+                    latest = (registry.get("assets") or {}).get(asset_id) or {}
+                    metadata = latest.get("metadata") if isinstance(latest.get("metadata"), dict) else {}
+                    latest_segments = metadata.get("video_segments")
+                    if not isinstance(latest_segments, list) or not latest_segments:
+                        result["skipped_no_segments"] += 1
+                        skipped_no_segments = True
+                        transcript_index.replace_asset_transcripts(asset_id, [])
+                        break
+                    old_segments = latest_segments
+                    new_segments = asr_transcription.map_transcripts_to_video_segments(
+                        latest_segments, recognized
+                    )
+                    try:
+                        update_result = repo.update_asset(asset_id, {
+                            "expected_version": int(registry.get("revision") or 0),
+                            "video_segments": new_segments,
+                        })
+                        updated = update_result["asset"]
+                        break
+                    except CleanroomException as exc:
+                        if exc.code != "VERSION_CONFLICT" or retry:
+                            raise
+                if updated is None and not skipped_no_segments:
+                    raise RuntimeError("ASR_ASSET_UPDATE_FAILED")
+                if updated is not None:
+                    try:
+                        result["indexed_segments"] += transcript_index.replace_asset_transcripts(
+                            asset_id, new_segments
+                        )
+                    except Exception:
+                        # FTS replacement is transactional; revert the metadata CAS if it fails.
+                        repo.update_asset(asset_id, {
+                            "expected_version": int(update_result["revision"]),
+                            "video_segments": old_segments,
+                        })
+                        raise
+                    if recognized:
+                        result["transcribed"] += 1
+            except _Stopped:
+                raise
+            except Exception as exc:
+                result["failed"] += 1
+                self.store.mutate(lambda raw, aid=asset_id, error=type(exc).__name__: raw["jobs"][job_id].update(
+                    error_count=raw["jobs"][job_id].get("error_count", 0) + 1,
+                    last_asset_error=error,
+                    last_asset_id=aid,
+                ))
+            self.store.mutate(lambda raw: raw["jobs"][job_id].update(
+                scanned=raw["jobs"][job_id].get("scanned", 0) + 1,
+                phase="transcribing",
+            ))
+        return result
 
     def _run_video_descriptions(self, job_id, attempt, roots):
         """为显式范围内可见视频逐个镜头生成摘要；自动任务按最新开关执行。"""
@@ -3239,6 +3376,22 @@ class IndexJobs:
                         scanned=result["assets"],
                         result=result,
                         error_code=None,
+                    )
+                    job["version"] += 1
+                    self._save(job)
+                    self.condition.notify_all()
+                return
+            if request.get("kind") == "asr_transcription":
+                result = self._run_asr_transcription(job_id, attempt, request)
+                with self.condition:
+                    job = self._checkpoint(job_id, attempt)
+                    job.update(
+                        status="failed" if result["failed"] else "succeeded",
+                        phase="failed" if result["failed"] else "completed",
+                        scanned=result["assets"],
+                        error_count=result["failed"],
+                        result=result,
+                        error_code="ASR_TRANSCRIPTION_FAILED" if result["failed"] else None,
                     )
                     job["version"] += 1
                     self._save(job)
