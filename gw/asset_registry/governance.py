@@ -249,6 +249,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
             component_masks[root] |= component_masks[merged]
 
     frequent_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 8}
+    matchable_grams = {gram for gram, frequency in gram_frequency.items() if frequency > 1}
 
     prior_by_length: Dict[int, List[int]] = {}
     prior_length_masks: Dict[int, int] = {}
@@ -278,6 +279,8 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         return greater | equal
 
     for index, (_, normalized, grams, gram_counts) in enumerate(candidates):
+        # 全库只出现一次的 q 元组不可能与其他名称重叠。
+        indexed_grams = grams & matchable_grams
         length = len(normalized)
         lower = max(1, math.ceil(length * similarity_threshold / (2 - similarity_threshold)))
         upper = math.floor(length * (2 - similarity_threshold) / similarity_threshold)
@@ -354,7 +357,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
                     bit_planes: List[int] = []
                     postings = prior_gram_masks_by_length.get(other_length, {})
                     count_postings = prior_count_masks_by_length.get(other_length, {})
-                    for gram in grams:
+                    for gram in indexed_grams:
                         if gram in omitted_common:
                             continue
                         query_count = gram_counts[gram] if gram_counts is not None else 1
@@ -429,7 +432,7 @@ def _group_similar_display_paths(names: Sequence[str], similarity_threshold: flo
         prior_length_masks[length] = prior_length_masks.get(length, 0) | candidate_bit
         gram_masks = prior_gram_masks_by_length.setdefault(length, {})
         count_masks = prior_count_masks_by_length.setdefault(length, {})
-        for gram in grams:
+        for gram in indexed_grams:
             gram_masks[gram] = gram_masks.get(gram, 0) | candidate_bit
             if gram in repeated_grams:
                 count = gram_counts[gram] if gram_counts is not None else 1

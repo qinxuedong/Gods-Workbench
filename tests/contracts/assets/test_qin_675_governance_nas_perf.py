@@ -325,6 +325,16 @@ def test_qin675_fast_similar_name_groups_match_existing_rule():
     assert governance._group_similar_display_paths(names) == group_similar_names(names)
 
 
+def test_qin675_unique_qgrams_preserve_similar_groups():
+    rng = random.Random(67519)  # noqa: S311 - 固定可复现的测试数据。
+    names = []
+    for _ in range(45):
+        name = "".join(rng.choice("abcdef0123456789") for _ in range(28))
+        names.extend((name + ".png", name[:-1] + "x.png"))
+    names.extend(("aaaaaaaaabbbbbbbb.png", "aaaaaaaaabbbbbbbc.png", "镜头_001.png"))
+    assert governance._group_similar_display_paths(names) == group_similar_names(names)
+
+
 def test_qin675_vector_duplicates_use_nearest_candidate_queries():
     vectors = [
         (1.0, 0.0),
