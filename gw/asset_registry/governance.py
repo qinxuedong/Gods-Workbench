@@ -29,6 +29,7 @@
 from __future__ import annotations
 
 import hashlib
+import gzip
 import json
 import math
 import os
@@ -73,6 +74,7 @@ MAX_VECTOR_PAIR_CANDIDATES = 200
 MAX_SUGGESTION_ENTRIES = 200
 _GOVERNANCE_CACHE_LIMIT = 8
 _GOVERNANCE_CACHE: OrderedDict[tuple, Dict[str, Any]] = OrderedDict()
+_GOVERNANCE_JSON_CACHE: OrderedDict[tuple, Tuple[Dict[str, Any], bytes]] = OrderedDict()
 _GOVERNANCE_INFLIGHT: Dict[tuple, Future] = {}
 _GOVERNANCE_CACHE_LOCK = threading.Lock()
 
@@ -1045,7 +1047,8 @@ def _visibility_cache_key(explicit_key: Optional[str]) -> str:
 
 def _index_cache_signature() -> tuple:
     """索引及 WAL 变化均使治理建议缓存失效。"""
-    path = storage.data_root() / repo.ASSET_SEARCH_INDEX_FILENAME
+    registry_path, _ = repo._snapshot_paths()
+    path = registry_path.parent / repo.ASSET_SEARCH_INDEX_FILENAME
     signatures = []
     for filename in (str(path), str(path) + "-wal"):
         try:
@@ -1057,8 +1060,8 @@ def _index_cache_signature() -> tuple:
     return tuple(signatures)
 
 
-def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]:
-    """生成建议；按注册表版本与可见主体缓存，并合并同键并发冷算。"""
+def _cached_suggestions(visibility_key: Optional[str]) -> Tuple[tuple, Dict[str, Any]]:
+    """返回内部只读结果；调用方不得修改缓存对象。"""
     raw = repo.readonly_registry_snapshot()
     runtime_identity = "\0".join(
         os.environ.get(name, "")
@@ -1075,14 +1078,14 @@ def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]
         int(raw.get("revision", 1)),
         _visibility_cache_key(visibility_key),
         runtime_scope,
-        tuple(sorted(repo._removed_root_ids())),
+        tuple(sorted(repo._removed_root_ids_for_search())),
         _index_cache_signature(),
     )
     with _GOVERNANCE_CACHE_LOCK:
         cached = _GOVERNANCE_CACHE.get(key)
         if cached is not None:
             _GOVERNANCE_CACHE.move_to_end(key)
-            return deepcopy(cached)
+            return key, cached
         pending = _GOVERNANCE_INFLIGHT.get(key)
         if pending is None:
             pending = Future()
@@ -1091,7 +1094,7 @@ def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]
         else:
             is_owner = False
     if not is_owner:
-        return deepcopy(pending.result())
+        return key, pending.result()
 
     try:
         result = _build_suggestions_from_snapshot(raw)
@@ -1107,7 +1110,37 @@ def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]
             _GOVERNANCE_CACHE.popitem(last=False)
         _GOVERNANCE_INFLIGHT.pop(key, None)
         pending.set_result(result)
+    return key, result
+
+
+def build_suggestions(*, visibility_key: Optional[str] = None) -> Dict[str, Any]:
+    """生成建议；对外返回独立副本，避免调用方修改缓存。"""
+    _, result = _cached_suggestions(visibility_key)
     return deepcopy(result)
+
+
+def build_suggestions_json(*, visibility_key: str, operator_role: str, compress: bool = False) -> bytes:
+    """缓存已编码响应，避免热请求反复复制和编码大型建议清单。"""
+    key, result = _cached_suggestions(visibility_key)
+    json_key = (key, operator_role, compress)
+    with _GOVERNANCE_CACHE_LOCK:
+        cached = _GOVERNANCE_JSON_CACHE.get(json_key)
+        if cached is not None and cached[0] is result:
+            _GOVERNANCE_JSON_CACHE.move_to_end(json_key)
+            return cached[1]
+    encoded = json.dumps(
+        {**result, "operator_role": operator_role}, ensure_ascii=False,
+        allow_nan=False, separators=(",", ":"),
+    ).encode("utf-8")
+    if compress:
+        encoded = gzip.compress(encoded, compresslevel=1, mtime=0)
+    with _GOVERNANCE_CACHE_LOCK:
+        if _GOVERNANCE_CACHE.get(key) is result:
+            _GOVERNANCE_JSON_CACHE[json_key] = (result, encoded)
+            _GOVERNANCE_JSON_CACHE.move_to_end(json_key)
+            while len(_GOVERNANCE_JSON_CACHE) > _GOVERNANCE_CACHE_LIMIT:
+                _GOVERNANCE_JSON_CACHE.popitem(last=False)
+    return encoded
 
 
 def find_suggestion(suggestion_id: str) -> Dict[str, Any]:
